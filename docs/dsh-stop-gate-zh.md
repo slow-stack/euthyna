@@ -1,5 +1,7 @@
 # DSH 交付门禁事实核查（Stop hook）
 
+[English](dsh-stop-gate.md) · 中文
+
 > 本文核查 DSH 的 Stop hook 能否承担交付门禁，并记录一条**已被实测推翻**的结论。
 > 所有结论均由 `tools/check-stop-gate.mjs` **实际运行**得出，而非阅读源码推断。
 > 复现：`node tools/check-stop-gate.mjs`（只读，不启动进程，不修改任何配置）。

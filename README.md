@@ -34,7 +34,7 @@ Neither is fixed by telling the agent to be more careful. So this project does t
 |---|---|---|
 | **Fact producers** | A zero-dependency Node CLI that answers two questions deterministically | Working, tested |
 | **The skill** | The audit discipline itself, as loadable Markdown | Working, loadable |
-| **The benchmark** | A blind recall measurement for the adjudication layer | First round complete |
+| **The benchmark** | A blind recall measurement for the adjudication layer | Two rounds complete |
 
 ### Fact producer 1 — `history`
 
@@ -70,7 +70,7 @@ Reads c8's `fnMap` invocation counts. It has exactly two outcomes and **no third
 omission. V8 block coverage reports unreachable code as covered, so a naive
 "line covered → call ran" join reports a call site that never ran as executed — wrong in the
 one direction a security audit cannot afford, because it hides a real gap and manufactures
-confidence at the same time. See [`docs/fact-contract-zh.md`](docs/fact-contract-zh.md) §6.2.
+confidence at the same time. See [`docs/fact-contract.md`](docs/fact-contract.md) §6.2.
 
 ### Exit codes are part of the contract
 
@@ -132,11 +132,12 @@ This project tries to be explicit about the difference. Current state:
 - **`coverage` on real c8 output**, distinguishing all three states correctly.
 - **Adjudication recall and specificity**, measured blind: **10/10 cases**, 4 real
   vulnerabilities all caught, 6 non-vulnerabilities all correctly cleared, no abstentions.
-  Every case is a *near-neighbour pair* — same pattern, one guard apart — so the verdicts had to
-  come from reading the guard rather than recognising the shape.
-  See [`bench/RESULTS.md`](bench/RESULTS.md).
+  Round 2 repeated every case three times — **30 adjudications, zero flips**, four of them
+  on a different model. Every case is a *near-neighbour pair* — same pattern, one guard
+  apart — so the verdicts had to come from reading the guard rather than recognising the shape.
+  See [`bench/RESULTS.md`](bench/RESULTS.md) and [`bench/RESULTS-round2.md`](bench/RESULTS-round2.md).
 - **The delivery-gate mechanism**, by running the real host plugin: blocking works, and the two
-  documented ways of getting it wrong do not. See [`docs/dsh-stop-gate-zh.md`](docs/dsh-stop-gate-zh.md).
+  documented ways of getting it wrong do not. See [`docs/dsh-stop-gate.md`](docs/dsh-stop-gate.md).
 
 ### Not verified
 
@@ -146,7 +147,7 @@ This project tries to be explicit about the difference. Current state:
 - **Recall in the field.** Four real-bug samples is a directional signal, not a rate.
 - **Source maps, bundlers, monorepos** for the coverage producer. Untested.
 - **Anything about axe-core's security**, from the case study run — it found nothing, which is
-  not an endorsement. See [`docs/case-study-axe-core-zh.md`](docs/case-study-axe-core-zh.md).
+  not an endorsement. See [`docs/case-study-axe-core.md`](docs/case-study-axe-core.md).
 
 ---
 
@@ -172,7 +173,7 @@ euthyna/
 ├── bin/  src/  test/        Fact producers (zero dependencies, Node >= 20)
 ├── .agents/skills/euthyna/  The audit discipline, as a portable skill
 ├── bench/                   Blind recall benchmark + results
-├── docs/                    Design notes and case studies (Chinese)
+├── docs/                    Design notes and case studies (English and Chinese)
 ├── tools/                   Research and verification scripts
 └── data/                    DSH plugin catalog snapshot
 ```
@@ -189,7 +190,7 @@ Early, and honest about it. Working: the two fact producers, the skill, the benc
 Not yet built: wiring the skill to the CLI so an agent uses them without being told, and the
 git-history / coverage work needed to close the remaining recall gap.
 
-The design notes are currently in Chinese. An English translation of `docs/` is a known gap.
+The design notes are available in English and Chinese; the `-zh` files are the originals.
 
 ## License
 

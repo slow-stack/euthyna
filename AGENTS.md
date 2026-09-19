@@ -41,8 +41,8 @@ have to be handed over and the gates have to pass.**
 
 ### Writing conventions
 
-- Documentation is Chinese; `README.md` is English. An English translation of `docs/` is a
-  known gap.
+- Every document in `docs/` exists twice: the `-zh` file is the original, the unsuffixed
+  file is its English translation. `README.md` is English only.
 - Public text states facts and decisions only. No internal questions, no "let me know what
   you think" — those belong in a conversation, not in a repository.
 - When a claim is hedged, keep the hedging. It is usually load-bearing.
@@ -144,7 +144,7 @@ Fold order is `deny > ask > allow`; exit code 2 decodes to `block` (rank 3, same
   `general-purpose`.
 
 Reproduce: `node tools/check-stop-gate.mjs` — read-only, spawns nothing, writes no config.
-Full analysis: `docs/dsh-stop-gate-zh.md`.
+Full analysis: `docs/dsh-stop-gate.md`.
 
 ### Cross-harness portability
 
@@ -193,10 +193,10 @@ Full analysis: `docs/dsh-stop-gate-zh.md`.
 | `test/` | 61 tests via `node --test`, no third-party framework. **The history tests build real git repositories rather than mocking** |
 | `.agents/skills/euthyna/` | **The skill.** Doubles as source and as a project skill root (rank 200), so it is live in this workspace without a restart |
 | `bench/` | **The recall benchmark.** `exploits.js` establishes ground truth by execution; `prepare-blind.js` produces answer-free copies; `score.js` computes the confusion matrix. Results in `bench/RESULTS.md` (round 1) and `bench/RESULTS-round2.md` (round 2: three independent runs per case, zero flips) |
-| `docs/positioning-zh.md` | Competitive analysis across the DSH catalog, including three claims that were tested and refuted |
-| `docs/fact-contract-zh.md` | The measurement ↔ adjudication interface. The project's core design artefact |
-| `docs/dsh-stop-gate-zh.md` | Hook-gate facts, with reproduction |
-| `docs/case-study-axe-core-zh.md` | One validation run against a real codebase |
+| `docs/positioning.md` + `-zh` | Competitive analysis across the DSH catalog, including three claims that were tested and refuted |
+| `docs/fact-contract.md` + `-zh` | The measurement ↔ adjudication interface. The project's core design artefact |
+| `docs/dsh-stop-gate.md` + `-zh` | Hook-gate facts, with reproduction |
+| `docs/case-study-axe-core.md` + `-zh` | One validation run against a real codebase |
 | `tools/fetch-references.js` | Fetches upstream sources on demand into `.refs/` (gitignored). **The repo distributes no third-party files** |
 | `tools/check-license-text.mjs` | Verifies `LICENSE` against the canonical Apache-2.0 text, fetched live. **The licence claim is checkable rather than asserted** |
 | `.gitattributes` | Pins LF in checkouts so byte-level checks mean the same thing on every platform |

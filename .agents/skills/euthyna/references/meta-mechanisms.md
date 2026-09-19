@@ -28,9 +28,13 @@
 本项目为此提供了产出器，并定义了契约（`fact-contract.md`）：
 
 ```powershell
-node bin/euthyna.js history  --base <rev>          # 被删代码的来源与安全分类
-node bin/euthyna.js coverage --coverage <file> --symbol <name>   # 符号调用计数
+# <euthyna 仓库> = 本项目检出的位置，不是被审计项目的路径
+node <euthyna 仓库>/bin/euthyna.js history  --base <rev> --repo <被审计的仓库>
+node <euthyna 仓库>/bin/euthyna.js coverage --coverage <file> --symbol <name>
 ```
+
+⚠️ 写成相对的 `node bin/euthyna.js` 会失败：审计时当前目录是被审计的项目。
+命令、退出码与失效情形见 `fact-producers.md`。
 
 ---
 

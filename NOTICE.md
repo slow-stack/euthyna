@@ -83,6 +83,7 @@ CC BY-SA 4.0 对 `Adapted Material` 的定义**明确包含 "translated"**
 ├── dependency-audit.md     依赖面审计
 ├── bug-classes.md          缺陷类别与默认假设方向
 ├── verification-gates.md   结论面验证
+├── fact-producers.md       两个确定性测量的操作手册
 └── fact-contract.md        事实的读法
 ```
 

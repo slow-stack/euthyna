@@ -70,14 +70,20 @@ diff 只显示「哪些行变了」，不显示「行为怎么变了」。删掉
 对每一段被删的代码，用本项目的产出器查它的来源：
 
 ```powershell
-node bin/euthyna.js history --base <改前版本> --head <改后版本>
+node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --repo <被审计的仓库>
 ```
+
+⚠️ **不能写成 `node bin/euthyna.js`**——审计时当前目录是**被审计的项目**，不是 euthyna 仓库，
+相对路径会报 `Cannot find module`。`--repo` 指的是**被审计的仓库**，`--base` 相对它解析。
 
 它会告诉你：这段被删的代码是哪个提交引入的、那个提交的信息里有没有安全关键词。
 **从 `fix` / `CVE` / `security` 提交里删掉的代码，风险默认拉到最高**，除非能证明它是多余的。
 
 不要自己跑 `git blame` 再肉眼读提交信息——那正是本产出器存在的原因，
 机器判定同一个 diff 跑两次结果一致，人读两次可能不一致。
+
+读输出时注意「⚠ 未评估的判据」一节：它非空时，这次运行**不能**读成「查过了没问题」。
+退出码 `2` 表示完全无法测量，**不得当作干净**。命令与退出码详见 `fact-producers.md`。
 
 ### 三条红线
 
@@ -90,7 +96,7 @@ node bin/euthyna.js history --base <改前版本> --head <改后版本>
 第三条用产出器可以机械检出：
 
 ```powershell
-node bin/euthyna.js history --base <改前版本> --pickaxe
+node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --pickaxe --repo <被审计的仓库>
 ```
 
 ---
@@ -108,8 +114,11 @@ node bin/euthyna.js history --base <改前版本> --pickaxe
 想说出「已覆盖」，必须拿真实执行证据，不能靠「这个文件有测试文件」推断：
 
 ```powershell
-node bin/euthyna.js coverage --coverage coverage/coverage-final.json --symbol <被改的函数>
+node <euthyna 仓库>/bin/euthyna.js coverage --coverage <覆盖率文件绝对路径> --symbol <被改的函数>
 ```
+
+没有覆盖率文件时：**要么用项目自己的方式跑一次测试产出它，要么把该判据标为「不可评估」**——
+`coverage` 会以退出码 `2` 明确告诉你「没能测量」，那不是「没被覆盖」。
 
 > ⚠️ 这个产出器**只能证伪，不能证实**。它说「没被调用过」是可信的；
 > 它说「被调用了 N 次」**不能**推出「相关调用点被执行过」。

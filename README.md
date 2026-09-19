@@ -112,6 +112,11 @@ skill root DSH discovers (`~/.agents/skills/`, `~/.claude/skills/`, or a project
 `.agents/skills/`). The Markdown layer is portable across Claude Code, Codex and DSH; only the
 hook configuration format and plugin packaging differ per host.
 
+The **text** is self-contained; the **fact producers are not inside the skill directory**.
+Copying the skill does not carry the CLI with it. On a host without this repository checked out
+(or the package installed), the skill requires those criteria to be recorded as not evaluated
+rather than guessed at — see `references/fact-producers.md`.
+
 ---
 
 ## What has been verified, and what has not

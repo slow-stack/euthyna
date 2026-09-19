@@ -180,6 +180,8 @@ Full analysis: `docs/dsh-stop-gate-zh.md`.
 | `node --test <directory>` is treated as a file path on Node 24 | Use plain `node --test` (auto-discovery) in `package.json`, not a directory argument |
 | `"type": "module"` at the repo root silently breaks CommonJS scripts in subdirectories | Scope them with their own `package.json` declaring `"type": "commonjs"` — see `tools/package.json` and `bench/package.json` |
 | PowerShell's `>` redirect writes UTF-16, producing JSON that will not parse | `\| Set-Content -Encoding UTF8` when capturing command output |
+| **`core.autocrlf=true` with no `.gitattributes` gives a CRLF checkout while the repository stores LF** | Committed content is unaffected, but byte-level checks (file size, SHA-256, a diff against an upstream original) then report differences that do not exist. Hit while byte-checking `LICENSE` against the canonical Apache text, which produced a phantom 202-byte difference. Fixed by the `.gitattributes` at the repository root |
+| **A "corrupted" test fixture that silently failed to mutate** | The checker correctly reported VERIFIED, because the file was byte-identical to the control. Assert that every negative fixture actually differs from the control before trusting any result that comes out of it |
 
 ---
 
@@ -196,6 +198,8 @@ Full analysis: `docs/dsh-stop-gate-zh.md`.
 | `docs/dsh-stop-gate-zh.md` | Hook-gate facts, with reproduction |
 | `docs/case-study-axe-core-zh.md` | One validation run against a real codebase |
 | `tools/fetch-references.js` | Fetches upstream sources on demand into `.refs/` (gitignored). **The repo distributes no third-party files** |
+| `tools/check-license-text.mjs` | Verifies `LICENSE` against the canonical Apache-2.0 text, fetched live. **The licence claim is checkable rather than asserted** |
+| `.gitattributes` | Pins LF in checkouts so byte-level checks mean the same thing on every platform |
 | `data/dsh-plugins.json` | Snapshot of 3931 DSH plugins (`updated=2026-09-18`) |
 | `.scratch/` | Scratch: downloaded sources and intermediate output (gitignored) |
 
@@ -218,3 +222,29 @@ The second row is not about modifying *code* — it is about whether your text g
 theirs. CC BY-SA defines Adapted Material to include material that has been "translated".
 Everything under `.agents/skills/euthyna/references/` is written as original prose; if you add
 to it, keep it that way, or the licence claim becomes false.
+
+### The licence text is verified, not assumed
+
+A licence file that has been edited — even by one line — is no longer the licence it names, so
+this one is checked rather than asserted:
+
+```powershell
+node tools/check-license-text.mjs      # or: npm run check:license
+```
+
+Exit `0` means the text matches the canonical Apache-2.0 licence on every line except the
+appendix copyright line, which this project fills in. `1` means it differs (the differing lines
+are printed). `2` means upstream could not be fetched — **not** a pass.
+
+#### ⚠️ A conclusion this project got wrong
+
+`LICENSE` began with a blank line. An assumption was made that this was an artefact of
+downloading the file, and the line was removed. **It is not an artefact — the canonical Apache
+text begins with a blank line.** The change was reverted before it was committed.
+
+What caught it was arithmetic that did not close: the file was predicted to shrink by one byte
+and shrank by eight. Fetching the upstream text and comparing line by line showed the only real
+difference is line 190, the copyright placeholder described above.
+
+The lesson generalises: the blank line looked like noise precisely because nothing depended on
+it, which is the category of change that is never noticed and never corrected.

@@ -11,7 +11,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "check:license": "node tools/check-license-text.mjs"
   },
   "license": "Apache-2.0",
   "comment": "private stays true until the first deliberate publish. Zero runtime dependencies is deliberate: a fact producer that an audit depends on should not itself need a supply-chain review. No third-party files are distributed in this repository; upstream sources are fetched on demand into .refs/ - see NOTICE.md."

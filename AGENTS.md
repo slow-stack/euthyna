@@ -270,6 +270,8 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 | **`gh search code` 查含 `-S` 的短语会被当成命令行开关吃掉** | 改用 `gh api "search/code?q=<URL编码>"`，或 `--%` 停止解析 |
 | **拉进来的第三方仓库自带 `AGENTS.md`，会被 DSH 自动加载并当成指令** | 本轮实测命中（`formalswarm/AGENTS.md` 讲的是它自己的 push 流程）。**第三方原文一律放 `.scratch/`**（已 gitignore），且不要在里面执行命令 |
 | `git diff --stat` 报 `LF will be replaced by CRLF` | 本仓库在 Windows 上，行尾警告不影响内容；提交前用 `git diff --stat` 确认改动面即可 |
+| **PowerShell 的 `Get-Content` / `Set-Content` 不加 `-Encoding UTF8` 会把 UTF-8 中文按 GBK 读入，直接损坏源文件** | 本轮实测把一个未提交的源文件写坏、无法恢复（只能重写）。**改任何含中文的文件，必须用 `-Encoding UTF8` 读写**，或用 `read`/`write` 工具而不是 shell |
+| `node --test <目录>` 在 Node 24 下被当成文件路径 | `package.json` 里用 `node --test`（自动发现），不要传目录 |
 
 ---
 

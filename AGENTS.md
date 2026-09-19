@@ -21,8 +21,11 @@
 
 ## 当前阶段
 
-**方案选型，尚未写任何代码。** 定位分析已按全类目重做完毕（`docs/positioning-zh.md`）。
-结论是**收窄**而非推翻：测量层与门禁层都已被占，euthyna 的位置在**「事实 → 判定 → 门禁」之间那一层**。
+**方案 A 已起步，技能可加载。** 定位分析已重做（`docs/positioning-zh.md`），
+事实契约已成稿（`docs/fact-contract-zh.md`），技能主入口与阶段 C 已落地
+（`.agents/skills/euthyna/`，在本仓库内即时生效）。
+
+下一步是**在真实仓库上跑一次 quick 档**，量误报率——方法论的价值只能靠这个证明。
 
 ---
 
@@ -180,16 +183,19 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 
 ## 待办
 
-1. **确定确定性引擎的职责边界**：做什么、明确不做什么
-   （不做什么已定：不重造调用图 / 覆盖率 / 依赖扫描 / 密钥扫描，见 `docs/positioning-zh.md` §7.2）
-2. **决定引擎的事实产出契约**（引擎输出字段 ↔ 判定层消费字段对齐）
-3. **确定落地形态与推进顺序**
-4. **quick 档实跑**：在真实仓库上跑一次，量误报率
+1. **quick 档实跑**（最优先）：在真实仓库上跑一次，量误报率
+   —— 方法论的价值只能靠这个证明。建议目标 `D:\axe-core\axe-core` 或 dsh-mneme 的某个真实 PR
+2. **把阶段 A / B 与 9 类缺陷拆进技能 `references/`**
+   （`change-audit.md` / `dependency-audit.md` / `bug-classes.md`），
+   并把事实契约复制进去让技能自包含
+3. **实现两件自研测量**：git 安全回归的机械判定；「符号 × 真实执行覆盖」的 join
+   （后者的可行性正在独立验证中）
+4. **完成许可清理**（见文末「许可注意」，两件工作）
 
 ### 落地形态的既有倾向（⚠️ 方案 B 的成本已被实测上调）
 
 ```
-方案 A：纯 Markdown 技能（0 行 JS）          ← 建议起步，不变
+方案 A：纯 Markdown 技能（0 行 JS）          ← ✅ 已起步，技能可加载
 方案 B：加 hook 门禁（原以为 0 行 JS）        ← 实为「一个 gate 脚本 + configPath」，且只能做产物式门禁
 方案 C：打包成插件（原生 Cordis provider）    ← 价值上升：拿得到 agent 对象与会话，可做对话式门禁
 ```
@@ -237,9 +243,12 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 
 | 路径 | 是什么 |
 |---|---|
+| `.agents/skills/euthyna/SKILL.md` | **技能主入口（方案 A 的产物）**。同时是源码与 DSH 项目级技能根（rank 200），改完即时生效、无需重启 |
+| `.agents/skills/euthyna/references/verification-gates.md` | 阶段 C 全文：6 门禁 / 13 条误报清单 / 恶魔代言人 13 问 / PoC 规则 |
+| `docs/fact-contract-zh.md` | **事实产出契约**：测量层 ↔ 判定层的接口。euthyna 的核心资产 |
 | `docs/positioning-zh.md` | **竞品定位分析（本轮重做）**。三个赛道、八个测量工具、已确证空白八项、证伪记录 |
 | `docs/dsh-stop-gate-zh.md` | **Stop 门禁事实核查**。推翻了旧结论，含可复现验证方式 |
-| `docs/methodology-zh.md` | 中文审计方法论（核心计划文件，基于 Trail of Bits 三个插件逐条对照重写） |
+| `docs/methodology-zh.md` | 中文审计方法论（阶段 A/B 与 9 类缺陷的正文仍在此，待拆分进技能 `references/`） |
 | `reference/trail-of-bits/` | 三个上游插件的 24 个原文文件（CC-BY-SA-4.0，见 NOTICE.md） |
 | `reference/competitors/` | 竞品 `dsh-skill-pack-security` 的技能原文 |
 | `reference/dsh-plugin-anatomy/` | DSH 技能包型插件的最小骨架样本 |
@@ -248,7 +257,7 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 | `tools/probe-gaps.js` | 旧版全类目覆盖探针（只打名字，仅作粗筛） |
 | `data/dsh-plugins.json` | DSH 生态 3931 个插件目录快照（`updated=2026-09-18`） |
 | `data/audit-space.txt` | `probe-audit-space.js` 的完整输出（691 行，含命中上下文） |
-| `.scratch/` | 本轮拉下来的第三方原文与子代理产物（**已 gitignore，不入库**） |
+| `.scratch/` | 拉下来的第三方原文与子代理产物（**已 gitignore，不入库**） |
 
 > `tools/` 下所有脚本已改为读**仓库内**的 `data/dsh-plugins.json`，不再依赖 `D:\deepseek harness\`。
 
@@ -257,7 +266,7 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 
 ---
 
-## 许可注意（⚠️ 已找到判例，但尚未最终拍板）
+## 许可注意（方案已拍板：引用不拷贝 + 原创重写）
 
 `reference/trail-of-bits/` 是 **CC-BY-SA-4.0**（Trail of Bits）。
 
@@ -272,6 +281,16 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 同源判例：`dsh-skill-pack-security` 是 Apache-2.0，其 `THIRD_PARTY_NOTICES.md` 声明八个技能
 与 `plugin_vet` 引擎**全部原创，未移植任何第三方代码**。
 
-**待拍板**：本仓库采用「引用不拷贝 + 原创重写」以保留 MIT/Apache 的自由度，
-还是接受 `docs/methodology-zh.md` 为改编物、对其单独适用 CC-BY-SA-4.0 的分层许可。
-详见 `NOTICE.md`。**发布前必须定。**
+### ✅ 已定方案（2026-09-19）
+
+**走「引用不拷贝 + 原创重写」**，目标是本仓库整体可用 MIT / Apache-2.0。
+
+**因此还有两件未完成的清理工作**：
+
+1. `docs/methodology-zh.md` 仍是**逐条对照改写**的产物，属改编物候选。
+   要么用自己的结构与措辞重写，要么明确对它单独适用 CC-BY-SA-4.0。
+   **新写的技能文件（`.agents/skills/euthyna/`）已按原创路线写**。
+2. `reference/trail-of-bits/` 的 24 个原文若要随仓库分发，就带着 CC-BY-SA；
+   若要整体 MIT/Apache，需改为**按需拉取**（脚本下载到 gitignored 目录），不再入库。
+
+详见 `NOTICE.md` §1.3。**发布前必须做完这两件。**

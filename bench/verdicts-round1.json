@@ -1,0 +1,12 @@
+{
+  "c1-comment-only": "FALSE POSITIVE",
+  "c2-test-fixture": "FALSE POSITIVE",
+  "p1-prototype-pollution": "TRUE POSITIVE",
+  "p1b-prototype-pollution-guarded": "FALSE POSITIVE",
+  "p2-path-traversal": "TRUE POSITIVE",
+  "p2b-path-traversal-guarded": "FALSE POSITIVE",
+  "p3-command-injection": "TRUE POSITIVE",
+  "p3b-execfile": "FALSE POSITIVE",
+  "p4-code-injection": "TRUE POSITIVE",
+  "p4b-unreachable-eval": "FALSE POSITIVE"
+}

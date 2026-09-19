@@ -35,6 +35,19 @@ function copyBlind(from, to) {
 }
 
 fs.rmSync(OUT, { recursive: true, force: true });
+fs.mkdirSync(OUT, { recursive: true });
+
+// The copies live outside bench/, so they do not inherit bench/package.json and
+// would otherwise be resolved as ESM under the repository root's "type":
+// "module" - making require() of a perfectly valid CommonJS case return an empty
+// namespace. Three adjudicators hit exactly that and had to work around it with
+// Node's own CJS compile path. Scoping the blind tree the same way removes the
+// artefact instead of asking every reader to recognise it.
+fs.writeFileSync(
+  path.join(OUT, 'package.json'),
+  `${JSON.stringify({ '//': 'The blind copies are CommonJS, matching bench/.', type: 'commonjs', private: true }, null, 2)}\n`,
+  'utf8'
+);
 
 const ids = fs
   .readdirSync(CASES, { withFileTypes: true })

@@ -3,7 +3,7 @@
 /**
  * Produce blind copies of the benchmark cases for adjudication.
  *
- * Two things have to be true for an adjudication to measure anything:
+ * Three things have to be true for an adjudication to measure anything:
  *
  *   1. meta.json must not be readable, so the answer is absent rather than
  *      merely off-limits.
@@ -11,16 +11,60 @@
  *      "p1b-prototype-pollution-guarded" or "c1-comment-only" state the answer
  *      outright, so the blind copies use opaque ids and the mapping lives
  *      outside the blind tree.
+ *   3. The id assignment must not outlive the round that created it. A sorted,
+ *      stable mapping is reproducible — and once one round's results exist in a
+ *      report or a memory store, that same mapping is an answer key for every
+ *      later round. Each run therefore shuffles the ids under a seed (recorded
+ *      in the mapping file, never inside the blind tree), so a new round
+ *      invalidates what earlier rounds put into an adjudicator's context.
  *
- *   node bench/prepare-blind.js
+ *   node bench/prepare-blind.js [--seed <n>] [--mapping <path>]
+ *
+ *   --seed     re-run a known shuffle (default: a fresh random seed)
+ *   --mapping  where the blindId -> realId record goes
+ *              (default: .scratch/blind-mapping.json)
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { randomInt } = require('node:crypto');
 
 const CASES = path.join(__dirname, 'cases');
 const OUT = path.join(__dirname, '..', '.scratch', 'blind');
-const MAPPING = path.join(__dirname, '..', '.scratch', 'blind-mapping.json');
+
+const argv = process.argv.slice(2);
+const flag = name => {
+  const i = argv.indexOf(name);
+  if (i < 0) return undefined;
+  if (i + 1 >= argv.length) {
+    console.error(`missing value for ${name}`);
+    process.exit(1);
+  }
+  return argv[i + 1];
+};
+
+const MAPPING = path.resolve(
+  process.cwd(),
+  flag('--mapping') ?? path.join(__dirname, '..', '.scratch', 'blind-mapping.json')
+);
+
+const seedArg = flag('--seed');
+const seed = seedArg === undefined ? randomInt(0, 2 ** 31) : Number(seedArg);
+if (!Number.isInteger(seed) || seed < 0 || seedArg === '') {
+  console.error('--seed must be a non-negative integer');
+  process.exit(1);
+}
+
+// mulberry32: 32-bit state, no dependencies, deterministic for a given seed.
+function mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 /** Recursive copy that skips meta.json at any depth. */
 function copyBlind(from, to) {
@@ -55,17 +99,29 @@ const ids = fs
   .map(e => e.name)
   .sort();
 
-// Opaque, stable ids: sorted case order mapped to case-01..case-NN. Sorting
-// keeps the mapping reproducible across runs without encoding any hint.
+// Opaque ids: case-01..case-NN, but in seed-shuffled order — see the header
+// comment, point 3. Same seed, same shuffle; new seed, new round.
+const shuffled = [...ids];
+const rand = mulberry32(seed);
+for (let i = shuffled.length - 1; i > 0; i--) {
+  const j = Math.floor(rand() * (i + 1));
+  [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+}
+
 const mapping = {};
-ids.forEach((id, index) => {
+shuffled.forEach((id, index) => {
   const blindId = `case-${String(index + 1).padStart(2, '0')}`;
   mapping[blindId] = id;
   copyBlind(path.join(CASES, id), path.join(OUT, blindId));
 });
 
 fs.mkdirSync(path.dirname(MAPPING), { recursive: true });
-fs.writeFileSync(MAPPING, `${JSON.stringify(mapping, null, 2)}\n`, 'utf8');
+const record = {
+  seed,
+  note: 'blindId -> realId. The seed reproduces this exact shuffle; this file must never reach an adjudicator.',
+  cases: mapping
+};
+fs.writeFileSync(MAPPING, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
 
 // Fail loudly if any answer leaked into the blind copy.
 const leaked = [];
@@ -87,8 +143,9 @@ if (leaked.length || hints.length) {
   process.exitCode = 1;
 } else {
   console.log(`${ids.length} blind case(s) -> ${path.relative(process.cwd(), OUT)}`);
+  console.log(`seed: ${seed}`);
   console.log(`mapping kept outside the blind tree at ${path.relative(process.cwd(), MAPPING)}\n`);
-  for (const [blindId, realId] of Object.entries(mapping)) {
+  for (const blindId of Object.keys(mapping)) {
     console.log(`  ${blindId}  =  (withheld)`);
   }
 }

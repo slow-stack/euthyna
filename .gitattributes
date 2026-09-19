@@ -1,0 +1,14 @@
+# Normalise line endings: the repository stores LF, and checkouts are LF on
+# every platform.
+#
+# Why this exists: with core.autocrlf=true (the Git for Windows default) and no
+# .gitattributes, a Windows checkout silently rewrites LF to CRLF in the working
+# copy while the repository still stores LF. Committed content is unaffected, but
+# any byte-level check - SHA-256, file size, a diff against an upstream original
+# - then reports differences that do not exist in the repository. That happened
+# once, during a byte-for-byte check of LICENSE against the canonical Apache
+# text, and produced a 202-byte phantom difference.
+#
+# Every file in this repository is text; there is nothing here for which a
+# platform-native checkout would be preferable.
+* text=auto eol=lf

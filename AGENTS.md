@@ -21,11 +21,43 @@
 
 ## 当前阶段
 
-**方案 A 已起步，技能可加载。** 定位分析已重做（`docs/positioning-zh.md`），
+**方案 A 已起步，且已完成第一次实跑。** 定位分析已重做（`docs/positioning-zh.md`），
 事实契约已成稿（`docs/fact-contract-zh.md`），技能主入口与阶段 C 已落地
 （`.agents/skills/euthyna/`，在本仓库内即时生效）。
 
-下一步是**在真实仓库上跑一次 quick 档**，量误报率——方法论的价值只能靠这个证明。
+### 第一次 quick 档实跑结果（2026-09-19，目标 axe-core）
+
+完整报告：`audits/AXE-CORE_EUTHYNA_AUDIT_2026-09-19.md`
+
+| 指标 | 值 |
+|---|---|
+| 粗筛候选（出厂代码 `lib/` 中的高危模式） | 5 |
+| **真阳性** | **0** |
+| **假阳性** | **5（100%）** |
+| 阶段 B（分支 diff，9 文件）发现 | 0 |
+
+五个误报各自死于不同门禁：两处 `new Function` 死在「无信任边界」、
+一处 `innerHTML` 赋值死在「sink 处无攻击者数据」、一处 `innerHTML` 读取**死在它位于块注释内**、
+跨帧 `postMessage` 死在「校验在 handler 而不在调用点」。
+
+**两个最有价值的观察**：
+
+1. **误报率的最大单一来源是范围**：`innerHTML` 全仓 226 文件命中，其中 227 个在 `test/`，
+   出厂源码只有 2 个。不限范围的扫描器在这个仓库上产出约 **99% 纯噪音**。
+2. **门禁确实拦下了一个我差点报的错**：我推演出一个自洽的 ASI 绕过（`\s*` 允许换行 →
+   `return` 后接换行 → 注入代码执行），跑实验后被推翻——`return` 前缀让函数表达式之后的
+   调用永远不可达。**不跑这个实验，它会是第 6 个误报。**
+
+**暴露出的最大能力缺口**：5 个裁定**全部依赖人工阅读实现**。
+候选数放大 10 倍，流程就退化成「来不及看，凭感觉判」——也就是本项目要解决的那个问题。
+⇒ **下一步不是扩大审计范围，而是先把确定性测量做出来。**
+
+### 下一步
+
+1. **实现 Tier 0 测量（~40 行）**：c8 的 `fnMap` + `f{}` 拿调用计数，
+   计数为 0 ⇒ 所有调用方缺覆盖。零依赖、零误报、**不需要调用图**
+2. 把阶段 A / B 与 9 类缺陷拆进技能 `references/`，并让技能自包含
+3. 完成许可清理（见文末「许可注意」）
 
 ---
 
@@ -183,19 +215,21 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 
 ## 待办
 
-1. **quick 档实跑**（最优先）：在真实仓库上跑一次，量误报率
-   —— 方法论的价值只能靠这个证明。建议目标 `D:\axe-core\axe-core` 或 dsh-mneme 的某个真实 PR
+1. **实现 Tier 0 测量（~40 行，最优先）**：c8 的 `fnMap` + `f{}` 拿调用计数，
+   计数为 0 ⇒ 所有调用方缺覆盖。零依赖、零误报、**不需要调用图**。
+   可行性已实跑验证（`docs/fact-contract-zh.md` §6.2）
 2. **把阶段 A / B 与 9 类缺陷拆进技能 `references/`**
    （`change-audit.md` / `dependency-audit.md` / `bug-classes.md`），
    并把事实契约复制进去让技能自包含
-3. **实现两件自研测量**：git 安全回归的机械判定；「符号 × 真实执行覆盖」的 join
-   （后者的可行性正在独立验证中）
+3. **实现 `history` 测量**：git 安全回归的机械判定（`docs/fact-contract-zh.md` §6.1）
 4. **完成许可清理**（见文末「许可注意」，两件工作）
+5. **补一次「已知含真缺陷」的靶场验证召回率**——本轮 0 真阳性，
+   只证明了能筛掉假阳性，**没有检验识别真阳性的能力**
 
 ### 落地形态的既有倾向（⚠️ 方案 B 的成本已被实测上调）
 
 ```
-方案 A：纯 Markdown 技能（0 行 JS）          ← ✅ 已起步，技能可加载
+方案 A：纯 Markdown 技能（0 行 JS）          ← ✅ 已起步，技能可加载，已实跑一轮
 方案 B：加 hook 门禁（原以为 0 行 JS）        ← 实为「一个 gate 脚本 + configPath」，且只能做产物式门禁
 方案 C：打包成插件（原生 Cordis provider）    ← 价值上升：拿得到 agent 对象与会话，可做对话式门禁
 ```
@@ -245,7 +279,8 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 |---|---|
 | `.agents/skills/euthyna/SKILL.md` | **技能主入口（方案 A 的产物）**。同时是源码与 DSH 项目级技能根（rank 200），改完即时生效、无需重启 |
 | `.agents/skills/euthyna/references/verification-gates.md` | 阶段 C 全文：6 门禁 / 13 条误报清单 / 恶魔代言人 13 问 / PoC 规则 |
-| `docs/fact-contract-zh.md` | **事实产出契约**：测量层 ↔ 判定层的接口。euthyna 的核心资产 |
+| `docs/fact-contract-zh.md` | **事实产出契约**：测量层 ↔ 判定层的接口。euthyna 的核心资产。§6.2 含覆盖率 join 的实跑可行性结论 |
+| `audits/` | **审计报告存放目录**。命名 `<PROJECT>_EUTHYNA_AUDIT_<DATE>.md`（报告写这里，**不写进被审仓库**——会被 `git status` 带进去误提交） |
 | `docs/positioning-zh.md` | **竞品定位分析（本轮重做）**。三个赛道、八个测量工具、已确证空白八项、证伪记录 |
 | `docs/dsh-stop-gate-zh.md` | **Stop 门禁事实核查**。推翻了旧结论，含可复现验证方式 |
 | `docs/methodology-zh.md` | 中文审计方法论（阶段 A/B 与 9 类缺陷的正文仍在此，待拆分进技能 `references/`） |

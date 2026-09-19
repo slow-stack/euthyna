@@ -3,18 +3,21 @@ const http = require('http');
 const https = require('https');
 
 const PROXY = { host: '127.0.0.1', port: 7897 };
-const NAMES = [
-  'dsh-finding-verdict',
-  'dsh-verdict',
-  'dsh-audit-verdict',
-  'dsh-adjudicator',
-  'dsh-corroborator',
-  'dsh-witness',
-  'dsh-finding',
-  'dsh-evidence-gate',
-  'dsh-proof',
-  'dsh-audit-engine',
-];
+// Names come from the command line; the original hardcoded list is the default.
+const NAMES = process.argv.slice(2).length
+  ? process.argv.slice(2)
+  : [
+      'dsh-finding-verdict',
+      'dsh-verdict',
+      'dsh-audit-verdict',
+      'dsh-adjudicator',
+      'dsh-corroborator',
+      'dsh-witness',
+      'dsh-finding',
+      'dsh-evidence-gate',
+      'dsh-proof',
+      'dsh-audit-engine',
+    ];
 
 function get(target, path) {
   return new Promise((resolve, reject) => {

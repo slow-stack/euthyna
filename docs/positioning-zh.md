@@ -1,5 +1,7 @@
 # euthyna 竞品定位分析
 
+[English](positioning.md) · 中文
+
 > 检索方式：**全类目**，不按 `category` 过滤。按类目过滤会漏掉散落在
 > `tools` / `git` / `dev` 等类目下的同类工具，使空白判断系统性偏斜。
 > 以下每条结论都标出证据基础。

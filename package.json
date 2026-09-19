@@ -1,0 +1,18 @@
+{
+  "name": "@modusensus/euthyna",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic fact producers for security auditing: which deleted code came from a security fix, and which changed symbols no test ever executed.",
+  "type": "module",
+  "bin": {
+    "euthyna": "./bin/euthyna.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "UNLICENSED",
+  "comment": "private + UNLICENSED are deliberate while NOTICE.md section 1.3 is unresolved. Zero runtime dependencies is also deliberate: a fact producer that an audit depends on should not itself need a supply-chain review."
+}

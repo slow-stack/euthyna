@@ -21,9 +21,11 @@
 
 ## 当前阶段
 
-**方案 A 已起步，且已完成第一次实跑。** 定位分析已重做（`docs/positioning-zh.md`），
-事实契约已成稿（`docs/fact-contract-zh.md`），技能主入口与阶段 C 已落地
-（`.agents/skills/euthyna/`，在本仓库内即时生效）。
+**两个确定性事实产出器已实现并实跑通过**（`bin/` + `src/`，零依赖 Node CLI，56 个测试全绿）。
+技能主入口与阶段 C 已落地（`.agents/skills/euthyna/`，本仓库内即时生效）。
+
+已在 axe-core 上实测：`history` 把变更删掉的 17 行**逐段归到了引入它们的提交**，
+其中 4 个是 `fix` 提交；覆盖账目在真实 c8 数据上正确区分了三种状态。
 
 ### 第一次 quick 档实跑结果（2026-09-19，目标 axe-core）
 
@@ -54,10 +56,11 @@
 
 ### 下一步
 
-1. **实现 Tier 0 测量（~40 行）**：c8 的 `fnMap` + `f{}` 拿调用计数，
-   计数为 0 ⇒ 所有调用方缺覆盖。零依赖、零误报、**不需要调用图**
-2. 把阶段 A / B 与 9 类缺陷拆进技能 `references/`，并让技能自包含
-3. 完成许可清理（见文末「许可注意」）
+1. **补一次「已知含真缺陷」的靶场验证召回率** —— 至今 0 真阳性，
+   只证明了能筛掉假阳性，**没有检验识别真阳性的能力**
+2. **把阶段 A / B 与 9 类缺陷拆进技能 `references/`**，并让技能自包含
+3. **让技能真正调用这两个产出器** —— 目前 CLI 和 SKILL.md 还没接起来
+4. **完成许可清理**（见文末「许可注意」）
 
 ---
 
@@ -215,21 +218,18 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 
 ## 待办
 
-1. **实现 Tier 0 测量（~40 行，最优先）**：c8 的 `fnMap` + `f{}` 拿调用计数，
-   计数为 0 ⇒ 所有调用方缺覆盖。零依赖、零误报、**不需要调用图**。
-   可行性已实跑验证（`docs/fact-contract-zh.md` §6.2）
-2. **把阶段 A / B 与 9 类缺陷拆进技能 `references/`**
-   （`change-audit.md` / `dependency-audit.md` / `bug-classes.md`），
-   并把事实契约复制进去让技能自包含
-3. **实现 `history` 测量**：git 安全回归的机械判定（`docs/fact-contract-zh.md` §6.1）
-4. **完成许可清理**（见文末「许可注意」，两件工作）
-5. **补一次「已知含真缺陷」的靶场验证召回率**——本轮 0 真阳性，
+1. **补一次「已知含真缺陷」的靶场验证召回率**——至今 0 真阳性，
    只证明了能筛掉假阳性，**没有检验识别真阳性的能力**
+2. **让技能真正调用这两个产出器**——CLI 已可用，但 `SKILL.md` 还没写「什么时候调它、怎么读它的输出」
+3. **把阶段 A / B 与 9 类缺陷拆进技能 `references/`**
+   （`change-audit.md` / `dependency-audit.md` / `bug-classes.md`），并把事实契约复制进去让技能自包含
+4. **完成许可清理**（见文末「许可注意」，两件工作）
 
 ### 落地形态的既有倾向（⚠️ 方案 B 的成本已被实测上调）
 
 ```
 方案 A：纯 Markdown 技能（0 行 JS）          ← ✅ 已起步，技能可加载，已实跑一轮
+     └─ 事实产出器（零依赖 Node CLI）        ← ✅ 已实现并实跑通过（history + coverage）
 方案 B：加 hook 门禁（原以为 0 行 JS）        ← 实为「一个 gate 脚本 + configPath」，且只能做产物式门禁
 方案 C：打包成插件（原生 Cordis provider）    ← 价值上升：拿得到 agent 对象与会话，可做对话式门禁
 ```
@@ -277,6 +277,8 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 
 | 路径 | 是什么 |
 |---|---|
+| `bin/euthyna.js` + `src/` | **事实产出器（零依赖 Node CLI）**。`src/contract.js` 是契约的代码实现；`src/facts/history.js` 与 `src/facts/coverage.js` 是两个测量 |
+| `test/` | 56 个测试，`npm test`（用 `node --test`，无第三方框架）。**历史账目的测试建真实 git 仓库，不用 mock** |
 | `.agents/skills/euthyna/SKILL.md` | **技能主入口（方案 A 的产物）**。同时是源码与 DSH 项目级技能根（rank 200），改完即时生效、无需重启 |
 | `.agents/skills/euthyna/references/verification-gates.md` | 阶段 C 全文：6 门禁 / 13 条误报清单 / 恶魔代言人 13 问 / PoC 规则 |
 | `docs/fact-contract-zh.md` | **事实产出契约**：测量层 ↔ 判定层的接口。euthyna 的核心资产。§6.2 含覆盖率 join 的实跑可行性结论 |

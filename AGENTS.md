@@ -58,9 +58,8 @@
 
 1. **补一次「已知含真缺陷」的靶场验证召回率** —— 至今 0 真阳性，
    只证明了能筛掉假阳性，**没有检验识别真阳性的能力**
-2. **把阶段 A / B 与 9 类缺陷拆进技能 `references/`**，并让技能自包含
-3. **让技能真正调用这两个产出器** —— 目前 CLI 和 SKILL.md 还没接起来
-4. **完成许可清理**（见文末「许可注意」）
+2. **重写 `docs/methodology-zh.md` 并拆进技能 `references/`**（同一件事）
+3. **让技能真正调用事实产出器** —— CLI 已可用，但 `SKILL.md` 还没写「什么时候调它、怎么读它的输出」
 
 ---
 
@@ -165,7 +164,8 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 - 插件即 npm 包，装法 `dsh plugin --profile web add <包名>`（转发 pnpm）
 - 官方目录 `https://awesome-dsh-plugin.com/plugins.json`（GitHub Pages，大陆直连被拒，需代理）
 - 技能包型插件的最小实现：复用官方 `FileSystemSkillProvider`，核心约 6 行
-  （样本见 `reference/dsh-plugin-anatomy/provider-index.ts`，共 126 行，其中纯核心 6 行）
+  （样本：`node tools/fetch-references.js competitors` 拉到 `.refs/competitors/provider-index.ts`，
+  共 126 行，其中纯核心 6 行）
 
 ---
 
@@ -220,10 +220,9 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 
 1. **补一次「已知含真缺陷」的靶场验证召回率**——至今 0 真阳性，
    只证明了能筛掉假阳性，**没有检验识别真阳性的能力**
-2. **让技能真正调用这两个产出器**——CLI 已可用，但 `SKILL.md` 还没写「什么时候调它、怎么读它的输出」
-3. **把阶段 A / B 与 9 类缺陷拆进技能 `references/`**
-   （`change-audit.md` / `dependency-audit.md` / `bug-classes.md`），并把事实契约复制进去让技能自包含
-4. **完成许可清理**（见文末「许可注意」，两件工作）
+2. **重写 `docs/methodology-zh.md` 并拆进技能 `references/`**（同一件事）：
+   用原创结构撰写阶段 A / B 与 9 类缺陷，顺带清掉最后一个改编物候选
+3. **让技能真正调用事实产出器**——CLI 已可用，但 `SKILL.md` 还没写「什么时候调它、怎么读它的输出」
 
 ### 落地形态的既有倾向（⚠️ 方案 B 的成本已被实测上调）
 
@@ -288,9 +287,7 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 | `docs/positioning-zh.md` | **竞品定位分析（本轮重做）**。三个赛道、八个测量工具、已确证空白八项、证伪记录 |
 | `docs/dsh-stop-gate-zh.md` | **Stop 门禁事实核查**。推翻了旧结论，含可复现验证方式 |
 | `docs/methodology-zh.md` | 中文审计方法论（阶段 A/B 与 9 类缺陷的正文仍在此，待拆分进技能 `references/`） |
-| `reference/trail-of-bits/` | 三个上游插件的 24 个原文文件（CC-BY-SA-4.0，见 NOTICE.md） |
-| `reference/competitors/` | 竞品 `dsh-skill-pack-security` 的技能原文 |
-| `reference/dsh-plugin-anatomy/` | DSH 技能包型插件的最小骨架样本 |
+| `tools/fetch-references.js` | **按需拉取上游原文**到 `.refs/`（已 gitignore）。`--list` 看清单。仓库里**不分发**第三方文件 |
 | `tools/probe-audit-space.js` | **带命中上下文的定位探针**（做定位分析用这个，别用只打名字的 `probe-gaps.js`） |
 | `tools/check-stop-gate.mjs` | **Stop 门禁契约的可复现验证**（端到端跑真实 hook 桥接） |
 | `tools/probe-gaps.js` | 旧版全类目覆盖探针（只打名字，仅作粗筛） |
@@ -305,31 +302,37 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 
 ---
 
-## 许可注意（方案已拍板：引用不拷贝 + 原创重写）
+## 许可：已定 Apache-2.0，且**不再分发任何第三方文件**
 
-`reference/trail-of-bits/` 是 **CC-BY-SA-4.0**（Trail of Bits）。
+本项目采用 **Apache-2.0**（`LICENSE`，Copyright 2026 euthyna contributors）。
 
-**已核实的法律事实**（CC 官方 legalcode 原文，非二手转述）：
-- `Adapted Material` 的定义**明确包含 "translated"**——所以逐条对照的中文重写很可能构成改编物
-- ShareAlike（§3(b)）只在**你分发（Share）**改编物时生效，且**只约束改编物本身**，不传染整个仓库
+### 上游原文改为按需拉取（2026-09-19 完成）
 
-**同行判例**（`solanabr/auditor-skill` 的 `ATTRIBUTION.md`，MIT 许可，已发布）：
-- 上游做成 **git submodule（gitlink 是引用不是拷贝）** ⇒ 不触发 ShareAlike
-- ToB 的**方法论模式用自己的话重新实现**，逐条署名
+`reference/trail-of-bits/`、`reference/competitors/`、`reference/dsh-plugin-anatomy/`
+**已从版本控制中移除**。原文改由 `tools/fetch-references.js` 拉到 `.refs/`（已 gitignore），
+同目录生成 `PROVENANCE.txt` 记录来源/分支/许可/拉取时间。
 
-同源判例：`dsh-skill-pack-security` 是 Apache-2.0，其 `THIRD_PARTY_NOTICES.md` 声明八个技能
-与 `plugin_vet` 引擎**全部原创，未移植任何第三方代码**。
+**已验证**：拉回来的 30 个文件与原先入库的副本 **SHA-256 逐字节一致**。
+⇒ 仓库里现在**没有任何第三方文件**，Apache-2.0 覆盖全部内容。
 
-### ✅ 已定方案（2026-09-19）
+理由：上游中有一份是 CC-BY-SA-4.0，随仓库分发会让本项目的许可证变含糊；
+而且那份快照会悄悄与上游脱节。判例见 `NOTICE.md`（`auditor-skill` 用 submodule 引用规避）。
 
-**走「引用不拷贝 + 原创重写」**，目标是本仓库整体可用 MIT / Apache-2.0。
+### 方法论的边界（CC BY-SA 的核心约束）
 
-**因此还有两件未完成的清理工作**：
+CC BY-SA 4.0 的 `Adapted Material` 定义**明确包含 "translated"**——所以**翻译或逐句改写会构成改编物**，
+ShareAlike 要求改编物以相同许可分发。要整体用 Apache-2.0，就**不能**包含对上游文本的改编。
 
-1. `docs/methodology-zh.md` 仍是**逐条对照改写**的产物，属改编物候选。
-   要么用自己的结构与措辞重写，要么明确对它单独适用 CC-BY-SA-4.0。
-   **新写的技能文件（`.agents/skills/euthyna/`）已按原创路线写**。
-2. `reference/trail-of-bits/` 的 24 个原文若要随仓库分发，就带着 CC-BY-SA；
-   若要整体 MIT/Apache，需改为**按需拉取**（脚本下载到 gitignored 目录），不再入库。
+**允许的**：读上游、理解方法、**用自己话重新表述**、署名。思想与方法不受版权保护。
+**不允许的（若要保持 Apache-2.0）**：把上游文本翻译/逐句改写后当自己的。
 
-详见 `NOTICE.md` §1.3。**发布前必须做完这两件。**
+### ⚠️ 唯一未完成的清理：`docs/methodology-zh.md`
+
+它是**早期**产物，自述「基于 Trail of Bits 三个插件原文逐条对照后重写」，
+**属于改编物候选，尚未重写**。`NOTICE.md` 已如实标注这一点。
+
+新写的文档（`docs/positioning-zh.md`、`docs/dsh-stop-gate-zh.md`、
+`.agents/skills/euthyna/` 下的技能与 reference）**均已按原创路线撰写**。
+
+**下一步**：把 `docs/methodology-zh.md` 的内容用原创结构重写进技能 `references/`，
+然后移除该文件。这与待办 #3「拆分 references」是同一件事。

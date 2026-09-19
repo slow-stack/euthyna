@@ -9,6 +9,10 @@ tmp/
 scratch/
 .scratch/
 
+# 按需拉取的第三方原文（tools/fetch-references.js）。
+# 刻意不入库：其中两个上游是 CC-BY-SA-4.0，随仓库分发会让本项目的许可证变得含糊。
+.refs/
+
 # 编辑器 / 系统
 .vscode/
 .idea/

@@ -1,0 +1,5 @@
+{
+  "//": "The repository root declares \"type\": \"module\" for src/ and bin/. The tooling here was written as CommonJS, and Node resolves the nearest package.json, so this scopes CommonJS to tools/ without rewriting ten scripts.",
+  "type": "commonjs",
+  "private": true
+}

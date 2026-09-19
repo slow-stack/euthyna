@@ -70,7 +70,7 @@ node bin/euthyna.js coverage --coverage coverage/coverage-final.json --symbol ch
 | **竞品定位（全类目重做）** | `docs/positioning-zh.md` —— 三个赛道、八个测量工具的能力对照、已确证空白八项 |
 | **DSH 门禁事实核查** | `docs/dsh-stop-gate-zh.md` —— 用运行验证推翻了此前关于 hook 可原样搬迁的结论 |
 | **第一次 quick 档实跑** | `audits/AXE-CORE_EUTHYNA_AUDIT_2026-09-19.md` —— 5 个候选全为误报，含逐条裁定与局限性声明 |
-| 源头原文留档 | `reference/trail-of-bits/` —— 24 个原文文件 |
+| 上游原文按需拉取 | `tools/fetch-references.js` —— 原文不入库，拉到 `.refs/`（已 gitignore）。**本仓库不分发任何第三方文件** |
 | 生态竞品目录 | `data/dsh-plugins.json` —— DSH 生态 3931 个插件的完整快照 |
 | 调研脚本 | `tools/` —— 查询 / 抓取 / 验证脚本，可复用 |
 
@@ -83,9 +83,8 @@ node bin/euthyna.js coverage --coverage coverage/coverage-final.json --symbol ch
 ### 待办
 
 - [ ] 用「已知含真缺陷」的靶场验证**召回率**——至今 0 真阳性，只证明了能筛掉假阳性
+- [ ] 重写 `docs/methodology-zh.md` 并拆进技能 `references/`（同一件事，顺带清掉最后一个改编物候选）
 - [ ] 让技能真正调用事实产出器（CLI 已可用，技能还没写「何时调它、怎么读它的输出」）
-- [ ] 把阶段 A / B 与 9 类缺陷拆进技能的 `references/`，并让技能自包含
-- [ ] 定许可证并清理改编物（见 `NOTICE.md` §1.3，发布前必须做完）
 
 ---
 
@@ -204,8 +203,21 @@ node tools/fetch-catalog.js awesome-dsh-plugin.com /plugins.json data/dsh-plugin
 
 ## 许可
 
-**本项目自身的许可证尚未选定**，发布（公开仓库 / 发 npm 包 / 发技能包）之前必须定。
+**Apache License 2.0**，全文见 `LICENSE`。
 
-`reference/trail-of-bits/` 下的内容版权归 Trail of Bits，采用 **CC-BY-SA-4.0**。
-该许可的 ShareAlike 条款是否会影响本仓库其余部分、两种可选方案及其代价，
-连同两份同行判例，写在 `NOTICE.md` §1。
+**本仓库不分发任何第三方文件。** 这是有意设计的：调研需要反复阅读上游原文，
+但把原文拷进仓库会让许可证变含糊（上游中有一份是 CC-BY-SA-4.0），
+而且那份快照会悄悄与上游脱节。所以原文改为按需拉取：
+
+```powershell
+node tools/fetch-references.js           # 拉到 .refs/，已 gitignore
+node tools/fetch-references.js --list    # 只看清单
+```
+
+方法论借鉴自两处公开工作，**已按原创路线自行撰写并署名**：Trail of Bits 的 `skills`
+（CC-BY-SA-4.0）与 `dsh-skill-pack-security`（Apache-2.0）。
+CC BY-SA 的 `Adapted Material` 定义明确包含 "translated"，因此**翻译或逐句改写会构成改编物**——
+本仓库刻意不含此类内容。详见 `NOTICE.md`。
+
+> ⚠️ 一处例外尚未处理：`docs/methodology-zh.md` 是早期产物，按「逐条对照改写」写成，
+> 属改编物候选，**待重写或移除**。`NOTICE.md` 已如实标注。

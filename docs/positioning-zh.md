@@ -107,7 +107,8 @@ security-audit · threat-model · vuln-intel · incident-response
 **这意味着**：我们 README 里当作差异点的「拿不出证据就降级为观察」，**它已经有了**。
 它本质是**工具编排器 + 报告格式**（gitleaks / trivy / checkov / pnpm audit）。
 
-**它没有的**（逐条对照 `reference/trail-of-bits/` 的原文）：
+**它没有的**（逐条对照 Trail of Bits 三个插件的原文，
+用 `node tools/fetch-references.js trail-of-bits` 拉到 `.refs/trail-of-bits/`）：
 
 | fp-check / differential-review 的机制 | 竞品是否有 |
 |---|---|

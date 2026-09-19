@@ -357,15 +357,29 @@ Gate Review（被 P5 阻塞）: 6 门禁评估 → 裁定
 
 ### 4.1 能**原样**搬的
 
+> ### ⚠️ 本节已更正（2026-09-19，由运行验证得出）
+>
+> 本节此前的结论是「**门禁机制不需要写 JS，fp-check 的 `hooks.json` 可以原样搬**」。**这条是错的。**
+>
+> 1. fp-check 的两个 hook 都是 `"type": "prompt"`，而 DSH **只运行 shell command 形态的 handler**。
+>    实测打出的警告：`skipping unsupported "prompt" hook on Stop (only command hooks run)`
+>    ——**原样搬过去一个 hook 都不会跑**。
+> 2. 更关键：**DSH 的 Stop hook 拿不到对话内容**。实测 payload 只有
+>    `{session_id, transcript_path:"", cwd, hook_event_name, stop_hook_active}`，`transcript_path` 恒为空。
+>    所以 fp-check「扫描对话检查 6 门禁有没有走完」这一动作**在 DSH 上物理上无法实现**。
+>
+> **拦截本身仍然可行**：🧪 实测退出码 2 + stderr、或 `hookSpecificOutput.permissionDecision`
+> 都能拦住并强制继续。但 DSH 上的门禁必须是**产物式**（检查落盘的报告 / 账本），
+> 不能是**对话式**。完整实测与三个必须自己处理的坑见 `docs/dsh-stop-gate-zh.md`；
+> 复现：`node tools/check-stop-gate.mjs`。
+
 | 机制 | DSH 支持情况 | 证据 |
 |---|---|---|
 | 全部 Markdown 方法论内容 | ✅ 直接可用 | DSH 支持目录包与扁平 Markdown 技能 |
-| **Claude Code hook 协议（含 Stop / SubagentStop）** | ✅ **原生实现** | `@deepseek-ai/dsh-hooks-claude-code` 支持 SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / **Stop** / **SubagentStop** |
-| fp-check 的**强制停止门禁** | ✅ hook 返回 block 时会继续 | 源码：`"continue: blocked by Stop hook"` |
+| **Claude Code hook 协议（含 Stop / SubagentStop）** | ✅ **原生实现** | `@deepseek-ai/dsh-hooks-claude-code` 支持 SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / **Stop** / **SubagentStart** / **SubagentStop** |
+| fp-check 的**强制停止门禁** | ⚠️ **可拦截，但不能原样搬**（见上方更正） | 🧪 实测：退出码 2 + stderr 即拦截，文案 `continue: blocked by Stop hook`；`SubagentStop` 则**只观测、不能阻塞** |
 | 只读子代理 / 可写 PoC 代理的权限隔离 | ✅ 子代理机制齐备 | `dsh-subagent`、`subagent` / `subagent_fork` 工具 |
 | 猎人→独立验证者→批评者的并行编排 | ✅ 有更强的 | `workflow` 工具（脚本化扇出，含 `pipeline` / `parallel`） |
-
-**这是本次调研最有价值的发现**：fp-check 的反偷懒强制力来自 `hooks.json`，而 DSH **原生实现了同一套 hook 协议**——Stop 与 SubagentStop 都在。意味着**门禁机制不需要写 JS**，`hooks.json` 可以原样搬。
 
 ### 4.2 必须改的
 
@@ -375,7 +389,7 @@ Gate Review（被 P5 阻塞）: 6 门禁评估 → 裁定
 | 技能名 | 任意 | **必须匹配** `/^[a-z0-9]+(?:-[a-z0-9]+)*$/`（小写字母数字 + 连字符） |
 | 调用策略 | Claude Code 默认 | DSH 的 `invocation` 默认 `{ modelInvocable: true, userInvocable: true }`；安全审计技能建议**显式声明**，避免被无关会话自动触发 |
 | `{baseDir}` 资源引用 | 原文用于指向 references/ 与 scripts/ | 需确认 DSH 的对应变量；DSH 的 skill 契约里有 `resourceBase: { kind: "directory", path }` |
-| hook 配置入口 | 插件自带 `hooks/hooks.json` 自动加载 | DSH 的 hook 桥需要 `configPath`（**必填**），在 profile 里指向该 JSON；接受 settings 格式或裸 hooks.json 两种 |
+| hook 配置入口 | 插件自带 `hooks/hooks.json` 自动加载 | DSH 的 hook 桥需要 `configPath`（**必填**），在 profile 里指向该 JSON；接受 settings 格式或裸 hooks.json 两种。⚠️ 但 `prompt` / `agent` / `http` / `mcp_tool` 形态会被跳过，**只有 `command` 形态会运行**——所以 fp-check 的原文必须改写成脚本。另：配置是**进程级、启动时只读一次**，改完要重启 `dsh web` |
 
 ### 4.3 搬不了 / 需要重写的
 
@@ -402,16 +416,32 @@ Gate Review（被 P5 阻塞）: 6 门禁评估 → 裁定
 
 | 方案 | 代码量 | 分发能力 | 适合阶段 |
 |---|---|---|---|
-| **A. 纯 Markdown 技能**（放 `~/.dsh/skills/`） | **0 行 JS** | 仅本机 | **起步必选** |
-| B. 加 hook 门禁 | 0 行 JS（一个 `configPath` 配置） | 仅本机 | A 验证有效后 |
-| C. 打包成插件（`registerProvider`） | ~20–130 行 TS | npm / 市场 | 确认有价值后 |
+| **A. 纯 Markdown 技能**（放 `~/.agents/skills/`） | **0 行 JS** | 仅本机 | **起步必选** |
+| B. 加 hook 门禁 | ⚠️ **一个 gate 脚本（约 100–200 行）+ `configPath`**（原估「0 行 JS」已被实测推翻） | 仅本机 | A 验证有效后 |
+| C. 打包成插件（`registerProvider`） | ~20–130 行 TS（**价值已上调**，见下） | npm / 市场 | 确认有价值后 |
 
 **建议顺序：A → B → C**，不要跳级。理由：方法论的价值只能用真实审计结果来证明，包成插件只是分发手段；先包插件会把未经验证的纪律分发出去。
+
+#### ⚠️ B 与 C 的重新权衡（2026-09-19 实测后）
+
+| | B（command hook 门禁） | C（原生插件） |
+|---|---|---|
+| 看得到对话吗 | ❌ 只拿到 `cwd` + 会话 id | ✅ 在 `agent/turn-stopping` 上拿得到 `agent` 对象与会话 |
+| 能做什么门禁 | 只限**产物式**（报告落盘 / 测试命令真跑过） | 产物式 **+ 对话式**（6 门禁是否真走完、13 问是否逐条答过） |
+| 改动生效 | 要重启 `dsh web` | 同样要重启，但无需外部脚本 |
+| 分发 | 仅本机 | npm / 市场 |
+
+**结论**：euthyna 的门禁核心（「6 门禁有没有真走完」）属于**对话内事实**，
+command hook 看不到对话 ⇒ **这条路走不通**。若门禁是项目主张的一部分，`B` 只能承担
+「账目是否交齐」这类产物检查，完整门禁必须走 `C`。
+
+> 这也意味着 **A → B → C 的中间一站 B 的价值比原先估计的低**。
+> 但 A 仍然必须先做：门禁的前提是方法论本身有效，而这一点只能靠真实审计结果证明。
 
 ### 拆分结构（方案 A）
 
 ```
-~/.dsh/skills/code-security-audit/
+~/.agents/skills/euthyna/
 ├── SKILL.md                      # 主入口：决策树 + 何时用/不用 + 元机制 M1–M9
 ├── references/
 │   ├── dependency-audit.md       # 阶段 A
@@ -421,16 +451,21 @@ Gate Review（被 P5 阻塞）: 6 门禁评估 → 裁定
 │   ├── devil-advocate.md         # 13 问 + 证据模板
 │   └── report-template.md        # 9 章报告模板
 └── hooks/
-    └── hooks.json                # 方案 B 时启用
+    └── hooks.json                # 方案 B 时启用（须用 command 形态，不能用 prompt）
 ```
+
+> 技能根用 `~/.agents/skills/`——🧪 实测这是 DSH 实际加载的用户级技能目录
+> （`agentsHome` 默认值），不是 `~/.claude/skills/`。
 
 主 SKILL.md 只放**决策树与不可跳过的规则**，细节全部下沉到 `references/`——这是原插件的渐进披露设计，也是它能在长会话里保持有效的原因。
 
-### 必须先决定的三件事
+### 必须先决定的四件事
 
 1. **`invocation` 策略**：`modelInvocable: true` 会让它在任何"看看这段代码"时都可能被触发；安全审计成本高（原文档自述 deep 路径约 6–8 小时），建议先设 `modelInvocable: false` + `userInvocable: true`，由你显式调用
-2. **确定性测量的落点**：依赖审计的 Python 工具链是保留（推荐）还是用 `osv-scanner`/`trivy` 替代——这决定方案 C 的代码量
-3. **首次试跑目标**：建议 `D:\axe-core\axe-core` 或 dsh-mneme 的某个真实 PR，用 quick 档限定 scope，先看误报率
+2. **确定性引擎的边界**：定位分析结论是**不重造**调用图 / 覆盖率 / 依赖 / 密钥扫描（它们都已被占满），
+   只补两件没人做的：**git 安全回归的机械判定** 与 **「符号 × 真实执行覆盖」的 join**。详见 `docs/positioning-zh.md` §7.2
+3. **事实产出契约**：引擎输出什么字段、判定层消费什么字段——这是本项目真正的核心资产
+4. **首次试跑目标**：建议 `D:\axe-core\axe-core` 或 dsh-mneme 的某个真实 PR，用 quick 档限定 scope，先看误报率
 
 ---
 
@@ -451,4 +486,5 @@ invocation:                        # 可选；缺省为两者皆 true
 - 目录包形态：`<技能名>/SKILL.md`（同级可放 `references/`、`scripts/`、`hooks/`）
 - 扁平形态：单个 `.md` 文件亦可被识别
 - `watch` 默认开启，Markdown 改动即时生效
-- hook 支持事件：SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / **Stop** / **SubagentStop**
+- hook 支持事件：SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / **Stop** / **SubagentStart** / **SubagentStop**
+- ⚠️ hook **只有 `command` 形态会运行**；`prompt` / `agent` / `http` / `mcp_tool` 会被跳过。Stop hook 的 stdin **不含对话内容**

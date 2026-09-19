@@ -2,6 +2,9 @@
 
 > 这份文件是给在本目录工作的 AI agent 读的。DSH 会自动加载它（候选文件名 `AGENTS.md` / `CLAUDE.md`，从项目根沿祖先链读取）。
 > 它承载上一轮对话的研究结论，目的是让你不必重新调研已经查清的事，也不必继承已经被推翻的错误结论。
+>
+> **注意**：「已推翻的结论」章节是**故意保留**的。目前已有三条结论翻车，
+> 保留翻车记录是为了让你不重蹈覆辙，不是让你继承它们。
 
 ---
 
@@ -18,13 +21,14 @@
 
 ## 当前阶段
 
-**方案选型，尚未写任何代码。** 已产出方法论与研究资料，但**定位分析需要重做**（见"已推翻的结论"）。
+**方案选型，尚未写任何代码。** 定位分析已按全类目重做完毕（`docs/positioning-zh.md`）。
+结论是**收窄**而非推翻：测量层与门禁层都已被占，euthyna 的位置在**「事实 → 判定 → 门禁」之间那一层**。
 
 ---
 
 ## 已核实的事实（不要重新调研）
 
-以下均通过阅读本机 DSH 源码核实，不是推测。
+以下均通过阅读本机 DSH 源码核实；带 🧪 的由 `tools/` 下脚本**实际运行**验证过，不是推测。
 
 ### 技能契约
 
@@ -36,36 +40,85 @@ DSH 技能 frontmatter 只认五个字段：`name` / `description` / `whenToUse`
 
 ### 技能发现路径（数字小者优先，项目级可覆盖全局）
 
+源码：`dsh-skill-filesystem/lib/index.js:150-187`（`roots()`）。
+
 ```
-<项目>/.dsh/skills       100
-<项目>/.agents/skills    200
-customSkillDirs          300
-~/.dsh/skills            400
-<agentsHome>/skills      500   （本机 agentsHome 指向 ~/.claude）
-bundledSkillDir          内置
+<项目>/.dsh/skills       100   PROJECT_DSH_RANK
+<项目>/.agents/skills    200   PROJECT_AGENTS_RANK
+customSkillDirs          300   CUSTOM_RANK
+<dshHome>/skills         400   USER_DSH_RANK    （本机 DSH_HOME=~\.dsh，该目录不存在）
+<agentsHome>/skills      500   USER_AGENTS_RANK
+bundledSkillDir          内置  BUNDLED_SKILL_RANK
 ```
+
+🧪 **`agentsHome` 实际指向 `~/.agents`，不是 `~/.claude`。**
+解析式 `config.agentsHome ?? process.env.DSH_AGENTS_HOME ?? join(homedir(), ".agents")`（`lib/index.js:78`）。
+本机实测 `DSH_AGENTS_HOME` 为空、profile 配置无 `agentsHome`，故走默认值。
+判决性实验：65 个仅存在于 `~/.agents/skills` 的技能出现在会话技能目录；5 个仅存在于
+`~/.claude/skills` 的技能（`avoid-ai-writing` / `de-ai-writer` / `efecto-fx` / `shuorenhua` /
+`stop-slop-zh`）**全部缺席**。
+
+> ⚠️ 上一轮写的「本机 agentsHome 指向 ~/.claude」**是错的**，已修正。
+> 另：`brainstorming` 等技能两个目录里都没有，说明还存在**插件提供的技能根**（plugin provider），
+> 上表只覆盖文件系统 provider。
 
 `watch` 默认开启，Markdown 改动即时生效；插件改动才需重启 `dsh web`。
 
-### hook 协议（本项目最关键的发现）
+### hook 协议（⚠️ 上一轮结论有严重错误，已实测修正）
 
-DSH 原生实现 Claude Code hook 协议（`@deepseek-ai/dsh-hooks-claude-code`），六个事件：
+DSH 原生实现 Claude Code hook 协议（`@deepseek-ai/dsh-hooks-claude-code`），支持**七个**事件：
 
 ```
-SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · SubagentStop
+SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · SubagentStart · SubagentStop
 ```
 
-`Stop` hook 返回 block 会让 agent 继续（源码文案 `continue: blocked by Stop hook`）。
-配置项 `configPath` 必填，接受 settings 格式（带 `hooks` 键）或裸 `hooks.json`。
+- `Stop` **能**阻塞：折叠为 `deny` 后走 `agent.steer()`，强制模型再跑一轮
+- `SubagentStop` **只观测，不能阻塞**（源码里该分支不做决策折叠）
+- `SubagentStart` 只能给仍在运行的同进程 child 注入上下文
 
-**意义**：Trail of Bits 的 `fp-check` 靠 `hooks.json` 的 Stop 门禁强制"没验证完不许收工"，
-而 DSH 原生支持同一套协议 —— **这套强制机制不需要写 JavaScript，JSON 可原样搬**。
-另有 `dsh-hooks-codex` 支持 Codex 格式。
+#### ❌ 上一轮的错误结论：「fp-check 的 hooks.json 可原样搬，不需要写 JavaScript」
+
+**实测推翻。原样搬过去一个 hook 都不会跑。** 两层原因，各自独立致命：
+
+1. **`prompt` 类型的 hook 被跳过。** fp-check 那两个 hook 都是 `"type": "prompt"`，
+   而 DSH 只执行 shell command handler（`lib/index.js:73`、`:147`）。
+   实测打出的警告：`skipping unsupported "prompt" hook on Stop (only command hooks run)`。
+2. **Stop hook 看不到对话。** 🧪 实测抓到的完整 stdin payload 就这些：
+
+   ```json
+   {"session_id":"…","transcript_path":"","cwd":"…","hook_event_name":"Stop","stop_hook_active":false}
+   ```
+
+   `transcript_path` **恒为空**（桥接文档：持久化 seam 不暴露产物路径，会话日志是 zstd 压缩的，
+   hook 脚本读不了）；没有 `last_assistant_message`；没有任何消息数组。
+   所以 fp-check 那句「扫描对话检查 6 门禁有没有走完」**在 DSH 上物理上做不到**。
+
+**仍然成立的**：拦截机制本身有效。🧪 实测三条通路：
+
+| 写法 | 结果 |
+|---|---|
+| 脚本 **退出码 2** + 理由写到 **stderr** | ✅ 拦截，理由逐字传给 agent |
+| stdout 输出 `{"hookSpecificOutput":{"hookEventName":"Stop","permissionDecision":"deny","permissionDecisionReason":"…"}}` | ✅ 拦截 |
+| stdout 输出 fp-check 的 `{"ok":false,"reason":"…"}`（退出码 0） | ❌ **不拦截** |
+
+折叠规则 `deny > ask > allow`；退出码 2 解码为 `block`（rank 3，等同 `deny`）。
+另：`configPath` 必填，接受 settings 格式（带 `hooks` 键）或裸 `hooks.json`。
+
+**三个必须自己处理的坑**：
+
+- **门禁必须自带限流**。DSH 没有轮次预算，`stop_hook_active` 恒为 `false`。
+  无条件阻塞 = 每个 step 都强制 continuation，**死循环**。
+- **hook 配置是进程级、启动时只读一次**。改 `hooks.json` 要重启 `dsh web`——与 Markdown 热重载不同。
+- **子代理拿不到门禁**。`SubagentStop` 不能阻塞，且 `agent_type` 恒为 `general-purpose`。
+
+复现：`node tools/check-stop-gate.mjs`（只读，不 spawn 进程，不写配置）。
+完整分析见 `docs/dsh-stop-gate-zh.md`。另有 `dsh-hooks-codex` 支持 Codex 格式。
 
 ### 跨 harness 可行性
 
-- DSH 加载 `~/.claude/skills`，兼容 Claude Code 与 Codex 的 hook 协议
-- Codex 直接支持 Claude 的 plugin marketplace 格式（Trail of Bits README 明载）
+- DSH 加载的技能根是 `~/.agents/skills`（见上），**不是** `~/.claude/skills`
+- Codex 直接支持 Claude 的 plugin marketplace 格式（Trail of Bits README 明载；
+  `auditor-skill` 与 `formalswarm` 都带 `.claude-plugin/marketplace.json`）
 - 所以 **`SKILL.md` 这一层天然跨三家**，一套 Markdown 三家共用
 - harness 特定的只有三件事：hook 配置格式、宿主插件代码、分发入口
 
@@ -80,45 +133,69 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 
 ## 已推翻的结论（不要继承）
 
-### ❌ "确定性测量（调用图 / 爆炸半径 / 测试覆盖）是生态空白区"
+### ❌ 1.「确定性测量（调用图 / 爆炸半径 / 测试覆盖）是生态空白区」
 
-**这个结论错了，起因是搜索方法论有缺陷。**
+起因是搜索方法论有缺陷：上一轮对 catalog 加了 `category === 'security'` 过滤，
+而这类工具本就散落在 `tools` / `git` / `dev` 类目。
+去掉过滤后：调用图 10+ 个、爆炸半径有 `dsh-blast-radius`、覆盖率有 `dsh-code-coverage`。
+完整对照表见 `docs/positioning-zh.md` §1。
 
-上一轮分析时对 catalog 加了 `category === 'security'` 过滤，而这类工具本来就散落在
-`tools` / `git` / `dev` 类目，导致漏判。去掉过滤后重搜的真实情况：
+**教训**：做覆盖分析**必须全类目搜索，不能按 category 过滤**。
 
-| 赛道 | 实际占位 |
-|---|---|
-| 代码图 / 调用图 | **已有 10+ 个**：`geml`(26★)、`dsh-codegraph`(9★)、`dsh-tool-lens`(dl=2186)、`dsh-code-index`(dl=1135)、`dsh-plugin-kit#codegraph`(dl=1956) 等 |
-| 波及面 + 调用方测试覆盖 | `dsh-blast-radius`（git 类目，0★，dl=517）已做 |
-| 覆盖率 | `dsh-code-coverage` |
+### ❌ 2.「证据门禁 / 不许收工是生态空白区」
 
-**教训**：做竞品/能力覆盖分析时，**必须全类目搜索，不能按 category 过滤**。
-`tools/probe-gaps.js` 已按此修正。
+**同样错了。** 至少四个项目在做，且比预想的深：
 
-### ⚠️ 尚未验证的空白假设
+- `dsh-doublecheck`（35★，dl=3120）：两个原生 Cordis 插件行、`intensity: remind/warn/block` 三档、
+  **红绿测试证据门**（监听 `edit`/`write` 与 `bash`/`pwsh` 的测试命令，用正则判定什么算「跑过测试」）
+- `formalswarm`（2★）：**「verdict 由真实退出码与用例数算出，绝不出自散文」**，fail-closed 到 `INCONCLUSIVE`
+- `dsh-expert-team`（1★）：质量门禁由插件代码强制，而非提示词请求
+- `loopx`（5893★）：持久化 Goal / Todo / 门禁 / 证据状态内核
 
-以下仍需在全类目下重验，不要当作已确立的事实：
+**教训**：`formalswarm` 已经把我们的核心命题说完了，差别只在它**与安全无关**。
 
-- 可利用性判定（6 门禁 / 恶魔代言人）是否真的无人做
-- git 历史回归分析（`git log -S` 追溯 + 重加检测）是否真的无人做
+### ❌ 3.「git 历史安全回归分析无人做」
+
+**被证伪。** `solanabr/auditor-skill`（54★，MIT）的 `commands/diff-audit.md` 第 14 行：
+
+> Git-blame removed security code — code deleted in a "fix" / "CVE" commit is a CRITICAL regression.
+
+另一处：`florianbuetow/claude-code` 的 `plugins/appsec/skills/regression`（但读自己的账本，不读 git）。
+
+**但只证伪了一半，剩下的一半才是我们的地盘**：两处占位**都是 Markdown 里的模型指令**，
+不是确定性引擎。`auditor-skill` 270 个文件里只有 6 个 `.sh`（14 KB），
+`allowed-tools: Read, Grep, Glob, Bash, Task`——让 LLM 自己跑 `git blame`、自己读 commit message 下判断。
+
+**教训**：「无人做 X」必须写成「无人做 X **且 X 的哪一层无人做**」。
+三条假设翻车方式一模一样：把**提示词层的方法论**误当成**确定性引擎**，
+或者只看 DSH 生态（3931 插件）就外推到 Claude Code / Codex 生态。
+
+### ⚠️ 仍未测完的一项（不许当成结论）
+
+「用 pickaxe（`git log -S`）**机械**检出被重新加回的漏洞」是否无人做——**属于未测，不属于已证**。
+子代理的查询被 PowerShell 当成命令行开关吃掉了（`unknown shorthand flag: 'S'`），那条实际没跑成。
+本轮复跑（改用 `gh api` URL 编码）返回结果过于宽泛——GitHub 代码搜索会分词——不足以下结论。
 
 ---
 
 ## 待办
 
-1. **用全类目重做竞品定位分析**（`tools/probe-gaps.js`），确立真正的空白区
-2. 确定确定性引擎的职责边界：做什么、明确不做什么
-3. 确定落地形态与推进顺序
-4. 决定引擎的事实产出契约（引擎输出字段 ↔ 判定层消费字段对齐）
+1. **确定确定性引擎的职责边界**：做什么、明确不做什么
+   （不做什么已定：不重造调用图 / 覆盖率 / 依赖扫描 / 密钥扫描，见 `docs/positioning-zh.md` §7.2）
+2. **决定引擎的事实产出契约**（引擎输出字段 ↔ 判定层消费字段对齐）
+3. **确定落地形态与推进顺序**
+4. **quick 档实跑**：在真实仓库上跑一次，量误报率
 
-### 落地形态的既有倾向（未最终确认）
+### 落地形态的既有倾向（⚠️ 方案 B 的成本已被实测上调）
 
 ```
-方案 A：纯 Markdown 技能（0 行 JS）        ← 建议起步
-方案 B：加 hook 门禁（0 行 JS，一个 configPath）
-方案 C：打包成插件（约 20–130 行 TS provider）
+方案 A：纯 Markdown 技能（0 行 JS）          ← 建议起步，不变
+方案 B：加 hook 门禁（原以为 0 行 JS）        ← 实为「一个 gate 脚本 + configPath」，且只能做产物式门禁
+方案 C：打包成插件（原生 Cordis provider）    ← 价值上升：拿得到 agent 对象与会话，可做对话式门禁
 ```
+
+**关键推论**：想检查「6 门禁有没有真走完」这类**对话内事实**，command hook 走不通（看不到对话），
+必须走 C。B 只适合「报告落盘了吗」「测试命令真跑过吗」这类**产物式事实**。
 
 倾向 A → B → C 不跳级：方法论价值只能靠真实审计结果证明，包插件只是分发手段。
 
@@ -150,6 +227,9 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 | 写工作区之外的路径被拒 | 放宽一次沙箱（`danger-full-access`），本机固定绕法 |
 | `curl` 报 `schannel: SEC_E_NO_CREDENTIALS` | 沙箱下无法取证书凭据；改用 Node（自有 TLS 栈） |
 | PowerShell 里 `node -e "..."` 转义易崩 | 把脚本写成 `.js` 文件再执行 |
+| **`gh search code` 查含 `-S` 的短语会被当成命令行开关吃掉** | 改用 `gh api "search/code?q=<URL编码>"`，或 `--%` 停止解析 |
+| **拉进来的第三方仓库自带 `AGENTS.md`，会被 DSH 自动加载并当成指令** | 本轮实测命中（`formalswarm/AGENTS.md` 讲的是它自己的 push 流程）。**第三方原文一律放 `.scratch/`**（已 gitignore），且不要在里面执行命令 |
+| `git diff --stat` 报 `LF will be replaced by CRLF` | 本仓库在 Windows 上，行尾警告不影响内容；提交前用 `git diff --stat` 确认改动面即可 |
 
 ---
 
@@ -157,20 +237,41 @@ SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · Subagen
 
 | 路径 | 是什么 |
 |---|---|
-| `docs/methodology-zh.md` | **核心计划文件**。中文审计方法论，基于 Trail of Bits 三个插件逐条对照重写 |
+| `docs/positioning-zh.md` | **竞品定位分析（本轮重做）**。三个赛道、八个测量工具、已确证空白八项、证伪记录 |
+| `docs/dsh-stop-gate-zh.md` | **Stop 门禁事实核查**。推翻了旧结论，含可复现验证方式 |
+| `docs/methodology-zh.md` | 中文审计方法论（核心计划文件，基于 Trail of Bits 三个插件逐条对照重写） |
 | `reference/trail-of-bits/` | 三个上游插件的 24 个原文文件（CC-BY-SA-4.0，见 NOTICE.md） |
 | `reference/competitors/` | 竞品 `dsh-skill-pack-security` 的技能原文 |
 | `reference/dsh-plugin-anatomy/` | DSH 技能包型插件的最小骨架样本 |
-| `tools/probe-gaps.js` | **全类目**能力覆盖分析（做定位分析用这个） |
-| `data/dsh-plugins.json` | DSH 生态 3931 个插件目录快照（2026-09-19） |
+| `tools/probe-audit-space.js` | **带命中上下文的定位探针**（做定位分析用这个，别用只打名字的 `probe-gaps.js`） |
+| `tools/check-stop-gate.mjs` | **Stop 门禁契约的可复现验证**（端到端跑真实 hook 桥接） |
+| `tools/probe-gaps.js` | 旧版全类目覆盖探针（只打名字，仅作粗筛） |
+| `data/dsh-plugins.json` | DSH 生态 3931 个插件目录快照（`updated=2026-09-18`） |
+| `data/audit-space.txt` | `probe-audit-space.js` 的完整输出（691 行，含命中上下文） |
+| `.scratch/` | 本轮拉下来的第三方原文与子代理产物（**已 gitignore，不入库**） |
+
+> `tools/` 下所有脚本已改为读**仓库内**的 `data/dsh-plugins.json`，不再依赖 `D:\deepseek harness\`。
 
 方法论文档的详细内容（九个元机制、三阶段流程、6 门禁、13 条误报清单、9 类缺陷专项要求）
 全部在 `docs/methodology-zh.md`，本文件不重复。
 
 ---
 
-## 许可注意
+## 许可注意（⚠️ 已找到判例，但尚未最终拍板）
 
 `reference/trail-of-bits/` 是 **CC-BY-SA-4.0**（Trail of Bits）。
-`docs/methodology-zh.md` 基于其重写，若被认定为改编物则需以同许可分发。
-本仓库自身许可证**尚未确定**，发布前需先厘清。详见 `NOTICE.md`。
+
+**已核实的法律事实**（CC 官方 legalcode 原文，非二手转述）：
+- `Adapted Material` 的定义**明确包含 "translated"**——所以逐条对照的中文重写很可能构成改编物
+- ShareAlike（§3(b)）只在**你分发（Share）**改编物时生效，且**只约束改编物本身**，不传染整个仓库
+
+**同行判例**（`solanabr/auditor-skill` 的 `ATTRIBUTION.md`，MIT 许可，已发布）：
+- 上游做成 **git submodule（gitlink 是引用不是拷贝）** ⇒ 不触发 ShareAlike
+- ToB 的**方法论模式用自己的话重新实现**，逐条署名
+
+同源判例：`dsh-skill-pack-security` 是 Apache-2.0，其 `THIRD_PARTY_NOTICES.md` 声明八个技能
+与 `plugin_vet` 引擎**全部原创，未移植任何第三方代码**。
+
+**待拍板**：本仓库采用「引用不拷贝 + 原创重写」以保留 MIT/Apache 的自由度，
+还是接受 `docs/methodology-zh.md` 为改编物、对其单独适用 CC-BY-SA-4.0 的分层许可。
+详见 `NOTICE.md`。**发布前必须定。**

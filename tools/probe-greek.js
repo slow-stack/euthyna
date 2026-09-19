@@ -1,7 +1,7 @@
 // Probe Greek-root candidate names: DSH catalog + npm availability.
 const http = require('http');
 const https = require('https');
-const d = require('D:/deepseek harness/dsh-plugins.json');
+const d = require(require('path').join(__dirname, '..', 'data', 'dsh-plugins.json'));
 
 const PROXY = { host: '127.0.0.1', port: 7897 };
 const NAMES = [

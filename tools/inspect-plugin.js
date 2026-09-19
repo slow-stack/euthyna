@@ -1,5 +1,5 @@
 // Inspect specific plugins of interest in detail.
-const d = require('D:/deepseek harness/dsh-plugins.json');
+const d = require(require('path').join(__dirname, '..', 'data', 'dsh-plugins.json'));
 const want = process.argv.slice(2);
 for (const w of want) {
   const p = d.plugins.find((x) => x.name.toLowerCase() === w.toLowerCase() || x.name.toLowerCase().includes(w.toLowerCase()));

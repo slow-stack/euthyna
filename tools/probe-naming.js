@@ -1,5 +1,5 @@
 // Analyze plugin naming conventions in the DSH catalog.
-const d = require('D:/deepseek harness/dsh-plugins.json');
+const d = require(require('path').join(__dirname, '..', 'data', 'dsh-plugins.json'));
 const all = d.plugins;
 
 const isDshPrefix = (n) => /^dsh[-_]/i.test(n) || /^@[^/]+\/dsh[-_]/i.test(n);

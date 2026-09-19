@@ -1,5 +1,5 @@
 // Probe which candidate plugin names are already taken in the DSH ecosystem.
-const d = require('D:/deepseek harness/dsh-plugins.json');
+const d = require(require('path').join(__dirname, '..', 'data', 'dsh-plugins.json'));
 const probes = ['audit', 'verdict', 'conductor', 'gate', 'proof', 'finding', 'engine',
   'blast', 'impact', 'trace', 'ledger', 'witness', 'adjudicate', 'tribunal',
   'jury', 'sentinel', 'gavel', 'seal', 'attest', 'orchestrat', 'verif', 'corrobor'];

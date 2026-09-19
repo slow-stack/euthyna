@@ -1,7 +1,7 @@
 // Re-verify "gap" claims across ALL categories (no category filter).
 // The earlier analysis filtered to category==='security', which silently
 // excluded cross-category tools like dsh-blast-radius (git).
-const d = require('D:/deepseek harness/dsh-plugins.json');
+const d = require(require('path').join(__dirname, '..', 'data', 'dsh-plugins.json'));
 
 const PATTERNS = {
   '可通过性/可利用性判定': /exploitab|可利用|false.?positive|误报|triage|分诊|verdict|裁定|判定/i,

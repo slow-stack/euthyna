@@ -1,0 +1,691 @@
+# euthyna 定位探针 — 全类目（无 category 过滤）
+快照: D:\euthyna\data\dsh-plugins.json
+目录 updated=2026-09-18 count=3931
+
+
+====================================================================================================
+## verdict — 结论裁定 / 可利用性判定（euthyna 的核心主张）
+全类目 31 命中 | 类目分布: workflow:8 security:4 git:4 dev:4 skill:3 memory:3 tools:1 browser:1 notify:1 agi:1 ui:1
+====================================================================================================
+
+  [workflow] dsh-lowtide#dsh-lowtide  156*  dl=2013  dsh-lowtide
+    repo: https://github.com/KelaoHu/dsh-lowtide/tree/main/packages/dsh-lowtide
+    [en] …mework with four execution strategies, L1–L3 semi/full-auto adjudication, in-place task editing and preflight checks, built on the Cordis microkernel, one build for both desktop and web.…
+
+  [workflow] dsh-research-report  133*  dl=3350  dsh-research-report
+    repo: https://github.com/PerryLink/dsh-research-report
+    [en] …ned sealed reports where every claim carries a verification verdict and the manifest hash seals the directory, and retrieval orchestration that reuses the ctx.web and ctx.jobs seams.…
+
+  [skill] dsh-mattpocock-skills-deck  71*  dl=5160  dsh-mattpocock-skills-deck
+    repo: https://github.com/FeatherHunter/dsh-mattpocock-skills-deck
+    [en] …kills bundled (mattpocock/skills v1.2.3, zero manual setup: triage, grilling, wayfinder, handoff) in a right-side details panel. GitHub issues fully supported; Markdown files in preview; GitLab not currently supported. H…
+
+  [skill] embedded-workbench  12*  dl=1652  dsh-embedded-workbench
+    repo: https://github.com/AmethystLuna/embedded-workbench
+    [en] …TOS, interrupts, NVM storage, Keil MDK, ARMCLANG, HardFault triage, state machines, architecture, and LVGL patterns.…
+
+  [security] dsh-redteam-mode#packages/redteam-bundle  8*  dl=1146  dsh-redteam-mode
+    repo: https://github.com/Jueze-2019/dsh-redteam-mode/tree/main/packages/redteam-bundle
+    [en] …a planner session runs a five-role agent team (recon, asset triage, vulnerability discovery, exploitation, internal pivot) at up to three concurrent agents, preflight-checking skills and resources and asking for any miss…
+
+  [security] weiwen-law-dsh  7*  dl=0  no-npm
+    repo: https://github.com/Shaky77/weiwen-law-dsh
+    [en] …White-box causal guardrail for dsh: every tool call is adjudicated before execution along a deterministic causal logic chain — blocks destructive and credential-file operations, escalates repeated boundary violations, cu…
+
+  [git] dsh-github-skills  5*  dl=484  dsh-github-skills
+    repo: https://github.com/Starfie1d1272/dsh-github-skills
+    [en] …Four GitHub workflow skills for PR triage, review feedback, GitHub Actions diagnosis, and safe draft-PR publishing, reusing existing DSH capabilities with gh/git fallbacks.…
+
+  [skill] dsh-skill-pack  4*  dl=377  @jeremy9682/dsh-skill-pack
+    repo: https://github.com/jeremy9682/dsh-skill-pack
+    [en] …11 shareable workflow skills (handoff, triage, to-spec, to-tickets, wayfinder, teach, wait-what, dsh-mode-routing, ask-matt, overnight-execution, full-throttle) as an installable skill pack.…
+
+  [tools] dsh-graphify-plugin  4*  dl=0  no-npm
+    repo: https://github.com/QuantumKuba/dsh-graphify-plugin
+    [en] …opological search, god nodes discovery, and PR blast radius triage.…
+
+  [git] dsh-pr-board  2*  dl=160  dsh-pr-board
+    repo: https://github.com/delock/dsh-pr-board
+    [zh] …DSH 侧边栏的维护者 + 开发者 PR 看板：五状态评审队列（等我 / 等作者 / 可合并 / 已合并 / 待分诊）、三列 issue 看板、跨仓库跟踪自己 PR 的 mine 视图（我的回合 / 等别人 / 已合并），附 CI 汇总徽章与不活跃过滤，点卡片一键打开或新建对应的评审会话。…
+
+  [workflow] formalswarm  2*  dl=0  no-npm
+    repo: https://github.com/fashionmascherine-svg/formalswarm
+    [en] …Runs a thesis-antithesis-seal debate whose verdict is computed from real command exit codes and case counts, never from agent prose.…
+
+  [workflow] dsh-expert-team  1*  dl=2495  @yangdcm/dsh-expert-team
+    repo: https://github.com/yangdcm/dsh-expert-team
+    [en] …d task cannot be marked completed, quality findings must be adjudicated by the reviewer or QA role, and coverage gaps or rework over budget appear live in the overlay and in /team status. Ships a live team overlay (phase…
+
+  [workflow] dsh-autoresume  1*  dl=908  dsh-autoresume
+    repo: https://github.com/shengyvself/dsh-autoresume
+    [en] … → settled, hands control back to the user). Skipped (avoid false positives / loops): assistant/message last, or turn/end reason=completed; cancelled, or non-network / non-billing errors (config / model errors like UNKNO…
+
+  [workflow] dsh-odoo-sdd  1*  dl=262  dsh-odoo-sdd
+    repo: https://github.com/fhidalgodev/dsh-odoo-sdd
+    [en] …module code or live configuration, then require a persisted verdict backed by evidence from a real Odoo instance, with fail-closed gates, human-approved batches in a declared environment, Odoo's own CSV/Excel importer, a…
+
+  [agi] dsh-expert-orchestrator  1*  dl=0  no-npm
+    repo: https://github.com/mario841859784/dsh-expert-orchestrator
+    [en] …Agent preset plugin for DeepSeek Harness that triages every request, delegates implementation to an expert, and schedules parallel work through a dependency-DAG taskboard and a file-based message bus before an independen…
+
+  [workflow] review-workflow  1*  dl=0  no-npm
+    repo: https://github.com/LeslieWylie/review-workflow
+    [en] … chair reconciles disagreement by anchor match then Δ-level adjudication; an independent critic audits the process. Works for design, code, paper or project review.…
+
+  [git] harness-github  1*  dl=0  no-npm
+    repo: https://github.com/988hj7tczd-oss/harness-github
+    [en] …DSH GitHub connector: review PRs, triage issues, debug CI, prepare changes (18 tools, gh-first + REST fallback, approval-gated writes).…
+
+  [git] dsh-ci-co-pilot  1*  dl=0  no-npm
+    repo: https://github.com/temotee2103/dsh-ci-co-pilot
+    [en] …t for DeepSeek Harness: PR review, CI failure fixing, issue triage and release notes.…
+
+  [dev] cadence-skill  1*  dl=0  no-npm
+    repo: https://github.com/myd74108520/cadence-skill
+    [en] … page refs, dangerous-intent interception and CIW error-log triage. Host half has zero third-party dependencies.…
+
+  [dev] dsh-wrapped  1*  dl=0  no-npm
+    repo: https://github.com/rand0wn/dsh-wrapped
+    [en] … vs. thinking time, decode speed, and a tool/thinking-ratio verdict.…
+
+  [security] dsh-trust-check  0*  dl=1665  dsh-trust-check
+    repo: https://github.com/liuwenji007/dsh-trust-check
+    [en] … reproducible, zero-token. Disclosure only — not a security verdict, never a safety claim.…
+
+  [security] dsh-plugin-gate  0*  dl=1099  dsh-plugin-gate
+    repo: https://github.com/863683348/dsh-plugin-gate
+    [en] …al directories or npm tarballs, returning a BLOCK/WARN/PASS verdict before "dsh plugin add".…
+
+  … 另有 9 条命中在 dev/security/workflow/memory/ui 等类目（低星/低下载，见 --all）
+
+====================================================================================================
+## taint — 数据流 / 污点追踪（判定层依赖的确定性事实之一）
+全类目 9 命中 | 类目分布: tools:3 vision:2 docs:1 dev:1 workflow:1 security:1
+====================================================================================================
+
+  [tools] dsh-mcp-lazy  3*  dl=917  @yilinxiao/dsh-mcp-lazy
+    repo: https://github.com/leaforbook/dsh-mcp-lazy
+    [en] … every request. Falls open to normal visibility on any uncertainty, and the original MCP keeps ownership of execution, permissions and process lifecycle. Also supports explicit lazy connections with warm reuse, bounded r…
+
+  [dev] dsh-write-rule-guard  3*  dl=583  dsh-write-rule-guard
+    repo: https://github.com/better-er/dsh-write-rule-guard
+    [en] …he tool runs, with configurable messages and same-turn pwsh propagation; default rule matches full-width parentheses.…
+
+  [workflow] deepseek-harness-orchestrate  0*  dl=609  dsh-tool-orchestrate
+    repo: https://github.com/apheli0os/deepseek-harness-orchestrate
+    [en] …k layers in parallel through workflow-backed subagents, and propagates failures deterministically.…
+
+  [tools] dsh-codebase-memory  0*  dl=0  no-npm
+    repo: https://github.com/jiayan-xu/dsh-codebase-memory
+    [en] …ippets, architecture overview with Leiden communities, call/data-flow/cross-service traces, graph-augmented grep.…
+
+  [tools] axiom-dre-dsh  0*  dl=0  no-npm
+    repo: https://github.com/ListenJ/axiom-dre-dsh
+    [en] …ntal models and synapse memory - strengthens information certainty.…
+
+  [security] dsh-taintguard  0*  dl=0  no-npm
+    repo: https://github.com/sashankh/dsh-taintguard
+    [en] …Taints the agent when tool results carry untrusted content, gates the privileged calls that follow, and refuses credentials passed to network-capable tools in every mode.…
+
+  … 另有 3 条命中在 tools/security 等类目（低星/低下载，见 --all）
+
+====================================================================================================
+## githist — git 历史回归分析（git log -S 追溯 + 重加检测）
+全类目 11 命中 | 类目分布: skill:3 dev:3 remote:1 tools:1 workflow:1 memory:1 ui:1
+====================================================================================================
+
+  [skill] qa-skills  33*  dl=734  dsh-qa-skills
+    repo: https://github.com/fishzjp/qa-skills
+    [en] …d review, E2E (Playwright) and API automation, exploratory, regression scope and bug analysis, backed by a shared knowledge base with format rules, risk model and schema validators.…
+
+  [dev] dsh-eval-harness  13*  dl=0  no-npm
+    repo: https://github.com/BiBoyang/dsh-eval-harness
+    [en] … args, results and token usage, with a baseline gate for CI regression.…
+
+  [tools] dsh-origin-plugin  8*  dl=1653  dsh-origin-plugin
+    repo: https://github.com/Fantasality/dsh-origin-plugin
+    [en] … template search, EPS export, file-access whitelist, visual regression baseline, and editable OPJU delivery with deterministic readback verification.…
+
+  [skill] logicprobe  5*  dl=2469  dsh-logicprobe
+    repo: https://github.com/AmethystLuna/logicprobe
+    [en] …ation for state machines and data models, with before/after regression, domain constraints, and concurrency risk mining.…
+
+  [workflow] dsh-auto-evolve  3*  dl=1016  dsh-auto-evolve
+    repo: https://github.com/lispking/dsh-auto-evolve
+    [en] …tations — with a versioned ledger and automatic rollback on regression.…
+
+  [skill] Stata-AI-Skill#dsh-plugin  3*  dl=328  @zihaovistonwang/stata-ai-skill
+    repo: https://github.com/ZihaoVistonWang/Stata-AI-Skill/tree/main/dsh-plugin
+    [en] …s with DSH (macOS/Windows binaries bundled), so you can run regressions, do-files and econometrics workflows with no manual setup.…
+
+  [dev] dsh-windtunnel  1*  dl=0  no-npm
+    repo: https://github.com/BotonJ/dsh-windtunnel
+    [en] …Contract regression harness for plugin authors: a scripted LLM adapter drives the real pipeline in isolated child processes with session-event assertions (load/contract/behavior/fault layers); zero API key, CI-ready.…
+
+  [dev] dsh-shipcheck  0*  dl=0  no-npm
+    repo: https://github.com/guo6x/dsh-shipcheck
+    [en] …wser content, accessibility, runtime, network, and baseline regression reports with screenshots.…
+
+  … 另有 3 条命中在 ui/dev 等类目（低星/低下载，见 --all）
+
+====================================================================================================
+## callgraph — 调用图 / 爆炸半径（确定性事实之二）
+全类目 19 命中 | 类目分布: tools:11 dev:3 workflow:2 security:1 git:1 ui:1
+====================================================================================================
+
+  [tools] geml#integrations/dsh-plugin  26*  dl=733  @geml/dsh-plugin
+    repo: https://github.com/geml-spec/geml/tree/main/integrations/dsh-plugin
+    [en] … and a code-graph skill that builds and navigates a project call graph as GEML codemaps.…
+
+  [tools] dsh-codegraph  9*  dl=0  no-npm
+    repo: https://github.com/jiangzhenguo/dsh-codegraph
+    [en] …ed code knowledge graph (symbol query, explore, node trail, callers/callees, impact, affected tests) instead of grepping files.…
+
+  [dev] graphlint#integrations/dsh  7*  dl=739  dsh-graphlint
+    repo: https://github.com/AngelosZou/graphlint/tree/main/integrations/dsh
+    [zh] …面向 AI 生成代码的死代码检测：graphlint 构建依赖图，定位从任何入口不可达的代码，以实现代码库清理和功能有效性理解，并为 DSH 智能体提供 graphlint_query / graphlint_build / graphlint_config 工具与 graphlint 技能。…
+
+  [tools] dsh-plugin-kit#codegraph  6*  dl=1956  @hyzyn/dsh-codegraph
+    repo: https://github.com/hyzyn/dsh-plugin-kit/tree/main/packages/codegraph
+    [en] …ard in Settings → Plugins with index status, symbol search, callers / callees / impact views, and one-click sync / index; hosts the codegraph MCP server and injects a CodeGraph usage guideline into the system prompt. Req…
+
+  [tools] dsh-tool-lens  5*  dl=2186  @trench-xinxin/dsh-tool-lens
+    repo: https://github.com/trench-xinxin/dsh-tool-lens
+    [en] …ph and architecture intelligence tool for call hierarchies, blast radius, circular dependencies, domain slices, and full-stack API contracts.…
+
+  [tools] dsh-code-index  4*  dl=1135  dsh-code-index
+    repo: https://github.com/lemonxiny55/dsh-code-index
+    [en] …nk that auto-updates in the system prompt, a function-level call graph via code_refs, and opt-in circular-dependency / orphan-module checks via code_health.…
+
+  [tools] codegraph  4*  dl=0  no-npm
+    repo: https://github.com/JohnXu22786/codegraph
+    [en] … (Python/JS/TS/Go/Java/Rust) into a SQLite index and answer callers, callees, deps, dependents, impact and full-text questions over it.…
+
+  [tools] dsh-graphify-plugin  4*  dl=0  no-npm
+    repo: https://github.com/QuantumKuba/dsh-graphify-plugin
+    [en] …ence tools, topological search, god nodes discovery, and PR blast radius triage.…
+
+  [tools] dsh-tool-codegraph  2*  dl=850  @m1khal3v/dsh-tool-codegraph
+    repo: https://github.com/m1khal3v/dsh-tool-codegraph
+    [en] …s colbymchenry/codegraph into agent tools - status, search, callers/callees, impact, explore, and more.…
+
+  [security] dsh-sonarqube  2*  dl=440  dsh-sonarqube
+    repo: https://github.com/maxmilian/dsh-sonarqube
+    [en] …search, single hotspot detail, and coverage, duplication or caller-selected measures. Issue and hotspot results carry a normalized location with component key, file path, line and text range.…
+
+  [tools] dsh-grafana-query  2*  dl=423  dsh-grafana-query
+    repo: https://github.com/maxmilian/dsh-grafana-query
+    [zh] …instant 与 range PromQL 查询、当前告警状态与已配置的告警规则。range 查询会按点数预算降采样；调用方显式指定的 step 若会超量则直接拒绝，而不是静默改写，避免模型拿到与预期不同分辨率的数据。…
+
+  [dev] dsh-plugin-maker  2*  dl=0  no-npm
+    repo: https://github.com/goatliamia/dsh-plugin-maker
+    [en] … Harness with scaffolding, contract checks, plugin vetting, impact analysis, and upstream compatibility tracking.…
+
+  [workflow] dsh-expert-team  1*  dl=2495  @yangdcm/dsh-expert-team
+    repo: https://github.com/yangdcm/dsh-expert-team
+    [zh] …覆盖率缺口与超预算返工实时显示在浮层与 /team status。附带 live 团队浮层（阶段、成员与逐角色模型、任务依赖图、工件预览、人工决策按钮）、可跨会话恢复的常驻团队模式，以及按 run 的 token 与耗时记账。零运行时依赖、无构建步骤。…
+
+  [tools] dsh-graft-plugin  1*  dl=0  dsh-graft-plugin
+    repo: https://github.com/adithyanraj03/dsh-graft-plugin
+    [en] … the code, and gives the model graft_ask, graft_grep, graft_callers, graft_skeleton and graft_map as native tools.…
+
+  [dev] dsh-plugin-topology  0*  dl=830  @sleetdrop/dsh-plugin-topology
+    repo: https://github.com/sleetdrop/dsh-plugin-topology
+    [zh] …DeepSeek Harness 插件依赖图检查器：把运行中的 Cordis 插件/服务拓扑快照为可缩放的浏览器面板图，附带图论指标，以及面向模型的 graph.render 工具。…
+
+  [workflow] deepseek-harness-orchestrate  0*  dl=609  dsh-tool-orchestrate
+    repo: https://github.com/apheli0os/deepseek-harness-orchestrate
+    [zh] …DSH 声明式任务 DAG 编排：校验依赖图，通过工作流子智能体并行执行拓扑任务层，并确定性传播失败。…
+
+  [git] dsh-blast-radius  0*  dl=517  dsh-blast-radius
+    repo: https://github.com/haoku123/dsh-blast-radius
+    [en] …Reports the semantic blast radius of agent code edits: which symbols changed, who calls them, and which of those callers have no covering test.…
+
+  [tools] dsh-codegraph-plugin  0*  dl=0  no-npm
+    repo: https://github.com/errrepe/dsh-codegraph-plugin
+    [en] …I as eight code-intelligence tools for DSH — symbol search, callers/callees, impact analysis, codebase exploration, symbol/file reading, index status and sync.…
+
+  … 另有 1 条命中在 tools 等类目（低星/低下载，见 --all）
+
+====================================================================================================
+## coverage — 测试覆盖映射（确定性事实之三）
+全类目 14 命中 | 类目分布: tools:4 security:2 dev:2 ui:1 browser:1 workflow:1 remote:1 git:1 theme:1
+====================================================================================================
+
+  [security] dsh-plugin-vetting  4*  dl=868  dsh-plugin-vetting
+    repo: https://github.com/truelove-dreamer/dsh-plugin-vetting
+    [en] …stence) and over-privileged path use, transitive-dependency coverage, official-package hash baseline for supply-chain tamper detection, and an optional plugin-tool call gate.…
+
+  [tools] dsh-map-tools  3*  dl=2730  dsh-map-tools
+    repo: https://github.com/HorusJiang/dsh-map-tools
+    [en] …by default, with an optional Amap (高德) key for better China coverage.…
+
+  [tools] dsh-insurance-experts#insurance-product-analyst  2*  dl=484  @kevinsales/dsh-insurance-product-analyst
+    repo: https://github.com/kevinchu1981/dsh-insurance-experts/tree/main/packages/insurance-product-analyst
+    [en] …on & proposal expert — clause analysis, cost-effectiveness, coverage planning, generates verifiable client-facing PDF proposals.…
+
+  [security] dsh-sonarqube  2*  dl=440  dsh-sonarqube
+    repo: https://github.com/maxmilian/dsh-sonarqube
+    [en] …sue and Security Hotspot search, single hotspot detail, and coverage, duplication or caller-selected measures. Issue and hotspot results carry a normalized location with component key, file path, line and text range.…
+
+  [tools] cn-linebreak  2*  dl=229  cn-linebreak
+    repo: https://github.com/chiang21fcb/cn-linebreak
+    [en] …breaking: checks explicit-`<br>` orphan lines, keep-all CSS coverage, CJK line-start/line-end punctuation rules, and protected-phrase splits, then inserts <wbr> at natural breakpoints; exposes a cn_linebreak_audit tool f…
+
+  [workflow] dsh-expert-team  1*  dl=2495  @yangdcm/dsh-expert-team
+    repo: https://github.com/yangdcm/dsh-expert-team
+    [en] …indings must be adjudicated by the reviewer or QA role, and coverage gaps or rework over budget appear live in the overlay and in /team status. Ships a live team overlay (phases, roster with per-role models, task DAG, ar…
+
+  [dev] dsh-code-coverage  1*  dl=267  dsh-code-coverage
+    repo: https://github.com/SleepEggTart/dsh-code-coverage
+    [en] …DSH session logs to attribute AI-written files, overlays c8 coverage, and reports AI vs human code coverage with a trust score, plus a check/fix/verify tool loop for closing test gaps.…
+
+  [git] dsh-blast-radius  0*  dl=517  dsh-blast-radius
+    repo: https://github.com/haoku123/dsh-blast-radius
+    [en] …changed, who calls them, and which of those callers have no covering test.…
+
+  [tools] dsh-tool-reading-map  0*  dl=0  no-npm
+    repo: https://github.com/he-yufeng/dsh-tool-reading-map
+    [en] …Give the agent a priority-ranked, coverage-honest map of any codebase before it edits.…
+
+  [dev] dsh-trend-radar  0*  dl=0  no-npm
+    repo: https://github.com/863683348/dsh-trend-radar
+    [en] … trends — new plugins, star gainers, category heat, awesome coverage — plus a keyword radar for new plugins and star surges.…
+
+  … 另有 4 条命中在 git/theme/tools/dev 等类目（低星/低下载，见 --all）
+
+====================================================================================================
+## sarif — 发现归一化 / SARIF 输出（交付契约）
+全类目 15 命中 | 类目分布: security:4 ui:3 tools:3 docs:1 git:1 usage:1 vision:1 market:1
+====================================================================================================
+
+  [security] dsh-redteam-mode#packages/redteam-bundle  8*  dl=1146  dsh-redteam-mode
+    repo: https://github.com/Jueze-2019/dsh-redteam-mode/tree/main/packages/redteam-bundle
+    [en] … and resources and asking for any missing key or VPS first; findings land in a local SQLite fact base with discovery timestamps, shown in a persistent right-side console (asset mapping with a discovery timeline, agent ro…
+
+  [tools] dsh-tool-normalizer  5*  dl=3976  dsh-tool-normalizer
+    repo: https://github.com/merenguesL/dsh-tool-normalizer
+    [name] dsh-tool-normalizer
+
+  [tools] dsh-tool-schema  3*  dl=0  no-npm
+    repo: https://github.com/omdsh-dev/dsh-tool-schema
+    [en] …JSON Schema validation: validate/paths/explain/normalize.…
+
+  [security] dsh-sonarqube  2*  dl=440  dsh-sonarqube
+    repo: https://github.com/maxmilian/dsh-sonarqube
+    [en] …caller-selected measures. Issue and hotspot results carry a normalized location with component key, file path, line and text range.…
+
+  [git] dsh-code-review  1*  dl=3499  @michengai/dsh-code-review
+    repo: https://github.com/MichengAI/dsh-code-review
+    [en] …ed changes, a commit, or custom instructions) and returns a findings report in the current conversation, with English or Chinese output from the host locale.…
+
+  [security] dsh-code-security  1*  dl=1024  dsh-code-security
+    repo: https://github.com/STARDUSTLC666/dsh-code-security
+    [en] …w: 40+ rules, secret entropy detection, staged-diff review, SARIF export, baseline acceptance, SBOM-lite dependency inventory and health self-check.…
+
+  [tools] model-catalog  1*  dl=0  no-npm
+    repo: https://github.com/JohnXu22786/model-catalog
+    [en] … pricing and capabilities from OpenAI-compatible API hosts, normalizes them, and emits ready-to-use model configs for dsh.…
+
+  [security] dsh-hawkeye-scan#npm  1*  dl=0  no-npm
+    repo: https://github.com/liuqingman/dsh-hawkeye-scan/tree/main/npm
+    [en] …urce-code security scanning workbench: 5 model tools (start/finding/status/report/list) plus a /hawkeye web UI and JSON/Markdown/HTML vulnerability reports; zero-dependency Cordis plugin, installable as agent preset or n…
+
+  … 另有 7 条命中在 tools/security/usage/ui/vision/market 等类目（低星/低下载，见 --all）
+
+====================================================================================================
+## orchestration — 审计编排（多工具/多阶段串成一次审计）
+全类目 44 命中 | 类目分布: workflow:29 skill:4 tools:3 security:2 memory:2 model:1 docs:1 remote:1 agi:1
+====================================================================================================
+
+  [tools] argo#dsh-plugin  147*  dl=0  no-npm
+    repo: https://github.com/taxueseek/argo/tree/main/packages/dsh-plugin
+    [en] … structured modality cards, 10 MCP tools plus wide_research orchestration, and a fetch-verify loop that backfills evidence scores.…
+
+  [workflow] dsh-research-report  133*  dl=3350  dsh-research-report
+    repo: https://github.com/PerryLink/dsh-research-report
+    [en] …ct and the manifest hash seals the directory, and retrieval orchestration that reuses the ctx.web and ctx.jobs seams.…
+
+  [workflow] dsh_workflow  128*  dl=0  no-npm
+    repo: https://github.com/icetomoyo/dsh_workflow
+    [en] …UltraCode-style multi-agent orchestration: a generatable, savable, governable, observable, resumable workflow layer.…
+
+  [security] dsh-pentester  25*  dl=2642  dsh-pentester
+    repo: https://github.com/fb0sh/dsh-pentester
+    [en] …PTES-based penetration testing plugin with Root-Orchestrator architecture for DeepSeek Harness.…
+
+  [workflow] dsh-deep-research  25*  dl=0  no-npm
+    repo: https://github.com/omdsh-dev/dsh-deep-research
+    [en] …Adaptive deep-research orchestrator built on the official workflow engine.…
+
+  [security] dsh-skill-pack-security  13*  dl=0  no-npm
+    repo: https://github.com/PerryLink/dsh-skill-pack-security
+    [en] …ndency audit, supply-chain review, prompt-injection review, audit orchestration, threat modeling, vuln intel, incident response) in Chinese and English editions, with an npm provider bundle that mounts the skills and reg…
+
+  [skill] dsh-academic-research-skills  12*  dl=0  no-npm
+    repo: https://github.com/nullptr-DZF/dsh-academic-research-skills
+    [en] …e, a multi-perspective peer-review panel, and an end-to-end orchestrator, plus sixteen /ars-* commands.…
+
+  [tools] dsh-comfyui-canvas  8*  dl=792  dsh-comfyui-canvas
+    repo: https://github.com/wbin0001/dsh-comfyui-canvas
+    [zh] …实时落到你眼前的画布上，产出图像、音乐、视频、3D。从灵感到成品，全程不离开对话，不用切换任何前端工具：画布操作——搭建编排、读写工作流、修改节点、连线、运行、调整参数、工作流查错，所见即所得，实时落在你眼前的画布上；生产任务——批量扫参（batch_run）、自动取回出图（get_outputs）带回对话，实现图像、音乐、视频、3D 等多任务智能创作与批量生产；环境维护——一键启动 ComfyUI、一键升级核心与全部自定义节点（upg…
+
+  [workflow] dsh-ha-orchestrator  6*  dl=581  dsh-ha-orchestrator
+    repo: https://github.com/Saktawdi/dsh-ha-orchestrator
+    [en] …(quarantine, circuit breaking, probe recovery) and subagent orchestration (fanout/pipeline/supervisor) with bilingual settings UI.…
+
+  [workflow] dsh-swarm  5*  dl=1168  @joekytc/dsh-swarm
+    repo: https://github.com/joekytc/dsh-swarm
+    [en] …A governed swarm of six specialist DSH agents — orchestrator, planner, knowledge-base bridge, developer and two reviewers — turns a requirement into a strict phase pipeline where every delivery must prove itself with str…
+
+  [workflow] dsh-plugin-omoslim  5*  dl=860  dsh-plugin-omoslim
+    repo: https://github.com/tevenfeng/dsh-plugin-omoslim
+    [en] …Installs an Orchestrator agent preset that plans and dispatches to model-pinned specialist subagents (explorer, oracle, librarian, designer, fixer, council), with named model profiles switched via an omoslim CLI and a We…
+
+  [skill] hermes-dsh-collab  5*  dl=0  no-npm
+    repo: https://github.com/Cavan-Ou/hermes-dsh-collab
+    [en] …ermes pipeline: dispatch-spec template, model-tier routing, orchestrator-run quality gates, git single-writer rule, as a SKILL.md pack (bundle installable).…
+
+  [workflow] dsh-swarm-orchestrator  3*  dl=3190  dsh-swarm-orchestrator
+    repo: https://github.com/linkbag/dsh-swarm-orchestrator
+    [name] dsh-swarm-orchestrator
+
+  [workflow] dsh-knj-workflow  3*  dl=2759  dsh-knj-workflow
+    repo: https://github.com/yangdongzhen590/dsh-knj-workflow
+    [en] …Config-driven development-task orchestration for DSH: graph workflows (task/gateway/human nodes) with per-stage persistence, plus an in-editor AI assistant that configures workflows through conversation with live validat…
+
+  [workflow] dsh-humanize  3*  dl=0  no-npm
+    repo: https://github.com/Guard42/dsh-humanize
+    [zh] …把多阶段目标编排为可恢复 Flow 的 agent 预设：阶段带裁判、SHA-256 流锁身份、HMAC 终局评审门禁、事件溯源运行日志；附 15 个工具。…
+
+  [workflow] agentflow  3*  dl=0  no-npm
+    repo: https://github.com/toustifer/agentflow
+    [en] …Lifecycle orchestration engine for AI agent teams with task-scoped Git worktree isolation, state-gated delivery transitions, and off-context memory.…
+
+  [workflow] dsh-plugin-stardeck  2*  dl=977  dsh-plugin-stardeck
+    repo: https://github.com/Kaiji-Z/dsh-plugin-stardeck
+    [en] …An RTS-style orchestration dashboard where commands replace chats: a resident commander agent decomposes each order into task briefs with acceptance criteria, typed subagent troops (recon/engineer/medic/scribe) execute t…
+
+  [skill] cot-lint  2*  dl=414  cot-lint
+    repo: https://github.com/YuanyuanMa03/cot-lint
+    [zh] …思维链泄漏检测：零依赖 CLI 扫描 AI 留在文档与注释里的会话残留（死设计引用、PR 视角、变更叙述、评审编排），内置 cot-trim 语义修复技能包。…
+
+  [skill] math-research-dsh  2*  dl=0  no-npm
+    repo: https://github.com/xsoc1/math-research-dsh
+    [en] …th adversarial audit, research program management, pipeline orchestration, and Lean 4 formalization audit; CI-verified tests and mechanical upstream sync.…
+
+  [workflow] dsh-plugin-task-coordinator  2*  dl=0  no-npm
+    repo: https://github.com/Kayungko/dsh-plugin-task-coordinator
+    [en] …Supervisor-style workflow orchestration over top-level sessions: confirmation-gated batch dispatch, team workstreams, steering running tasks, idle-wait collection and live model-route discovery across 11 task_* tools plu…
+
+  [workflow] dsh-ops-kit  2*  dl=0  no-npm
+    repo: https://github.com/LeslieWylie/dsh-ops-kit
+    [zh] …证据优先的操作套件：六个只读工具（能力清单、分阶段编排计划、随包技能阅读、有上限的本地记忆检索、仓库发布审计、发布清单）加五个随包技能；只规划与审计，不做远程写入。…
+
+  [workflow] dsh-workflow-canvas  2*  dl=0  no-npm
+    repo: https://github.com/PiedPiper911/dsh-workflow-canvas
+    [en] …Visual drag-and-drop workflow builder for DSH — orchestrate tool calls, sub-agents, and conditional branches on a React Flow canvas.…
+
+  … 另有 22 条命中在 skill/workflow/agi/tools/memory 等类目（低星/低下载，见 --all）
+
+====================================================================================================
+## stopgate — 交付前门禁 / 不许收工（Stop hook 强制）
+全类目 50 命中 | 类目分布: workflow:15 security:9 tools:6 dev:5 memory:4 remote:4 git:2 skill:2 ui:1 agi:1 fun:1
+====================================================================================================
+
+  [workflow] loopx#dsh-loopx-plugin  5893*  dl=0  no-npm
+    repo: https://github.com/huangruiteng/loopx/tree/main/packages/dsh-loopx-plugin
+    [zh] … 的提供商中立、本地优先状态内核与控制平面：在 DeepSeek Harness 执行层之上持久化 Goal、Todo、门禁、证据、配额、恢复与交接状态；插件负责引导安装 CLI 与技能、准入有界的同会话续跑，并为精确绑定的工作循环提供本地 GoalBar。…
+
+  [security] dsh-remote  65*  dl=3278  @xgone/dsh-remote
+    repo: https://github.com/xgone/dsh-remote
+    [zh] …为 DeepSeek Harness Web UI 提供安全远程访问：登录门禁、MFA/TOTP、签名会话 Cookie、可选的 admin/user/guest 角色、浏览器内工作区选择和按允许目录限制的远程文件预览。…
+
+  [workflow] dsh-qa  21*  dl=1845  dsh-qa
+    repo: https://github.com/naodeng/dsh-qa
+    [zh] …dsh 质量项目工作台：通过浏览器界面和 18 个 QA 领域工具管理测试项目、需求、用例、缺陷、里程碑、报告与审批门禁。…
+
+  [dev] dsh-continual-evolve  18*  dl=1552  dsh-continual-evolve
+    repo: https://github.com/ZK-Andy/dsh-continual-evolve
+    [zh] …持续自进化：从会话轨迹沉淀版本化、可审计、可回滚的 harness 状态（提示词/记忆/技能/子代理规格），带审查门禁与技能热加载。…
+
+  [security] dsh-defend  16*  dl=2852  dsh-defend
+    repo: https://github.com/PerryLink/dsh-defend
+    [zh] …block 分层拦截，附脱敏 defend/detection 审计事件、defend_report 工具与危险删除命令门禁。…
+
+  [git] dsh-github  14*  dl=3221  @perrylink/dsh-github
+    repo: https://github.com/PerryLink/dsh-github
+    [zh] …I 集成：composite action.yml、轮询 PR 评审机器人（幂等行内评论 + status-check 门禁）以及 PR/issue 工具，所有写入走人工审批门。…
+
+  [tools] dsh-expert-mode  13*  dl=0  no-npm
+    repo: https://github.com/Asher-2000/dsh-expert-mode
+    [zh] …ing/ready/running/done/failed + 依赖DAG + 原子认领 + 重试 + 崩溃恢复）、质量门禁（高风险任务五段式：需求澄清→实现→验证→独立评审→集成，最多回炉2轮）、五锚约束（每轮回顾/收敛/反跑题/协作检查/资源感知自检）+ 近距离引导（身份/任务/输出格式模板）+ 渐进式披露（省token约28%）+ 专家持久化 + 专家间文件消息总线（P2P直连，零协调官中转）+ 交叉评审 + 经验沉淀 + 简单任…
+
+  [dev] dsh-eval-harness  13*  dl=0  no-npm
+    repo: https://github.com/BiBoyang/dsh-eval-harness
+    [zh] …：YAML 用例驱动真实 headless agent，断言工具调用/参数/返回与 token 用量，baseline 门禁做 CI 回归。…
+
+  [security] dsh-skill-pack-security  13*  dl=0  no-npm
+    repo: https://github.com/PerryLink/dsh-skill-pack-security
+    [zh] …安全审计方法论技能包 + plugin_vet 供应链门禁：八个 agent 技能（密钥扫描、依赖审计、供应链评审、提示注入审查、审计总编排、威胁建模、漏洞情报、事件响应），中英双版本，附 npm provider 包一键挂载并注册自动化 plugin_vet 安装前扫描。…
+
+  [tools] dsh-origin-plugin  8*  dl=1653  dsh-origin-plugin
+    repo: https://github.com/Fantasality/dsh-origin-plugin
+    [zh] … 对话里驱动 OriginLab Origin 科学绘图与分析：62 个工具。模态对话框看门狗、LabTalk 破坏命令门禁、释放/重连、拟合初值/固定参数/加权、细粒度图与工作表编辑、矩阵工具、FigureSpec 声明式 YAML（可 diff 可重放）、MCP Resources 只读会话快照、matplotlib 图桥接、PowerPoint 组图、Graph Gallery 模板搜索、EPS 导出、文件访问白名单、视觉基准回归…
+
+  [workflow] get-fable  6*  dl=1483  get-fable
+    repo: https://github.com/imMamdouhaboammar/get-fable
+    [zh] …eepSeek Harness 的模块化前沿执行纪律：覆盖 26 项技能的循证路由、Manus 风格持久化文件规划、验证门禁、失败恢复与交互式 Web 看板。…
+
+  [workflow] dsh-coding-kit  6*  dl=0  no-npm
+    repo: https://github.com/Cyning12/dsh-coding-kit
+    [zh] …套件：bundle 插件加载时仅注册工具，须调用 apply_coding_standards 才注入规范；另附 P0 门禁 CLI（npx dsh-coding-kit），含 G1–G7 过程命令、skills install 与 IDE 块刷新。…
+
+  [dev] dsh-noname-kit  4*  dl=935  dsh-noname-kit
+    repo: https://github.com/qtaik/dsh-noname-kit
+    [zh] …无名杀扩展开发工坊。AI 在确认协议、校验门禁与区块化写入的保护下编写武将技能与卡牌扩展。…
+
+  [workflow] dsh-engineering-workflow  4*  dl=0  no-npm
+    repo: https://github.com/82c86b8z86-stack/dsh-engineering-workflow
+    [zh] …工程化工作流 agent preset：五阶段硬门禁（需求澄清、计划审批、TDD、子 Agent 并行、验证收尾），附 6 个改编自 obra/superpowers 的工作流技能。…
+
+  [workflow] dsh-wewrite  3*  dl=913  dsh-wewrite
+    repo: https://github.com/jerryjiao/dsh-wewrite
+    [zh] …公众号 AI 写作管线：六步成文（选题、大纲、成稿、门禁、渲染、配图）+ 启动 brief 合同、热榜逐条 AI 速览、RRULE 定时推草稿箱、写作台与对话工具（/wewrite 命令与 @ 引用），推送草稿箱前经宿主审批 fail-closed 确认。…
+
+  [security] dsh-ui-auth  3*  dl=616  dsh-ui-auth
+    repo: https://github.com/0QwQ0/dsh-ui-auth
+    [zh] …DeepSeek Harness Web UI 认证网关：登录门禁覆盖页面、/api、/plugins 与 WebSocket 升级；PBKDF2 口令哈希、HttpOnly SameSite 会话 Cookie、按源 IP 登录锁定；邀请码注册；两步验证可用 TOTP 动态码或通行密钥（WebAuthn：一个账号可绑定多个密钥，手机可扫码添加，支持免用户名登录，改动登录因子前必须二次验证）；设置面板内置用户管理（普通用户可修改本人资料…
+
+  [workflow] dsh-punky-swarm#dsh-punky-swarm  3*  dl=554  dsh-punky-swarm
+    repo: https://github.com/Punky971210/dsh-punky-swarm/tree/main/packages/dsh-punky-swarm
+    [zh] …dsh 单机多子 Agent 集群治理：引擎级质量门禁拒收半成品、崩溃断点续跑不重来——给 AI 团队装上"跑不坏"的工程护栏。…
+
+  [tools] dsh-proxy-routing  3*  dl=431  dsh-proxy-routing
+    repo: https://github.com/chenjiyan2001/dsh-proxy-routing
+    [zh] …、LLM provider 与 shell 命令路由 HTTP/SOCKS5 代理；支持 settings 热更新、审批门禁和凭据安全状态。…
+
+  [skill] commercial-ui-ux-codex-skill#dsh-commercial-ui-ux  3*  dl=267  dsh-commercial-ui-ux
+    repo: https://github.com/zjsthmjialin/commercial-ui-ux-codex-skill/tree/main/dsh-commercial-ui-ux
+    [zh] …业界面 UI/UX/GUI 设计、审查、修复与实现（SaaS、仪表盘、后台、表单、表格、设计系统），带参考文档体系与质量门禁。…
+
+  [workflow] folio#plugins/folio-tools  3*  dl=198  @nyantused/folio-dsh-tools
+    repo: https://github.com/nyantused-cpun/folio/tree/main/plugins/folio-tools
+    [zh] …yantused/folio-dsh-tools：咨询/汇报材料生成引擎的 15 个 DSH 原生工具（记忆面 + 质量门禁）+ L0 守卫；与 @nyantused/folio-dsh-events 配套使用。…
+
+  [skill] dsh-skillopt  3*  dl=0  no-npm
+    repo: https://github.com/WODE25500/dsh-skillopt
+    [zh] …ness agent 提供夜间自我进化：离线复盘过往会话，在你的 API 预算内重放高频任务，并把学到的技能凝练成经得起门禁验证的技能。把 microsoft/SkillOpt 的 SkillOpt-Sleep 引擎带进 dsh，作为原生工具加内置技能——无需模型训练。需 Python 3.10+ 并安装 SkillOpt-Sleep 引擎(pip install skillopt)。…
+
+  [workflow] dsh-plan-lattice  3*  dl=0  no-npm
+    repo: https://github.com/1052326311/dsh-plan-lattice
+    [zh] …为长期或定义不完整的 Harness 任务提供持久执行合同、递归工作图、关键澄清与证据门禁。…
+
+  … 另有 28 条命中在 workflow/skill/tools/security/ui/memory/dev/remote/agi/git/fun 等类目（低星/低下载，见 --all）
+
+====================================================================================================
+## supplychain — 依赖供应链审计（阶段 A）
+全类目 13 命中 | 类目分布: security:7 tools:4 skill:1 dev:1
+====================================================================================================
+
+  [security] dsh-skill-pack-security  13*  dl=0  no-npm
+    repo: https://github.com/PerryLink/dsh-skill-pack-security
+    [en] …Security-audit methodology skill pack plus the plugin_vet supply-chain gate: eight agent skills (secret scan, dependency audit, supply-chain review, prompt-injection review, audit orchestration, threat modeling, vuln int…
+
+  [tools] dsh-tool-lens  5*  dl=2186  @trench-xinxin/dsh-tool-lens
+    repo: https://github.com/trench-xinxin/dsh-tool-lens
+    [zh] …确定性 AST 代码图谱与架构治理分析工具：调用链消歧、重构爆炸半径、循环依赖审计、领域切片与全栈 API 契约追踪。…
+
+  [security] dsh-plugin-vetting  4*  dl=868  dsh-plugin-vetting
+    repo: https://github.com/truelove-dreamer/dsh-plugin-vetting
+    [en] …ive-dependency coverage, official-package hash baseline for supply-chain tamper detection, and an optional plugin-tool call gate.…
+
+  [security] dsh-plugin-security-review  4*  dl=0  no-npm
+    repo: https://github.com/ateen18/dsh-plugin-security-review
+    [en] … and runtime guard for dsh plugins: deobfuscation decoding, supply-chain checks, web one-click review/install/uninstall, and optional runtime tool-call guard.…
+
+  [skill] BigPlan  3*  dl=0  no-npm
+    repo: https://github.com/kobenfang/BigPlan
+    [en] …Product research skill: analyze market, technology and supply chain, then output three-tier product spec proposals.…
+
+  [security] dsh-cve-audit  2*  dl=0  no-npm
+    repo: https://github.com/SARTHAK2511/dsh-cve-audit
+    [en] …Live CVE/supply-chain audit for your workspace's own project dependencies (npm/pip/go), backed by OSV.dev, with a `cve_audit` tool plus optional automatic re-scan on lockfile changes.…
+
+  [security] dsh-code-security  1*  dl=1024  dsh-code-security
+    repo: https://github.com/STARDUSTLC666/dsh-code-security
+    [en] …ion, staged-diff review, SARIF export, baseline acceptance, SBOM-lite dependency inventory and health self-check.…
+
+  [security] dsh-provenance  1*  dl=888  dsh-provenance
+    repo: https://github.com/Darren-Tang/dsh-provenance
+    [en] …Pre-install supply-chain checks for DeepSeek Harness plugins: verify the tarball you are about to install matches the source you read, before any code runs.…
+
+  [security] dsh-poison-guard  1*  dl=569  dsh-poison-guard
+    repo: https://github.com/zoahdev/dsh-poison-guard
+    [en] …Pre-install supply-chain poison scanner for DSH plugins: AST (JS-X-Ray) + deobfuscation + regex heuristics, exits non-zero on findings for CI gating.…
+
+  [tools] cn-intel-mcp-dsh  1*  dl=298  cn-intel-mcp-dsh
+    repo: https://github.com/lory69060/cn-intel-mcp-dsh
+    [en] …China hard-tech supply chain intelligence: 33-signal board, H1 earnings tracker, hit-rate track record and Q&A, via a remote MCP (mcp__cn_intel__*).…
+
+  [dev] dsh-dep-audit  1*  dl=0  no-npm
+    repo: https://github.com/zoahdev/dsh-dep-audit
+    [en] …Dependency supply-chain hygiene audit for dsh projects and profiles: peer-range resolvability, broken dist-tag detection (#2763 class), stale / missing-license / non-registry dependencies, and installed-vs-declared drift…
+
+  [tools] dsh-engineer-tools  0*  dl=20  dsh-engineer-tools
+    repo: https://github.com/bycall/dsh-engineer-tools
+    [en] …r (`dev`) that detects npm/pnpm/yarn/bun from the workspace lockfile and picks the right verb per manager. Both run through dsh's sandboxed shell and return structured stdout/stderr/exitCode, so the agent gets focused, r…
+
+  [tools] dsh-dep-vuln-scan  0*  dl=0  no-npm
+    repo: https://github.com/988hj7tczd-oss/dsh-dep-vuln-scan
+    [en] …Scan project lockfiles (npm/pnpm/yarn/pip/go/cargo/maven/gradle/...) against the free OSV API and report confirmed dependency vulnerabilities with fix versions and remediation commands.…
+
+====================================================================================================
+## securityskill — 安全审计技能包整体（直接竞品）
+全类目 28 命中 | 类目分布: security:12 tools:5 market:4 skill:3 dev:2 workflow:2
+====================================================================================================
+
+  [dev] dsh-routing-suite  7194*  dl=0  no-npm
+    repo: https://github.com/yjh051108/dsh-routing-suite
+    [en] … (commit_star, lock_stage, revise_do, edit_plan, mark_task, redteam_verdict) pin task state to disk. The injector implementation ships in-tree, so the install carries its own behaviour rather than a dependency list.…
+
+  [security] api-relay-audit  839*  dl=0  no-npm
+    repo: https://github.com/toby-bridges/api-relay-audit
+    [en] …Runs local security audits of AI API relays and LLM proxies from DeepSeek Harness, producing Markdown reports for prompt injection, model substitution signals, tool-call rewriting, error leakage, stream integrity, and pr…
+
+  [security] dsh-redteam-model  511*  dl=0  no-npm
+    repo: https://github.com/SeaOf0/dsh-redteam-model
+    [en] …Authorized-security DSH collection: nine work modes (redteam coordinator, pentest, code audit, binary analysis, attack-defense, AV evasion, incident response, cloud security, CTF solving) and fifteen runtime plugins, man…
+
+  [security] dsh-pentest  505*  dl=0  no-npm
+    repo: https://github.com/howmp/dsh-pentest
+    [en] …Authorized pentest mode for DeepSeek Harness — exploration chain, assets and findings with a Web view.…
+
+  [skill] dsh-reverse-skill  148*  dl=3804  @dhicoc/dsh-reverse-skill
+    repo: https://github.com/dhicoc/dsh-reverse-skill
+    [en] …Seek Harness Cordis plugin: reverse engineering, authorized pentesting and security-research skill router.…
+
+  [security] dsh-secure-audit  86*  dl=2140  dsh-secure-audit
+    repo: https://github.com/PensiveFei/dsh-secure-audit
+    [zh] …DSH 只读安全合规插件：提示注入检测、中文 PII 脱敏、本机配置安全审计，输出脱敏且可复现的报告。…
+
+  [security] helm-d#helmd  58*  dl=0  no-npm
+    repo: https://github.com/ADWMC/helm-d/tree/main/packages/helmd
+    [en] …Single-bundle reverse-engineering and pentest security plugin: first-turn tool narrowing, domain routing, and 33 tools covering APK, web, native binary, protocol, malware and LLM samples — with unpacking, license-bypass …
+
+  [tools] dsh-fund-research  43*  dl=3507  dsh-fund-research
+    repo: https://github.com/PerryLink/dsh-fund-research
+    [en] … pure-function metrics (performance decomposition, holdings penetration, style attribution, manager profile), and versioned reports with a per-number snapshot traceability appendix.…
+
+  [security] dsh-pentester  25*  dl=2642  dsh-pentester
+    repo: https://github.com/fb0sh/dsh-pentester
+    [en] …PTES-based penetration testing plugin with Root-Orchestrator architecture for DeepSeek Harness.…
+
+  [security] dsh-security-audit  14*  dl=0  no-npm
+    repo: https://github.com/omdsh-dev/dsh-security-audit
+    [en] …Local security audit: config, plugin origins, sessions, network exposure — read-only redacted risk report.…
+
+  [security] dsh-skill-pack-security  13*  dl=0  no-npm
+    repo: https://github.com/PerryLink/dsh-skill-pack-security
+    [zh] …安全审计方法论技能包 + plugin_vet 供应链门禁：八个 agent 技能（密钥扫描、依赖审计、供应链评审、提示注入审查、审计总编排、威胁建模、漏洞情报、事件响应），中英双版本，附 npm provider 包一键挂载并注册自动化 plugin_vet 安装前扫描。…
+
+  [skill] shidi-skill  9*  dl=461  shidi-dsh-plugin
+    repo: https://github.com/IcyCreamDAS/shidi-skill
+    [zh] …技能包，面向 AI for Science 与研究生/科研 Agent 用户：多角度文献调研（每角度落盘）、实验方案（含漏洞清单）、作图与精读；每单交付文件，附交叉验证任务书。零依赖，MIT。…
+
+  [security] dsh-redteam-mode#packages/redteam-bundle  8*  dl=1146  dsh-redteam-mode
+    repo: https://github.com/Jueze-2019/dsh-redteam-mode/tree/main/packages/redteam-bundle
+    [en] …r session runs a five-role agent team (recon, asset triage, vulnerability discovery, exploitation, internal pivot) at up to three concurrent agents, preflight-checking skills and resources and asking for any missing key …
+
+  [workflow] dsh-plugin-roundtable  8*  dl=0  no-npm
+    repo: https://github.com/9931666/dsh-plugin-roundtable
+    [zh] … DeepSeek Harness 会话变成可视化圆桌会议：环形专家拓扑、连线协作、汇聚网关、代理思考，以及「针锋相对」红队评审（观点支持/驳回）。…
+
+  [skill] agent-useful-skills  7*  dl=0  no-npm
+    repo: https://github.com/Azzygoatcoder/agent-useful-skills
+    [en] …pack, installable via dsh plugin add — registers 27 skills (security audit, paper reading/writing, figure drawing, dev workflow, storage analysis) on ctx.skills.…
+
+  [tools] dsh-omv  2*  dl=0  no-npm
+    repo: https://github.com/bx33661/dsh-omv
+    [en] …Evidence-first vulnerability research workbench for DeepSeek Harness: native audit views, 29 OMV tools, Evidence.v1 findings, reproducible runs, Campaign workflows, and isolated PoC evidence.…
+
+  [workflow] dsh-expert-team  1*  dl=2495  @yangdcm/dsh-expert-team
+    repo: https://github.com/yangdcm/dsh-expert-team
+    [zh] …角色化多智能体专家团。/team 一句目标即组建最多 12 个角色子代理（产品、架构、调研、界面设计、后端、前端、数据、安全审计、评审、测试、运维、文档），按九阶段门控流水线推进（澄清、调研、设计、规格评审、方案确认、实现、审查、测试、交付），交接走共享工作区工件（SPEC、PLAN、TASKS、STATE、REVIEW、TEST）。质量门禁由插件代码强制而非提示词请求：未完成的任务不能标为完成、质量问题必须由评审或测试角色裁决、覆盖率…
+
+  [dev] DSHEssentialTools  1*  dl=1437  dsh-essential-tools
+    repo: https://github.com/LLYlab/DSHEssentialTools
+    [en] …tion; five network-permission tiers, mixed-model routing, a security audit, and browser control through a companion extension.…
+
+  [tools] auditrail  1*  dl=0  no-npm
+    repo: https://github.com/JohnXu22786/auditrail
+    [en] …Security auditing and session forensics for dsh: full tool-invocation-chain recording (who/which tool/files/timestamps), redacted playback, and rule-based scanning.…
+
+  [security] dsh-plugin-sentinel  1*  dl=0  no-npm
+    repo: https://github.com/BotonJ/dsh-plugin-sentinel
+    [en] …Static pre-install security auditor for plugin bundles: lifecycle scripts, dynamic execution, credential-exfiltration combos, and patch-layer hazards, with zero dependencies and in-memory tar parsing.…
+
+  [security] dsh-hawkeye-scan#npm  1*  dl=0  no-npm
+    repo: https://github.com/liuqingman/dsh-hawkeye-scan/tree/main/npm
+    [en] …/report/list) plus a /hawkeye web UI and JSON/Markdown/HTML vulnerability reports; zero-dependency Cordis plugin, installable as agent preset or npm package.…
+
+  [security] dsh-shadow-auditor  0*  dl=1805  @goodandready/dsh-shadow-auditor
+    repo: https://github.com/GooDAnDReaDY/dsh-shadow-auditor
+    [en] …Background security auditor for DeepSeek Harness: scans agent outputs for secret leakage, checks command safety before execution, and surfaces findings in a persistent audit log.…
+
+  … 另有 6 条命中在 security/market/tools 等类目（低星/低下载，见 --all）
+
+
+####################################################################################################
+# 汇总
+####################################################################################################
+verdict          31 命中 | workflow:8 security:4 git:4 dev:4 skill:3 memory:3 tools:1 browser:1 notify:1 agi:1 ui:1
+taint             9 命中 | tools:3 vision:2 docs:1 dev:1 workflow:1 security:1
+githist          11 命中 | skill:3 dev:3 remote:1 tools:1 workflow:1 memory:1 ui:1
+callgraph        19 命中 | tools:11 dev:3 workflow:2 security:1 git:1 ui:1
+coverage         14 命中 | tools:4 security:2 dev:2 ui:1 browser:1 workflow:1 remote:1 git:1 theme:1
+sarif            15 命中 | security:4 ui:3 tools:3 docs:1 git:1 usage:1 vision:1 market:1
+orchestration    44 命中 | workflow:29 skill:4 tools:3 security:2 memory:2 model:1 docs:1 remote:1 agi:1
+stopgate         50 命中 | workflow:15 security:9 tools:6 dev:5 memory:4 remote:4 git:2 skill:2 ui:1 agi:1 fun:1
+supplychain      13 命中 | security:7 tools:4 skill:1 dev:1
+securityskill    28 命中 | security:12 tools:5 market:4 skill:3 dev:2 workflow:2

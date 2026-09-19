@@ -1,6 +1,6 @@
 # DSH 交付门禁事实核查（Stop hook）
 
-> 本文修正 `AGENTS.md` 与 `docs/methodology-zh.md` §4.1 中的一条**错误结论**。
+> 本文核查 DSH 的 Stop hook 能否承担交付门禁，并记录一条**已被实测推翻**的结论。
 > 所有结论均由 `tools/check-stop-gate.mjs` **实际运行**得出，而非阅读源码推断。
 > 复现：`node tools/check-stop-gate.mjs`（只读，不启动进程，不修改任何配置）。
 
@@ -8,11 +8,11 @@
 
 ## 1. 被推翻的结论
 
-原结论（AGENTS.md「hook 协议」节、methodology §4.1）：
+曾被采纳的结论是：
 
 > fp-check 的 `hooks.json` **JSON 可原样搬**；这套强制机制不需要写 JavaScript。
 
-**这条是错的。** 实测：把 Trail of Bits `fp-check` 的 `hooks.json` 原样配进 DSH，
+**这条不成立。** 实测：把 Trail of Bits `fp-check` 的 `hooks.json` 原样配进 DSH，
 **一个 hook 都不会运行**。原因有两层，各自独立致命。
 
 ---
@@ -42,7 +42,7 @@ hooks-claude-code: skipping unsupported "prompt" hook on Stop (only command hook
 即便写成了 command hook，它的 stdin 也只有这些字段。实测抓到的完整 payload：
 
 ```json
-{"session_id":"sess-1","transcript_path":"","cwd":"D:\\euthyna",
+{"session_id":"sess-1","transcript_path":"","cwd":"<工作区绝对路径>",
  "hook_event_name":"Stop","stop_hook_active":false}
 ```
 
@@ -52,7 +52,7 @@ hooks-claude-code: skipping unsupported "prompt" hook on Stop (only command hook
 |---|---|---|
 | `transcript_path` | **恒为空字符串** | 桥接文档明说「持久化 seam 不暴露产物路径，且默认 zstd 压缩的会话日志无法被 hook 脚本读取」 |
 | `last_assistant_message` | **不存在** | 看不到 agent 最后说了什么 |
-| `stop_hook_active` | **恒为 `false`** | 没有「我上次已经拦过了」的标记 |
+| `stop_hook_active` | **恒为 `false`** | 没有「上次已经拦过」的标记 |
 | 对话内容 | **完全没有** | payload 里没有任何消息数组 |
 
 **结论**：fp-check 门禁的核心动作是「扫描对话，检查每个 bug 的 5 个阶段与 6 个门禁是否都走过」。
@@ -91,7 +91,7 @@ hooks-claude-code: skipping unsupported "prompt" hook on Stop (only command hook
 
 ### 5.1 门禁必须自带限流，否则死循环
 
-DSH 没有轮次预算。`agent/turn-stopping` 只在「轮次即将结束且待办队列为空」时触发，
+DSH 没有轮次预算。`agent/turn-stopping` 只在「轮次即将结束且待处理队列为空」时触发，
 而拦截是通过 `agent.steer()` 往队列塞一条消息让循环继续。
 宿主 README 原话：
 
@@ -119,10 +119,10 @@ fp-check 那种「按代理类型分别检查输出完整性」的写法在这�
 
 ## 6. 对落地形态的影响
 
-| 方案 | 原判断 | 修正后 |
+| 方案 | 此前判断 | 实测后 |
 |---|---|---|
 | A. 纯 Markdown 技能 | 0 行 JS | ✅ 不变。仍然应该是**起点**——门禁的前提是方法论本身有效 |
-| B. hook 门禁 | 「0 行 JS，一个 `configPath`」 | ❌ 改为：**一个 gate 脚本（约 100–200 行）+ configPath**，且只能做产物式门禁 |
+| B. hook 门禁 | 「0 行 JS，一个 `configPath`」 | ❌ 实为：**一个 gate 脚本（约 100–200 行）+ configPath**，且只能做产物式门禁 |
 | C. 原生插件 | 「约 20–130 行 TS」 | ✅ 但价值上升：原生插件在 `agent/turn-stopping` 上拿得到 `agent` 对象与会话，**能做对话式门禁**，且不需要重启、不需要外部脚本 |
 
 **推论**：如果 euthyna 的门禁想检查「6 门禁有没有真走完」这类**对话内事实**，

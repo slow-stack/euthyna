@@ -1,17 +1,18 @@
-# euthyna 定位分析（全类目重做）
+# euthyna 竞品定位分析
 
-> 本文重做 `AGENTS.md` 待办 #1。上一轮分析有方法论缺陷（按 category 过滤），结论已被推翻；
-> 本文不再按类目过滤，且**每条结论都标出证据基础**。
+> 检索方式：**全类目**，不按 `category` 过滤。按类目过滤会漏掉散落在
+> `tools` / `git` / `dev` 等类目下的同类工具，使空白判断系统性偏斜。
+> 以下每条结论都标出证据基础。
 >
 > 数据：`data/dsh-plugins.json`（3931 插件，2026-09-18 快照）
-> 工具：`tools/probe-audit-space.js`（带命中上下文的探针，替代只会打名字的旧版）
+> 工具：`tools/probe-audit-space.js`（带命中上下文的定位探针）
 > 完整探针输出：`data/audit-space.txt`
 
 ---
 
 ## 0. 结论摘要
 
-**「确定性测量」不是空白，「证据门禁」也不是空白。真正的空白是两者之间的那一层：**
+**「确定性测量」已被占满，「证据门禁」也已被占满。真正的空白是两者之间的那一层：**
 
 > 没有任何东西把测量出来的事实，喂给一套**安全专属的结论判定纪律**，并据此**拦下不合格的交付**。
 
@@ -46,16 +47,16 @@
 2. **没有任何两个共享机器可读的事实 schema**。八种输出形状，只有 `dsh-code-security` 出 SARIF，只有 `dsh-trust-check` 有版本化契约。
 3. **全都没有进程退出码契约**。门禁只表达为工具结果字段（`verdict` / `redLines` / `failOn`）或 hook 决策。对 CI 不可用。
 4. 「测试覆盖」这一项**两次被半个覆盖**：`dsh-blast-radius` 用静态**测试引用**（按符号，不验证执行），`dsh-code-coverage` 用真实执行覆盖（按文件/行，无调用图）。**两者都不回答「这个被改符号的调用方有没有测试覆盖」**——那个 join 不存在。
-5. **`dsh-blast-radius` 根本不是可调用工具**。它只挂一个 `tools/pre-execute` 瀑布钩子，无 tool、无文件产物、无退出码；且只支持 TS/JS，动态调用（反射 / `eval` / 字符串索引）拿不到。它的 `unavailable` 字段表示「不知道」且**从不渲染成安全**——这个「不知道 ≠ 安全」的处理值得学。
+5. **`dsh-blast-radius` 根本不是可调用工具**。它只挂一个 `tools/pre-execute` 瀑布钩子，无 tool、无文件产物、无退出码；且只支持 TS/JS，动态调用（反射 / `eval` / 字符串索引）拿不到。它的 `unavailable` 字段表示「不知道」且**从不渲染成安全**——这个「不知道 ≠ 安全」的处理值得借鉴。
 6. **`dsh-tool-lens` 的「推荐测试」是图相邻，不是覆盖**。`src/analytics/git-diff.ts` 里 `affectedTestFiles` 取自图遍历中路径匹配测试文件模式的节点，即**结构上相邻**的测试文件，而不是覆盖了被改符号的测试。名字像覆盖，实质不是。
-7. **`dsh-trust-check` 的契约设计最值得抄**：它把门禁面收窄到 5 个字段（`name` / `version` / `spec` / `capabilities` / `redLines`），并**明写「不要拿 `score` 或 `band` 做门禁」**，且 fail-closed——`errors` 非空一律当作扫描失败，而不是 `clear`。这正是「事实契约」该有的样子。
-8. **`dsh-dep-vuln-scan` 的确认口径值得抄**：不直接信 OSV 的返回，而是「查询带 `version` 让 OSV 过滤 + 本地复核 `introduced ≤ version < fixed` 区间」才算确认。
+7. **`dsh-trust-check` 的契约设计最值得借鉴**：它把门禁面收窄到 5 个字段（`name` / `version` / `spec` / `capabilities` / `redLines`），并**明写「不要拿 `score` 或 `band` 做门禁」**，且 fail-closed——`errors` 非空一律当作扫描失败，而不是 `clear`。这正是「事实契约」该有的样子。
+8. **`dsh-dep-vuln-scan` 的确认口径值得借鉴**：不直接信 OSV 的返回，而是「查询带 `version` 让 OSV 过滤 + 本地复核 `introduced ≤ version < fixed` 区间」才算确认。
 
 ---
 
 ## 2. 赛道二：交付门禁（拥挤，机制已产品化）
 
-原以为这是我们的首创点。**不是。** 至少这些已经在做，而且做得比「一个 configPath」深：
+这一赛道已经产品化。下列项目都在做，而且做得比「一个 configPath」深：
 
 | 项目 | 做了什么 |
 |---|---|
@@ -66,7 +67,7 @@
 | `review-gate` / `dsh-ocr-review` | 把代码评审变成硬闸门，未通过禁止合并 |
 | `dsh-humanize` / `dsh-plan-lattice` / `dsh-punky-swarm` | 裁判阶段 / HMAC 终局评审门禁 / 引擎级质量门禁 |
 
-**意义**：`formalswarm` 已经把我们想说的核心命题说完了——「agent 说做完了不算数，判决必须能从产物重算」。
+**意义**：`formalswarm` 已经把 euthyna 的核心命题完整说出来了——「agent 说做完了不算数，判决必须能从产物重算」。
 区别只在它**与安全无关**，`dsh-doublecheck` 同样**与安全无关**。
 
 ---
@@ -104,7 +105,7 @@ security-audit · threat-model · vuln-intel · incident-response
 它的纪律是**「报告里的每条发现，审阅者必须能用一条命令复核」**，
 并且明写**「复核命令拿不到证据 → 降级为『观察』或删除」**。
 
-**这意味着**：我们 README 里当作差异点的「拿不出证据就降级为观察」，**它已经有了**。
+**这意味着**：被 euthyna 当作差异点的「拿不出证据就降级为观察」，**竞品已经有了**。
 它本质是**工具编排器 + 报告格式**（gitleaks / trivy / checkov / pnpm audit）。
 
 **它没有的**（逐条对照 Trail of Bits 三个插件的原文，
@@ -139,9 +140,9 @@ security-audit · threat-model · vuln-intel · incident-response
 
 ---
 
-## 6. git 历史回归分析的独立验证：**原假设被证伪**
+## 6. git 历史回归分析的独立验证：**该假设被证伪**
 
-第二个子代理的任务是**证伪**这个假设，它成功了。
+针对该假设的证伪检索找到了直接反例。
 
 ### 6.1 直接证据
 
@@ -150,7 +151,7 @@ security-audit · threat-model · vuln-intel · incident-response
 > Risk-classify changed files (auth / crypto / value-transfer / **validation-removal = HIGH**).
 > **Git-blame removed security code — code deleted in a "fix" / "CVE" commit is a CRITICAL regression.**
 
-这一句同时覆盖了我们假设的 (a) 对已删除代码做 blame 与 (c) 校验被移除的标记。
+这一句同时覆盖了假设中的 (a) 对已删除代码做 blame 与 (c) 校验被移除的标记。
 它的 `/auditor:re-audit` 还有 **REGRESSED**（此前修好的问题又回来了）状态。
 其 `ATTRIBUTION.md` 自陈来源是 Trail of Bits 的 `differential-review` → "Mode 4 — Differential Audit"。
 
@@ -168,7 +169,7 @@ checklists / agents / commands 的 Markdown；它的 `allowed-tools` 是
 `Read, Grep, Glob, Bash, Task`——即**让 LLM 自己去跑 `git blame`，再自己读 commit message 下判断**。
 没有产出结构化事实的脚本，没有 `git log -S` 的机械判定，没有可复现的判定口径。
 
-**这正是 AGENTS.md 那句「补上 agent 算不准的确定性事实」的地盘，而它在这场证伪中完好无损。**
+**这正是「补上 agent 算不准的确定性事实」这一层的地盘，而它在上述证伪中完好无损。**
 
 ### 6.3 DSH 侧的子假设仍然成立
 
@@ -183,13 +184,13 @@ checklists / agents / commands 的 Markdown；它的 `allowed-tools` 是
 中文 `回归` 同时是「回归」和**统计学回归**——`Stata-AI-Skill` 是完美的误命中样本；
 最大的噪音源是 `provenance`/`溯源`，在约 16 个记忆类插件里指**记忆的来源**，不是代码行的来源。）
 
-### 6.4 尚未测完的一项（不许当成结论用）
+### 6.4 尚未测完的一项（不作为结论）
 
-子代理诚实标注：PowerShell 把含 `-S` 的查询当成了命令行开关
-（`unknown shorthand flag: 'S'`），所以 `"git log -S" security` 这条**实际从未跑成**。
+**未测**：PowerShell 会把含 `-S` 的查询当成命令行开关
+（`unknown shorthand flag: 'S'`），所以 `"git log -S" security` 这条查询**实际从未跑成**。
 即「(b) 用 pickaxe 检出重加」是否无人做，**属于未测，不属于已证**。
 
-> 本轮复跑：改用 `gh api` 的 URL 编码查询绕过 PowerShell 解析，`"git log -S" vulnerability`
+> 改用 `gh api` 的 URL 编码查询可绕过 PowerShell 解析：`"git log -S" vulnerability`
 > 返回 1080 条，前排全是 security-advisory 类技能与 `AGENTS.md`，**无一命中 pickaxe 重加检测**。
 > 这仍是弱证据（GitHub 代码搜索会分词，短语匹配不严格），要下定论需要更窄的查询。
 
@@ -197,12 +198,12 @@ checklists / agents / commands 的 Markdown；它的 `allowed-tools` 是
 
 ## 7. 对 euthyna 的含义
 
-### 7.1 必须放弃的两个主张
+### 7.1 必须放弃的三个主张
 
 | 原主张 | 为什么放弃 |
 |---|---|
-| 「确定性测量是生态空白」 | 已有 8+ 个专用工具，且 `AGENTS.md` 已记录此结论被推翻 |
-| 「证据门禁 / 不许收工是空白」 | `dsh-doublecheck`、`formalswarm`、`dsh-expert-team`、`loopx` 已在做，机制比我们预想的深 |
+| 「确定性测量是生态空白」 | 已有 8+ 个专用工具，各管一段 |
+| 「证据门禁 / 不许收工是空白」 | `dsh-doublecheck`、`formalswarm`、`dsh-expert-team`、`loopx` 已在做，机制比预想的更深 |
 | 「git 历史安全回归无人做」 | 已被 `auditor-skill` 与 `florianbuetow/claude-code` 占位，**但占的是提示词层，不是确定性引擎层** |
 
 ### 7.2 可以站住的主张
@@ -229,14 +230,8 @@ checklists / agents / commands 的 Markdown；它的 `allowed-tools` 是
 **没有人管「这条安全结论到底成不成立」，也没有人把测量结果做成机器可判定的事实。**
 这就是 euthyna 的位置。
 
-### 7.4 一句话的教训（写给下一次调研）
+### 7.4 方法论教训
 
 **「无人做 X」必须写成「无人做 X 且 X 的哪一层无人做」。**
-本轮三个假设全部翻车，翻车方式一模一样：把**提示词层的方法论**误当成**确定性引擎**，
+三个假设全部被证伪，方式一模一样：把**提示词层的方法论**误当成**确定性引擎**，
 或者只看 DSH 生态（3931 个插件）就外推到 Claude Code / Codex 生态。
-
----
-
-## 8. 待用户拍板的事项
-
-（见对话，不写进本文件）

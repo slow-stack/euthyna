@@ -11,15 +11,69 @@
 //   Q3. Does fp-check's `{"ok":false}` stdout shape block anything?          (no)
 //   Q4. What does the Stop payload actually carry?                  (no conversation)
 //
-// Run: node tools/check-stop-gate.mjs
+// Run: node tools/check-stop-gate.mjs [--dsh <path-to-@deepseek-ai>]
+//
+// The DSH install location is discovered rather than hardcoded, because a
+// reproduction step that only runs on the author's machine reproduces nothing.
 
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import process from 'node:process';
 
-const DSH = 'D:/Program Files/DSH Desktop/resources/app/node_modules/@deepseek-ai';
-const load = (p) => import(pathToFileURL(`${DSH}/${p}`).href);
+/** Candidate locations for the `@deepseek-ai` package directory. */
+function findDshPackages() {
+  const argIndex = process.argv.indexOf('--dsh');
+  const explicit = argIndex >= 0 ? process.argv[argIndex + 1] : process.env.DSH_APP_ROOT;
+
+  // The standard in-app path, relative to an install root.
+  const inApp = (...parts) =>
+    join(...parts.filter(Boolean), 'resources', 'app', 'node_modules', '@deepseek-ai');
+
+  const candidates = [
+    explicit,
+    explicit ? join(explicit, 'node_modules', '@deepseek-ai') : null,
+    process.platform === 'win32' ? inApp(process.env.ProgramFiles) : null,
+    process.platform === 'win32' ? inApp(process.env['ProgramFiles(x86)']) : null,
+    process.platform === 'win32' ? inApp(process.env.LOCALAPPDATA, 'Programs') : null,
+    process.platform === 'darwin'
+      ? '/Applications/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai'
+      : null,
+    '/opt/DSH Desktop/resources/app/node_modules/@deepseek-ai',
+    join(process.cwd(), 'node_modules', '@deepseek-ai')
+  ].filter(Boolean);
+
+  // A desktop app can be installed on any drive, and on Windows the install
+  // root is not derivable from the environment: an app in D:\Program Files is
+  // invisible to %ProgramFiles%, which points at C:. Probing the standard
+  // relative path on each drive letter is cheap - a miss fails immediately.
+  if (process.platform === 'win32') {
+    for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
+      candidates.push(inApp(`${letter}:\\Program Files`, 'DSH Desktop'));
+      candidates.push(inApp(`${letter}:\\Program Files (x86)`, 'DSH Desktop'));
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, 'dsh-hook-protocol'))) return candidate;
+  }
+
+  console.error(
+    'Could not locate the DSH install.\n\n' +
+      'This script imports two packages from the local DeepSeek Harness installation\n' +
+      'to exercise the real hook bridge. Point it at the `@deepseek-ai` package\n' +
+      'directory, which lives under the app resources:\n\n' +
+      '  node tools/check-stop-gate.mjs --dsh "<app>/resources/app/node_modules/@deepseek-ai"\n\n' +
+      'or set DSH_APP_ROOT to the app directory itself.\n\n' +
+      `Tried ${candidates.length} locations, starting with:\n` +
+      `${candidates.slice(0, 4).map(c => `  ${c}`).join('\n')}\n`
+  );
+  process.exit(2);
+}
+
+const DSH = findDshPackages();
+const load = (p) => import(pathToFileURL(join(DSH, p)).href);
 
 const { parseHookOutput, mergeHookOutputs } = await load('dsh-hook-protocol/lib/index.js');
 const { apply: applyBridge } = await load('dsh-hooks-claude-code/lib/index.js');
@@ -100,7 +154,9 @@ check('the reason is the hook stderr, verbatim', steerText, 'GATE 5 FAIL: math b
 
 console.log('\n  -- what the hook process received on stdin --');
 const payload = JSON.parse(lastRequest.stdin);
-console.log(`     ${JSON.stringify(payload)}`);
+// Print the workspace path as a placeholder so the output is stable and matches
+// the shape documented in docs/dsh-stop-gate-zh.md on any machine.
+console.log(`     ${JSON.stringify({ ...payload, cwd: '<workspace absolute path>' })}`);
 check('Stop payload carries NO conversation content',
   Object.keys(payload).sort(),
   ['cwd', 'hook_event_name', 'session_id', 'stop_hook_active', 'transcript_path'].sort());

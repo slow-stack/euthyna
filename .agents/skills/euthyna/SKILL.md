@@ -149,20 +149,19 @@ Trail of Bits 的原始 fp-check 只有两态，因为它靠 Stop hook 无限强
 
 ## 参考文件
 
-| 文件 | 状态 | 内容 |
-|---|---|---|
-| `references/verification-gates.md` | ✅ 已就绪 | **阶段 C 全文**：路由、6 门禁、13 条误报清单、恶魔代言人 13 问、PoC 规则 |
-| `../../docs/fact-contract-zh.md` | ✅ 已就绪 | 事实产出契约：判定层如何消费测量层的事实 |
-| `references/change-audit.md` | ⏳ 待拆分 | 阶段 B：变更面 7 阶段、爆炸半径、红旗 |
-| `references/dependency-audit.md` | ⏳ 待拆分 | 阶段 A：依赖面审计流程与禁止事项 |
-| `references/bug-classes.md` | ⏳ 待拆分 | 9 类缺陷的专项要求与**默认假设方向** |
+按需加载。**不要一次全读**——渐进披露是这套东西能在长会话里保持有效的原因。
 
-> ⚠️ **上面三个「待拆分」的文件目前不存在。** 它们的内容暂在
-> `../../docs/methodology-zh.md` 的 §2（阶段 A / B）与 §3（9 类缺陷）。
-> **在拆分完成前以那份文档为准，不要假装读过不存在的文件。**
->
-> 已知的打包问题：技能目前靠相对路径引到仓库的 `docs/`。要独立分发时
-> 必须把事实契约复制进 `references/`，让技能自包含。
+| 文件 | 内容 | 什么时候读 |
+|---|---|---|
+| `references/verification-gates.md` | **阶段 C**：路由、6 门禁、误报清单、恶魔代言人、PoC 规则 | 判定一条已有断言时（**最常用**） |
+| `references/change-audit.md` | **阶段 B**：基线、深度 vs 风险、来源归属、爆炸半径、对抗建模 | 审一次变更时 |
+| `references/dependency-audit.md` | **阶段 A**：清单/锁文件、三态、文体规范、禁止事项 | 审依赖面时 |
+| `references/bug-classes.md` | 9 类缺陷的专项检查与**默认假设方向** | 定了缺陷类别之后 |
+| `references/meta-mechanisms.md` | 六个元机制：让流程不退化成走过场 | **审计开始时读一次** |
+| `references/fact-contract.md` | 怎么读事实产出器的输出，**以及它不能推出什么** | 用到 `bin/euthyna.js` 时 |
+
+> 本技能自包含：以上文件都在 `references/` 内，不依赖技能目录之外的路径，
+> 可以整目录复制到任何技能根使用。
 
 ---
 

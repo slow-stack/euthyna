@@ -1,223 +1,191 @@
 # euthyna
 
-> **εὔθυνα** —— 雅典官员离任时的账目审计。任期结束时必须交出账目接受审查，通不过，就无法体面地离任。
+> **εὔθυνα** — in classical Athens, the audit every outgoing official had to submit.
+> You did not get to simply walk away from office. You handed over your accounts and they
+> were examined. Pass, and you left with your standing intact. Fail, and you faced trial.
 
-一个给 AI 编码 agent 用的**代码安全审计框架**。
+A **code security audit framework** for AI coding agents.
 
-它不是又一个扫描器，而是审计流程的**编排者**与审计结论的**裁决者**。
-
----
-
-## 名字的来历
-
-古希腊雅典的官员在任期届满时，不能拍屁股走人。他必须向审计官提交任内的全部账目，接受一项名为 **euthyna**（εὔθυνα）的审查。审查通过，他才能体面离任；账目不清，就要面对审判。
-
-这个项目的核心机制，就是这件事的翻版：
-
-> **agent 说"我做完了"不算数。账目（证据）交齐、门禁通过，才算交付。**
-
-命名沿用 `mneme`（μνήμη，"记忆"）的路子——希腊语普通名词，一个词直接对应功能，不绕弯。
+It is not another scanner. It **produces the deterministic facts an agent cannot compute**
+and **adjudicates the security claims an agent cannot stop itself from making**.
 
 ---
 
-## 这个项目要解决什么
+## The problem
 
-AI 编码 agent 现在很能写代码，但它报出来的安全问题**不可信**，原因有两个：
+AI coding agents write code well and report on it badly, in two specific ways:
 
-1. **它爱报假货。** 看到一段"看着危险"的代码就说是漏洞，不做数据流追踪，还倾向于把严重性往高里评。
-2. **它算不准数。** 问它"这个函数有多少个调用方"，它只能翻几个文件猜；问它"这次改动有没有测试覆盖"，它靠印象答。
+1. **They report things that are not real.** A pattern that resembles a vulnerability gets
+   called a vulnerability, without tracing the data flow, and with the severity rated high.
+2. **They cannot count.** Ask how many callers a function has and the answer is a guess from
+   a few files. Ask whether a change is covered by tests and the answer is an impression.
 
-这两个毛病，靠"提示它仔细点"是治不好的。所以这个项目要做两件事：
+Neither is fixed by telling the agent to be more careful. So this project does two things:
 
-- **补上它算不准的**：用确定性代码算出调用面、测试缺口、历史来源这些硬事实（这是 LLM 天生做不好的）
-- **管住它爱乱报的**：每条结论必须过 6 道门禁，拿不出证据就只能降级为"观察"，不许写成"发现"
+- **Supplies the numbers**: calls, coverage, and git history provenance, computed deterministically.
+- **Constrains the conclusions**: every claim passes six gates, and a claim that cannot produce
+  evidence gets downgraded to an observation rather than reported as a finding.
 
 ---
 
-## 现状
+## What is actually built
 
-**已经能跑了。** 技能（方案 A）与两个确定性事实产出器都已落地并实跑验证。
+| Piece | What it is | Status |
+|---|---|---|
+| **Fact producers** | A zero-dependency Node CLI that answers two questions deterministically | Working, tested |
+| **The skill** | The audit discipline itself, as loadable Markdown | Working, loadable |
+| **The benchmark** | A blind recall measurement for the adjudication layer | First round complete |
 
-### 怎么用
+### Fact producer 1 — `history`
+
+> *"The code this change deleted — where did it come from, and was that a security fix?"*
+
+```
+$ euthyna history --repo <path> --base main --head HEAD
+
+已确证 (7)
+  • 本次变更删除了 4 行来自提交 ab877f9d70 的代码，分布在 2 个文件。
+    提交信息："fix(link-in-text-block): don't match style or script text (#3775)"，分类：fix
+      证据: lib/checks/color/link-in-text-block-evaluate.js (ab877f9d70)
+      复现: git blame --porcelain -L 104,104 -L 114,114 <base> -- lib/checks/.../evaluate.js
+```
+
+Every deleted line is blamed back to the commit that introduced it, and that commit is
+classified from its own message. `--pickaxe` additionally detects a line that is absent at
+the base revision yet has earlier commits changing its occurrence count — which by
+construction means it was removed and is now being added back.
+
+### Fact producer 2 — `coverage`
+
+> *"Has any test ever actually invoked the symbol I just changed?"*
+
+Reads c8's `fnMap` invocation counts. It has exactly two outcomes and **no third**:
+
+| Count | Output | Meaning |
+|---|---|---|
+| `0` | `established` | The symbol was never invoked. Every caller lacks executed coverage. |
+| `> 0` | `unknown` | The symbol was entered — which proves **nothing** about any particular call site. |
+
+**There is no code path in this producer that emits "executed".** That is the design, not an
+omission. V8 block coverage reports unreachable code as covered, so a naive
+"line covered → call ran" join reports a call site that never ran as executed — wrong in the
+one direction a security audit cannot afford, because it hides a real gap and manufactures
+confidence at the same time. See [`docs/fact-contract-zh.md`](docs/fact-contract-zh.md) §6.2.
+
+### Exit codes are part of the contract
+
+Surveying eight measurement plugins in this ecosystem found **none of them publishes a process
+exit code**, which makes their output unusable as a CI gate. This one does:
+
+| Code | Meaning |
+|---|---|
+| `0` | Measured; nothing security-classified found |
+| `10` | Measured; at least one `security`-classified fact exists |
+| `1` | Usage error |
+| `2` | **Could not measure at all** — must not be read as clean |
+
+`2` being distinct from `0` is the whole point: *failing to measure* and *measuring and finding
+nothing* are different things.
+
+---
+
+## Install and run
+
+Zero runtime dependencies. Running the test suite does not require `npm install`.
 
 ```powershell
-# 被删除的代码来自哪里、那个提交是不是安全修复
-node bin/euthyna.js history --repo D:\some\repo --base main --head HEAD
-node bin/euthyna.js history --repo D:\some\repo --base main --pickaxe   # 另查「被移除又加回」
+git clone https://github.com/slow-stack/euthyna
+cd euthyna
+npm test                                        # 61 tests
 
-# 某个符号在测试运行中到底有没有被调用过
-node bin/euthyna.js coverage --coverage coverage/coverage-final.json --symbol checkPermission
+node bin/euthyna.js history --repo <path> --base main --head HEAD
+node bin/euthyna.js history --repo <path> --base main --pickaxe
+node bin/euthyna.js coverage --coverage coverage/coverage-final.json --symbol <name>
 ```
 
-加 `--json` 得到结构化的事实报告。**退出码是对外契约**（生态里八个同类工具都没有这个）：
+Add `--json` for the structured fact report.
 
-| 退出码 | 含义 |
-|---|---|
-| `0` | 已测量，没有安全相关的发现 |
-| `10` | 已测量，且存在被分类为 `security` 的事实 |
-| `1` | 用法错误 |
-| `2` | **完全无法测量**——此时不得当作干净 |
+### Using the skill
 
-零第三方依赖：跑 `npm test`（56 个用例）不需要 `npm install`。
-
-### 已完成
-
-| 事项 | 产物 |
-|---|---|
-| 方法论 | `docs/methodology-zh.md` —— 基于 Trail of Bits 三个插件原文逐条对照重写的中文方法论 |
-| **事实产出器** | `bin/` + `src/` —— `history`（git 安全回归）与 `coverage`（调用计数，只能证伪） |
-| **事实契约** | `docs/fact-contract-zh.md` —— 测量层 ↔ 判定层的接口，契约的约束由代码强制 |
-| **竞品定位（全类目重做）** | `docs/positioning-zh.md` —— 三个赛道、八个测量工具的能力对照、已确证空白八项 |
-| **DSH 门禁事实核查** | `docs/dsh-stop-gate-zh.md` —— 用运行验证推翻了此前关于 hook 可原样搬迁的结论 |
-| **第一次 quick 档实跑** | `audits/AXE-CORE_EUTHYNA_AUDIT_2026-09-19.md` —— 5 个候选全为误报，含逐条裁定与局限性声明 |
-| 上游原文按需拉取 | `tools/fetch-references.js` —— 原文不入库，拉到 `.refs/`（已 gitignore）。**本仓库不分发任何第三方文件** |
-| 生态竞品目录 | `data/dsh-plugins.json` —— DSH 生态 3931 个插件的完整快照 |
-| 调研脚本 | `tools/` —— 查询 / 抓取 / 验证脚本，可复用 |
-
-### 定位结论（一句话）
-
-测量层（调用图 / 覆盖率 / 依赖 / 密钥）与门禁层（交付前强制）**都已被占满**。
-真正的空白在中间那一层：**没有人把测量出来的事实，接进一套安全专属的结论判定纪律，
-并让判定结果成为交付门禁。**
-
-### 待办
-
-- [ ] 用「已知含真缺陷」的靶场验证**召回率**——至今 0 真阳性，只证明了能筛掉假阳性
-- [ ] 重写 `docs/methodology-zh.md` 并拆进技能 `references/`（同一件事，顺带清掉最后一个改编物候选）
-- [ ] 让技能真正调用事实产出器（CLI 已可用，技能还没写「何时调它、怎么读它的输出」）
+`.agents/skills/euthyna/` is a complete, self-contained skill directory. Copy it into any
+skill root DSH discovers (`~/.agents/skills/`, `~/.claude/skills/`, or a project's
+`.agents/skills/`). The Markdown layer is portable across Claude Code, Codex and DSH; only the
+hook configuration format and plugin packaging differ per host.
 
 ---
 
-## 已核实的宿主事实
+## What has been verified, and what has not
 
-以下均通过阅读本机 DSH 源码核实，**其中带 🧪 的由 `tools/check-stop-gate.mjs` 实际运行验证过**，不是推测：
+This project tries to be explicit about the difference. Current state:
 
-### 技能契约
+### Verified
 
-DSH 的技能 frontmatter 只认五个字段：`name` / `description` / `whenToUse` / `invocation` / `metadata`。
+- **`history` attribution against a real repository.** Run against
+  [axe-core](https://github.com/dequelabs/axe-core); 17 deleted lines attributed to the commits
+  that introduced them. The output was then checked **by hand** against `git blame`, which
+  caught two real bugs in this tool — see below.
+- **`coverage` on real c8 output**, distinguishing all three states correctly.
+- **Adjudication recall and specificity**, measured blind: **10/10 cases**, 4 real
+  vulnerabilities all caught, 6 non-vulnerabilities all correctly cleared, no abstentions.
+  Every case is a *near-neighbour pair* — same pattern, one guard apart — so the verdicts had to
+  come from reading the guard rather than recognising the shape.
+  See [`bench/RESULTS.md`](bench/RESULTS.md).
+- **The delivery-gate mechanism**, by running the real host plugin: blocking works, and the two
+  documented ways of getting it wrong do not. See [`docs/dsh-stop-gate-zh.md`](docs/dsh-stop-gate-zh.md).
 
-- `name` 必须匹配 `^[a-z0-9]+(?:-[a-z0-9]+)*$`
-- `invocation` 缺省为 `{ modelInvocable: true, userInvocable: true }`
-- **DSH 不认 Claude Code 的 `allowed-tools` 字段**——从别处搬技能时必须处理
+### Not verified
 
-### 技能发现路径（数字小者优先）
-
-```
-<项目>/.dsh/skills       100
-<项目>/.agents/skills    200
-customSkillDirs          300
-<dshHome>/skills         400
-<agentsHome>/skills      500
-bundledSkillDir          内置
-```
-
-🧪 `agentsHome` 的解析式是 `config.agentsHome ?? $DSH_AGENTS_HOME ?? ~/.agents`，
-本机走默认值，即 **DSH 实际加载的是 `~/.agents/skills`，不是 `~/.claude/skills`**。
-
-`watch` 默认开启，Markdown 改动即时生效（插件改动才需要重启 `dsh web`）。
-
-### hook 协议
-
-DSH 原生实现了 Claude Code 的 hook 协议（`@deepseek-ai/dsh-hooks-claude-code`），支持七个事件：
-
-```
-SessionStart · UserPromptSubmit · PreToolUse · PostToolUse · Stop · SubagentStart · SubagentStop
-```
-
-`Stop` 可以阻塞并强制模型再跑一轮（模型可见文案 `continue: blocked by Stop hook`）。
-🧪 实测确认：**脚本退出码 2 + 理由写到 stderr 即可拦截，理由逐字传给 agent**。
-`SubagentStop` 则**只观测、不能阻塞**。
-
-⚠️ **一条早期结论已被运行验证推翻**：Trail of Bits `fp-check` 的 `hooks.json` **不能原样搬到 DSH**——
-它的两个 hook 都是 `"type": "prompt"`，而 DSH 只运行 shell command 形态的 handler，
-实测会打出 `skipping unsupported "prompt" hook on Stop (only command hooks run)`。
-更关键的是，DSH 的 Stop hook **拿不到对话内容**（`transcript_path` 恒为空），
-所以「扫描对话检查门禁是否走完」这种用法在 DSH 上无法照搬。
-
-完整的实测记录、三条拦截通路与三个必须自己处理的坑，见 `docs/dsh-stop-gate-zh.md`。
-复现方式：`node tools/check-stop-gate.mjs`。
-
-### 为什么这个项目可以跨 harness
-
-- Codex 直接支持 Claude 的 plugin marketplace 格式（Trail of Bits README 明载）
-- 因此 **`SKILL.md` 这一层内容天然跨三家**，一套 Markdown 三家共用
-- 真正 harness 特定的只有三件事：hook 配置格式、宿主插件代码、分发入口
+- **Whether the method finds vulnerabilities in real code.** The benchmark measures whether the
+  discipline reaches the right verdict *on a claim*. It does not measure whether the claims would
+  be found in the first place. The cases are deliberately constructed.
+- **Recall in the field.** Four real-bug samples is a directional signal, not a rate.
+- **Source maps, bundlers, monorepos** for the coverage producer. Untested.
+- **Anything about axe-core's security**, from the case study run — it found nothing, which is
+  not an endorsement. See [`docs/case-study-axe-core-zh.md`](docs/case-study-axe-core-zh.md).
 
 ---
 
-## 目录结构
+## Three bugs this project found in itself
+
+Recorded because they are the reason the verification steps exist.
+
+1. **A repeated `--symbol` flag overwrote instead of accumulating**, so asking about three
+   symbols silently answered about one. Caught by running against real coverage data.
+2. **"The change deleted nothing" was reported as a measurement failure** rather than as a
+   completed measurement with an empty answer. Caught by a test asserting the exit code.
+3. **`git blame --porcelain` was read from the wrong field.** It emits
+   `<sha> <origLine> <finalLine>`, and using `origLine` produces a command that exits 0, looks
+   plausible, and blames a completely different line. Caught by checking this tool's own output
+   against axe-core by hand. There is now a test that *runs the command the tool advertises*.
+
+---
+
+## Repository layout
 
 ```
 euthyna/
-├── README.md                 本文件
-├── AGENTS.md                 给 AI agent 的项目上下文（会话交接用）
-├── NOTICE.md                 第三方内容许可声明 + 许可方案待拍板项
-├── docs/
-│   ├── methodology-zh.md     中文审计方法论（核心计划文件）
-│   ├── positioning-zh.md     竞品定位分析（全类目重做）
-│   └── dsh-stop-gate-zh.md   DSH 门禁事实核查（含实测修正）
-├── reference/
-│   ├── trail-of-bits/        Trail of Bits 三个插件原文（24 文件，CC-BY-SA-4.0）
-│   ├── competitors/          竞品技能原文（dsh-skill-pack-security）
-│   └── dsh-plugin-anatomy/   DSH 插件最小骨架样本 + 上游插件清单
-├── tools/                    调研脚本（Node，走本地代理隧道）
-└── data/
-    ├── dsh-plugins.json      DSH 生态插件目录快照（3931 条，约 4MB）
-    └── audit-space.txt       定位探针的完整输出（含命中上下文）
+├── bin/  src/  test/        Fact producers (zero dependencies, Node >= 20)
+├── .agents/skills/euthyna/  The audit discipline, as a portable skill
+├── bench/                   Blind recall benchmark + results
+├── docs/                    Design notes and case studies (Chinese)
+├── tools/                   Research and verification scripts
+└── data/                    DSH plugin catalog snapshot
 ```
 
-### 关于 `tools/`
-
-这些脚本是调研留下的，之后查竞品、查名字占用、验宿主行为还用得上：
-
-| 脚本 | 用途 |
-|---|---|
-| `probe-audit-space.js` | **带命中上下文的定位探针**（做定位分析用这个，别用只打名字的 `probe-gaps.js`） |
-| `check-stop-gate.mjs` | **Stop 门禁契约的可复现验证**：端到端跑真实 hook 桥接，断言拦截通路 |
-| `fetch-catalog.js` | 经代理隧道抓取任意 URL（可下载插件目录） |
-| `gh-search.js` | GitHub 仓库搜索 |
-| `gh-tree.js` | 列出仓库文件树并按扩展名统计 |
-| `gh-pull.js` | 批量下载仓库文件 |
-| `probe-names.js` / `probe-naming.js` | 插件命名占用与命名分布分析 |
-| `probe-gaps.js` | 旧版全类目覆盖探针（只打名字，仅作粗筛） |
-| `probe-greek.js` | 希腊词根候选名的占用检查 |
-| `npm-check.js` / `npm-info.js` | npm 包名可用性与详情查询（`npm-check.js` 支持命令行传名） |
-| `inspect-plugin.js` | 查看目录里某个插件的完整元数据 |
-
-运行前提：本机代理在 `127.0.0.1:7897`（脚本内的 `PROXY` 常量）。
-所有查询类脚本读**仓库内**的 `data/dsh-plugins.json`，不依赖外部路径。
+`tools/fetch-references.js` downloads the upstream sources this project reads into `.refs/`
+(gitignored). **No third-party files are distributed in this repository** — see
+[`NOTICE.md`](NOTICE.md) for why, and for what is owed to whom.
 
 ---
 
-## 数据快照说明
+## Status
 
-`data/dsh-plugins.json` 的 `updated` 字段是 **2026-09-18**（从 `https://awesome-dsh-plugin.com/plugins.json` 抓取；该域名托管在 GitHub Pages，大陆直连被拒，需走代理）。
+Early, and honest about it. Working: the two fact producers, the skill, the benchmark harness.
+Not yet built: wiring the skill to the CLI so an agent uses them without being told, and the
+git-history / coverage work needed to close the remaining recall gap.
 
-它是**快照**，会过期。需要最新数据时：
+The design notes are currently in Chinese. An English translation of `docs/` is a known gap.
 
-```powershell
-node tools/fetch-catalog.js awesome-dsh-plugin.com /plugins.json data/dsh-plugins.json
-```
+## License
 
----
-
-## 许可
-
-**Apache License 2.0**，全文见 `LICENSE`。
-
-**本仓库不分发任何第三方文件。** 这是有意设计的：调研需要反复阅读上游原文，
-但把原文拷进仓库会让许可证变含糊（上游中有一份是 CC-BY-SA-4.0），
-而且那份快照会悄悄与上游脱节。所以原文改为按需拉取：
-
-```powershell
-node tools/fetch-references.js           # 拉到 .refs/，已 gitignore
-node tools/fetch-references.js --list    # 只看清单
-```
-
-方法论借鉴自两处公开工作，**已按原创路线自行撰写并署名**：Trail of Bits 的 `skills`
-（CC-BY-SA-4.0）与 `dsh-skill-pack-security`（Apache-2.0）。
-CC BY-SA 的 `Adapted Material` 定义明确包含 "translated"，因此**翻译或逐句改写会构成改编物**——
-本仓库刻意不含此类内容。详见 `NOTICE.md`。
-
-> ⚠️ 一处例外尚未处理：`docs/methodology-zh.md` 是早期产物，按「逐条对照改写」写成，
-> 属改编物候选，**待重写或移除**。`NOTICE.md` 已如实标注。
+**Apache License 2.0** — see [`LICENSE`](LICENSE).

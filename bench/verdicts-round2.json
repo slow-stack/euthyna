@@ -1,0 +1,13 @@
+{
+  "//": "Round-2 verdicts. Each case maps to an array of three independent adjudication runs. Run 1 was adjudicated before the file-only reporting protocol existed; runs 2 and 3 ran under it (report to %TEMP% only, one-line DONE reply, no directory listing). Corrected case ids are the real directory names, not the blind ids — the mapping is in .scratch/blind-mapping.json and must not be shipped into a blind run.",
+  "c1-comment-only": ["FALSE POSITIVE", "FALSE POSITIVE", "FALSE POSITIVE"],
+  "c2-test-fixture": ["FALSE POSITIVE", "FALSE POSITIVE", "FALSE POSITIVE"],
+  "p1-prototype-pollution": ["TRUE POSITIVE", "TRUE POSITIVE", "TRUE POSITIVE"],
+  "p1b-prototype-pollution-guarded": ["FALSE POSITIVE", "FALSE POSITIVE", "FALSE POSITIVE"],
+  "p2-path-traversal": ["TRUE POSITIVE", "TRUE POSITIVE", "TRUE POSITIVE"],
+  "p2b-path-traversal-guarded": ["FALSE POSITIVE", "FALSE POSITIVE", "FALSE POSITIVE"],
+  "p3-command-injection": ["TRUE POSITIVE", "TRUE POSITIVE", "TRUE POSITIVE"],
+  "p3b-execfile": ["FALSE POSITIVE", "FALSE POSITIVE", "FALSE POSITIVE"],
+  "p4-code-injection": ["TRUE POSITIVE", "TRUE POSITIVE", "TRUE POSITIVE"],
+  "p4b-unreachable-eval": ["FALSE POSITIVE", "FALSE POSITIVE", "FALSE POSITIVE"]
+}

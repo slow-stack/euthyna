@@ -192,7 +192,7 @@ Full analysis: `docs/dsh-stop-gate-zh.md`.
 | `bin/` + `src/` | **Fact producers** (zero-dependency Node CLI). `src/contract.js` is the contract in code; `src/facts/history.js` and `src/facts/coverage.js` are the two measurements |
 | `test/` | 61 tests via `node --test`, no third-party framework. **The history tests build real git repositories rather than mocking** |
 | `.agents/skills/euthyna/` | **The skill.** Doubles as source and as a project skill root (rank 200), so it is live in this workspace without a restart |
-| `bench/` | **The recall benchmark.** `exploits.js` establishes ground truth by execution; `prepare-blind.js` produces answer-free copies; `score.js` computes the confusion matrix. Results in `bench/RESULTS.md` |
+| `bench/` | **The recall benchmark.** `exploits.js` establishes ground truth by execution; `prepare-blind.js` produces answer-free copies; `score.js` computes the confusion matrix. Results in `bench/RESULTS.md` (round 1) and `bench/RESULTS-round2.md` (round 2: three independent runs per case, zero flips) |
 | `docs/positioning-zh.md` | Competitive analysis across the DSH catalog, including three claims that were tested and refuted |
 | `docs/fact-contract-zh.md` | The measurement ↔ adjudication interface. The project's core design artefact |
 | `docs/dsh-stop-gate-zh.md` | Hook-gate facts, with reproduction |

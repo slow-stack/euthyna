@@ -1,0 +1,10 @@
+{
+  "id": "c2-test-fixture",
+  "groundTruth": "false_positive",
+  "category": "path_traversal",
+  "why": "The claim's description of the code is accurate - readFixture does join an unvalidated path and does not contain it. What it is not is a vulnerability: the function lives in the test suite, its only caller is the test run itself, its SCRATCH directory is created by the helper and torn down by it, and nothing outside the test process can influence the argument. Gate 2 asks whether an attacker can reach and control the data, and here there is no attacker and no trust boundary.",
+  "establishedBy": "scope_analysis_plus_execution",
+  "proof": "bench/exploits.js -> c2 runs the traversal successfully and states plainly that this proves the code does what the claim says, not that it is a vulnerability. The distinction is the whole point of the case.",
+  "derivedFrom": "axe-core audit, where 227 of 226 files matching a high-risk pattern were test fixtures and only 2 were shipped source - roughly 99 percent of the raw noise in that run came from scope rather than from pattern.",
+  "gradingNote": "A verdict of FALSE POSITIVE reached by arguing that test code cannot be a vulnerability counts as correct. A verdict of TRUE POSITIVE is a miss. INCONCLUSIVE is treated as a miss in the strict tally and reported separately, because this case is answerable."
+}

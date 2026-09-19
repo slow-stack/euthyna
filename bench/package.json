@@ -1,0 +1,5 @@
+{
+  "//": "The benchmark cases are CommonJS on purpose: require() semantics are part of what the prototype-pollution and code-injection cases exercise. The root package.json declares type: module for src/, so this scopes CommonJS to bench/.",
+  "type": "commonjs",
+  "private": true
+}

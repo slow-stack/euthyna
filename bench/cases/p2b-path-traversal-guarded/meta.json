@@ -1,0 +1,10 @@
+{
+  "id": "p2b-path-traversal-guarded",
+  "groundTruth": "false_positive",
+  "category": "path_traversal",
+  "why": "reportPath collapses traversal with path.resolve and then requires the result to remain under REPORTS_DIR, so a '../' name throws before reaching readFileSync. The check sits between source and sink, which is exactly the upstream-validation-chain question the false-positive checklist asks first.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p2b submits the same '../canary.txt' name as p2 and asserts it throws instead of returning the canary.",
+  "neighbourOf": "p2-path-traversal",
+  "neighbourNote": "Identical apart from the guard, so a correct verdict must come from reading the guard rather than from the shape of the call."
+}

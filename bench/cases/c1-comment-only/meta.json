@@ -1,0 +1,9 @@
+{
+  "id": "c1-comment-only",
+  "groundTruth": "false_positive",
+  "category": "dom_injection",
+  "why": "The innerHTML expression sits inside a block comment: it is regeneration instructions for a maintainer, not code. The comment opens on line 3 and closes before ENCODED_TAGS. Nothing on that line executes at any point.",
+  "establishedBy": "inspection_of_comment_bounds",
+  "proof": "bench/exploits.js -> c1 loads the module and asserts it exports a working isValidLangTag while no document object exists in the process, which is only possible if the innerHTML line never runs.",
+  "derivedFrom": "axe-core audit, lib/core/utils/valid-langs.js:10 - the same shape found in a real repository, where it was the single most instructive false positive of that run."
+}

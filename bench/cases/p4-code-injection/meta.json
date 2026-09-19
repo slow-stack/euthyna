@@ -1,0 +1,10 @@
+{
+  "id": "p4-code-injection",
+  "groundTruth": "true_positive",
+  "category": "code_injection",
+  "why": "expression reaches the function body of new Function with no validation and no allowlist. new Function bodies resolve globals at call time, so an expression such as 'globalThis.x = 1, true' executes on evaluation.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p4 compiles an expression that sets a global and asserts the global is set after ruleMatches runs.",
+  "neighbourOf": "p4b-unreachable-eval",
+  "neighbourNote": "Both contain the same new Function call. The difference is reachability, which is a gate-2 question rather than a pattern question."
+}

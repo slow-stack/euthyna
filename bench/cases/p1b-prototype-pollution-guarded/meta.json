@@ -1,0 +1,10 @@
+{
+  "id": "p1b-prototype-pollution-guarded",
+  "groundTruth": "false_positive",
+  "category": "prototype_pollution",
+  "why": "Identical merge shape to p1, but every key is checked against FORBIDDEN_KEYS before use. JSON.parse does create an own \"__proto__\" property, so Object.keys does surface it, and the guard is what stops it.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p1b runs the same payload as p1 and asserts Object.prototype is untouched. The guard is load-bearing: removing it makes p1b behave like p1.",
+  "neighbourOf": "p1-prototype-pollution",
+  "neighbourNote": "Byte-identical to p1 apart from the guard, so a verdict that differs between the two is a verdict driven by the guard rather than by the pattern."
+}

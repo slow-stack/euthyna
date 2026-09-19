@@ -1,0 +1,10 @@
+{
+  "id": "p2-path-traversal",
+  "groundTruth": "true_positive",
+  "category": "path_traversal",
+  "why": "path.join does not sanitise: joining REPORTS_DIR with '../../<file>' collapses the segments and yields a path outside REPORTS_DIR, which readFileSync then reads. There is no normalisation step and no containment check between source and sink.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p2 reads a canary file placed outside reports/ using the name '../canary.txt' and asserts the contents come back.",
+  "neighbourOf": "p2b-path-traversal-guarded",
+  "neighbourNote": "Same function name, same sink, same source. The only difference is path.resolve plus a containment check."
+}

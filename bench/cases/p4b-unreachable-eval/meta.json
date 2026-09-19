@@ -1,0 +1,11 @@
+{
+  "id": "p4b-unreachable-eval",
+  "groundTruth": "false_positive",
+  "category": "code_injection",
+  "why": "The new Function call is real but unreachable. Every expression that ships with the product is found in BUILTIN_PREDICATES and returns before the compile step; anything else hits the ALLOW_COMPILED_EXPRESSIONS check, which is a module constant set to false with no configuration key and no runtime setter. Gate 2 concerns reachability, and there is no path from caller input to the sink.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p4b submits the same global-setting expression as p4 and asserts it throws and the global stays unset.",
+  "neighbourOf": "p4-code-injection",
+  "neighbourNote": "Same sink, same source, different reachability. A verdict driven by the presence of new Function would get both wrong, which is precisely the failure this pair is built to detect.",
+  "reviewNote": "If a future change makes ALLOW_COMPILED_EXPRESSIONS settable at runtime, this case becomes a true positive. The ground truth is a statement about this revision, not about the pattern."
+}

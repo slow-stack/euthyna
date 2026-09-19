@@ -1,0 +1,10 @@
+{
+  "id": "p3-command-injection",
+  "groundTruth": "true_positive",
+  "category": "command_injection",
+  "why": "datasetName is interpolated into a shell command string handed to execSync, which runs it through a shell by default. No escaping and no allowlist sits between source and sink.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p3 injects a metacharacter payload that writes a marker file, using the separator appropriate to the platform, and asserts the marker exists afterwards.",
+  "neighbourOf": "p3b-execfile",
+  "neighbourNote": "p3b performs the same archive with the same sink library family; the difference is execFile plus a -- terminator."
+}

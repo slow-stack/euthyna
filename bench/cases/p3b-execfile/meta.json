@@ -1,0 +1,11 @@
+{
+  "id": "p3b-execfile",
+  "groundTruth": "false_positive",
+  "category": "command_injection",
+  "why": "Two differences from p3, both load-bearing. execFileSync does not invoke a shell, so shell metacharacters in datasetName stay literal argv data and cannot start a second command; and the '--' terminator stops tar from interpreting a leading dash as an option, which closes the argument-injection route that execFile alone would leave open.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p3b submits the same metacharacter payload as p3 and asserts no marker file appears.",
+  "neighbourOf": "p3-command-injection",
+  "neighbourNote": "The claim names execSync explicitly. The code under audit does not call execSync at all, which makes this case a test of whether the adjudicator reads the actual sink rather than the claim's description of it.",
+  "residualNote": "execFile without the '--' terminator would leave tar argument injection open. That is why the terminator is present, and why this case is genuinely clean rather than merely differently broken."
+}

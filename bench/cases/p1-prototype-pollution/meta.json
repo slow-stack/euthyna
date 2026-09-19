@@ -1,0 +1,10 @@
+{
+  "id": "p1-prototype-pollution",
+  "groundTruth": "true_positive",
+  "category": "prototype_pollution",
+  "why": "deepMerge assigns target[key] = value with no key filtering. With key === \"__proto__\", the read target[key] resolves to the prototype (a plain object), so the isPlainObject branch recurses and the assignment lands on Object.prototype.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p1 writes Object.prototype.polluted via JSON.parse('{\"__proto__\":{\"polluted\":\"yes\"}}') and asserts the property is visible on an unrelated object.",
+  "neighbourOf": "p1b-prototype-pollution-guarded",
+  "neighbourNote": "p1b is byte-identical except for a FORBIDDEN_KEYS set checked at the top of the loop. This pair isolates one guard."
+}

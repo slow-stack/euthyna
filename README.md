@@ -4,6 +4,8 @@
 > You did not get to simply walk away from office. You handed over your accounts and they
 > were examined. Pass, and you left with your standing intact. Fail, and you faced trial.
 
+[![CI](https://github.com/slow-stack/euthyna/actions/workflows/ci.yml/badge.svg)](https://github.com/slow-stack/euthyna/actions/workflows/ci.yml)
+
 A **code security audit framework** for AI coding agents.
 
 It is not another scanner. It **produces the deterministic facts an agent cannot compute**
@@ -200,6 +202,17 @@ Not yet built: wiring the skill to the CLI so an agent uses them without being t
 git-history / coverage work needed to close the remaining recall gap.
 
 The design notes are available in English and Chinese; the `-zh` files are the originals.
+
+## Contributing
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version: no AI attribution in commits,
+one change per commit, and do not claim something works until you have run it.
+
+## Security
+
+The fact producers execute `git` and parse coverage output; their integrity is the product.
+What is in scope, and how to report privately: [`SECURITY.md`](SECURITY.md). Note that the
+benchmark fixtures in `bench/cases/` are vulnerable by construction and are not vulnerabilities.
 
 ## License
 

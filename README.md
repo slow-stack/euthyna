@@ -1,5 +1,7 @@
 # euthyna
 
+<img src="assets/euthyna.png" align="right" width="120" alt="euthyna logo">
+
 > **εὔθυνα** — in classical Athens, the audit every outgoing official had to submit.
 > You did not get to simply walk away from office. You handed over your accounts and they
 > were examined. Pass, and you left with your standing intact. Fail, and you faced trial.

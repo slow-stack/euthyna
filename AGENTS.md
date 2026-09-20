@@ -205,6 +205,7 @@ Full analysis: `docs/dsh-stop-gate.md`.
 | `SECURITY.md` | Reporting policy and scope; notes that the bench fixtures are vulnerable by construction |
 | `.github/ISSUE_TEMPLATE/` | Issue forms: bug report / feature proposal / benchmark case proposal. The privacy guidance tells reporters to build synthetic fixtures and redact author names, commit messages, and local paths — `history` output and `coverage-final.json` both carry them |
 | `data/dsh-plugins.json` | Snapshot of 3931 DSH plugins (`updated=2026-09-18`) |
+| `assets/euthyna.png` | README logo, 512×512 (the original 1254×1254 stays out of the repository) |
 | `.scratch/` | Scratch: downloaded sources and intermediate output (gitignored) |
 
 ---

@@ -60,16 +60,106 @@ function reproduceCommand({ coverageFile, symbol, file }) {
 }
 
 /**
- * Read a c8/v8-to-istanbul coverage-final.json.
+ * Read a coverage report.
  *
- * Note the shape: per-file keys are path/all/statementMap/s/branchMap/b/fnMap/f.
- * There is no istanbul `hash`, and `branchMap` is a relabelled V8 block range
- * rather than an if/else model, so a consumer written against classic istanbul
- * field lists reads the wrong thing.
+ * Two formats are accepted:
+ *
+ * 1. c8 / v8-to-istanbul `coverage-final.json` — per-file keys are
+ *    path/all/statementMap/s/branchMap/b/fnMap/f. There is no istanbul `hash`,
+ *    and `branchMap` is a relabelled V8 block range rather than an if/else
+ *    model, so a consumer written against classic istanbul field lists reads
+ *    the wrong thing.
+ * 2. coverage.py JSON (`coverage json`, format 3) — top level is
+ *    `{meta, files}`, and per-file `functions` maps a function name
+ *    (`name`, or `Class.method` for methods) to
+ *    `{executed_lines, missing_lines, start_line, ...}`. There is **no
+ *    invocation counter**: an empty `executed_lines` array is the only
+ *    evidence that the function was never entered. coverage.py reports
+ *    functions that were never called as long as their module was loaded,
+ *    which is exactly what makes "never invoked" an established fact.
  */
 export async function loadCoverage(coverageFile) {
   const raw = await readFile(coverageFile, 'utf8');
   return JSON.parse(raw);
+}
+
+/**
+ * True for coverage.py's `{"meta": {...}, "files": {...}}` shape.
+ * A c8 report never has a top-level `meta` key.
+ */
+function isCoveragePyReport(coverage) {
+  return (
+    coverage &&
+    typeof coverage === 'object' &&
+    coverage.meta &&
+    typeof coverage.meta === 'object' &&
+    coverage.files &&
+    typeof coverage.files === 'object'
+  );
+}
+
+/**
+ * Locate a symbol inside one file entry and normalise the hit.
+ *
+ * c8: `fnMap` holds `{name, decl, loc}` and `f` the invocation count per
+ *     index. `line` comes from decl/loc start.
+ * coverage.py: `functions` holds `name -> {executed_lines, ..., start_line}`.
+ *     A method is named `Class.method`; the bare method name is accepted too,
+ *     so a user asking about `method_called` finds `Guard.method_called`.
+ *
+ * Returns an array of `{ name, line, count, invoked }` where `count` is the
+ * c8 invocation counter (coverage.py has none, so it is 0/1) and `invoked` is
+ * `true` iff there is evidence the function was entered at least once.
+ */
+function locateSymbolInEntry(entry, symbol) {
+  const hits = [];
+
+  const fnMap = entry.fnMap;
+  const counts = entry.f;
+  if (fnMap && typeof fnMap === 'object') {
+    for (const [index, meta] of Object.entries(fnMap)) {
+      if (!meta || meta.name !== symbol) continue;
+      const count = Number(counts?.[index] ?? 0);
+      hits.push({
+        name: meta.name,
+        line: meta.decl?.start?.line ?? meta.loc?.start?.line ?? meta.line ?? null,
+        count,
+        invoked: count > 0
+      });
+    }
+    return hits;
+  }
+
+  const functions = entry.functions;
+  if (functions && typeof functions === 'object') {
+    for (const [name, meta] of Object.entries(functions)) {
+      if (!meta || typeof meta !== 'object') continue;
+      if (name === symbol) {
+        // module-level code has the empty name; it is not a callable symbol
+        if (name === '') continue;
+        const invoked = Array.isArray(meta.executed_lines) && meta.executed_lines.length > 0;
+        hits.push({
+          name,
+          line: meta.start_line ?? null,
+          count: invoked ? 1 : 0,
+          invoked
+        });
+        continue;
+      }
+      if (name.includes('.') && name.endsWith('.' + symbol)) {
+        const invoked = Array.isArray(meta.executed_lines) && meta.executed_lines.length > 0;
+        hits.push({
+          name,
+          line: meta.start_line ?? null,
+          count: invoked ? 1 : 0,
+          invoked
+        });
+      }
+    }
+    return hits;
+  }
+
+  return hits;
 }
 
 /**
@@ -103,15 +193,22 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
     return { facts, evaluated, notEvaluated, measured: false };
   }
 
-  const entries = Object.entries(coverage).filter(([, v]) => v && typeof v === 'object');
+  const isPy = isCoveragePyReport(coverage);
+
+  // c8: entries are the report's file keys directly.
+  // coverage.py: the file entries live under `files`.
+  const entries = Object.entries(isPy ? (coverage.files ?? {}) : coverage).filter(
+    ([, v]) => v && typeof v === 'object'
+  );
 
   if (entries.length === 0) {
-    // An empty object is what c8 produces when the tests never loaded the code
-    // under test. Reporting "no facts" would read as clean, so say so explicitly.
+    // An empty report is what c8 produces when the tests never loaded the code
+    // under test, and what coverage.py produces with an empty `files`. Reporting
+    // "no facts" would read as clean, so say so explicitly.
     notEvaluated.push(
       notEvaluatedEntry(
         KIND.TEST_COVERAGE,
-        '覆盖率数据为空对象。这通常意味着测试运行没有加载到被测代码（常见于缺少 --all），' +
+        '覆盖率数据为空对象。这通常意味着测试运行没有加载到被测代码（常见于缺少 --all 或 --source），' +
           '因此任何「未在数据中」的文件都必须按未覆盖处理，而这里连文件清单都没有'
       )
     );
@@ -128,8 +225,8 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
       notEvaluated.push(
         notEvaluatedEntry(
           KIND.TEST_COVERAGE,
-          `${target.file} 命中 c8 的默认排除规则，很可能根本不在覆盖率数据里。` +
-            '需要显式 --all 或调整 exclude 才能测到它'
+          `${target.file} 命中默认排除规则（c8 排除 test/ 等目录），很可能根本不在覆盖率数据里。` +
+            '需要显式 --all（c8）或 --source（coverage.py）或调整 exclude 才能测到它'
         )
       );
     }
@@ -149,7 +246,9 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
           status: STATUS.ESTABLISHED,
           evidence: { file: target.file },
           method: 'command',
-          command: 'npx c8 --all --reporter=json <test-command>',
+          command: isPy
+            ? 'coverage run --source=<package> <test-command> && coverage json'
+            : 'npx c8 --all --reporter=json <test-command>',
           detail: { symbol: target.symbol, reason: 'file_absent_from_coverage' }
         })
       );
@@ -158,18 +257,14 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
 
     let matched = 0;
     for (const [entryPath, entry] of scoped) {
-      const fnMap = entry.fnMap ?? {};
-      const counts = entry.f ?? {};
+      const hits = locateSymbolInEntry(entry, target.symbol);
 
-      const hits = Object.entries(fnMap).filter(([, meta]) => meta && meta.name === target.symbol);
-      if (hits.length === 0) continue;
-
-      for (const [index, meta] of hits) {
+      for (const hit of hits) {
         matched++;
-        const count = Number(counts[index] ?? 0);
-        const line = meta.decl?.start?.line ?? meta.loc?.start?.line ?? meta.line ?? null;
+        const line = hit.line;
+        const count = hit.count;
 
-        if (count === 0) {
+        if (!hit.invoked) {
           facts.push(
             makeFact({
               id: `coverage-${++counter}`,
@@ -193,8 +288,11 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
               id: `coverage-${++counter}`,
               kind: KIND.TEST_COVERAGE,
               statement:
-                `符号 ${target.symbol} 被调用了 ${count} 次，但调用计数非零**不能**证明任何特定调用点执行过 —— ` +
-                `本事实只能证伪，不能证实`,
+                isPy
+                  ? `符号 ${target.symbol} 至少被调用过一次，但被调用**不能**证明任何特定调用点执行过 —— ` +
+                    `本事实只能证伪，不能证实`
+                  : `符号 ${target.symbol} 被调用了 ${count} 次，但调用计数非零**不能**证明任何特定调用点执行过 —— ` +
+                    `本事实只能证伪，不能证实`,
               status: STATUS.UNKNOWN,
               evidence: { file: entryPath, line },
               method: 'command',
@@ -218,7 +316,9 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
           statement:
             `未能在覆盖率数据中定位符号 ${target.symbol}` +
             (target.file ? `（限定文件 ${target.file}）` : '') +
-            ' —— 可能是被重命名、被内联，或它只在模块顶层出现（c8 把这类调用点放在 branchMap 而非 fnMap）',
+            (isPy
+              ? ' —— 可能是被重命名、被内联，或它只在模块顶层出现'
+              : ' —— 可能是被重命名、被内联，或它只在模块顶层出现（c8 把这类调用点放在 branchMap 而非 fnMap）'),
           status: STATUS.UNKNOWN,
           evidence: { file: target.file ?? '(未限定文件)' },
           method: 'static',

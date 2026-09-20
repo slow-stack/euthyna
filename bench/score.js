@@ -157,6 +157,37 @@ if (runsPerCase > 1) {
   }
 }
 
+// Near-neighbour pairs: same claim text, one guard apart. This is the
+// benchmark's sharpest instrument - a pair the discipline fails to separate
+// means the verdict came from recognising the shape, not from reading the
+// guard. Rows are paired through meta.json's neighbourOf, so an unpaired case
+// (the c-series) simply does not appear here.
+const byId = new Map(rows.map(r => [r.id, r]));
+const seenPairs = new Set();
+const pairRows = [];
+for (const r of rows) {
+  const otherId = r.meta && r.meta.neighbourOf;
+  const other = otherId && byId.get(otherId);
+  if (!other) continue;
+  const key = [r.id, other.id].sort().join(' | ');
+  if (seenPairs.has(key)) continue;
+  seenPairs.add(key);
+  const truthRow = r.truth === 'TRUE POSITIVE' ? r : other;
+  const guardRow = truthRow === r ? other : r;
+  pairRows.push({ truthRow, guardRow, separated: truthRow.allCorrect && guardRow.allCorrect });
+}
+if (pairRows.length) {
+  console.log('\nnear-neighbour pairs (same claim, one guard apart)');
+  console.log('-'.repeat(72));
+  for (const p of pairRows) {
+    console.log(
+      `  ${p.truthRow.id.padEnd(32)} vs ${p.guardRow.id.padEnd(32)} ${p.separated ? 'separated' : 'NOT SEPARATED'}`
+    );
+  }
+  const separated = pairRows.filter(p => p.separated).length;
+  console.log(`\n  pairs fully separated: ${separated}/${pairRows.length}`);
+}
+
 if (unparsed.length) {
   console.log('\nproblems');
   for (const p of unparsed) console.log(`  ${p}`);

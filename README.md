@@ -34,7 +34,7 @@ Neither is fixed by telling the agent to be more careful. So this project does t
 |---|---|---|
 | **Fact producers** | A zero-dependency Node CLI that answers two questions deterministically | Working, tested |
 | **The skill** | The audit discipline itself, as loadable Markdown | Working, loadable |
-| **The benchmark** | A blind recall measurement for the adjudication layer | Two rounds complete |
+| **The benchmark** | A blind recall measurement for the adjudication layer | Three rounds complete |
 
 ### Fact producer 1 — `history`
 
@@ -133,9 +133,18 @@ This project tries to be explicit about the difference. Current state:
 - **Adjudication recall and specificity**, measured blind: **10/10 cases**, 4 real
   vulnerabilities all caught, 6 non-vulnerabilities all correctly cleared, no abstentions.
   Round 2 repeated every case three times — **30 adjudications, zero flips**, four of them
-  on a different model. Every case is a *near-neighbour pair* — same pattern, one guard
+  on a different model. Round 3 expanded the set to **18 cases** (8 real, 10 not) and
+  reshuffled the blind ids every round: **54 adjudications**, 24/24 real-bug claims caught
+  with no misses and no abstentions, 29/30 non-vulnerabilities correctly cleared — and the
+  single "false alarm" was the round's finding, not noise: the adjudicator caught a second
+  defect in a fixture's guard, confirmed by reproduction and fixed; that final guard version
+  has not yet faced a fresh blind round. 17/18 cases were stable across all three runs.
+  Every case is a *near-neighbour pair* — same pattern, one guard
   apart — so the verdicts had to come from reading the guard rather than recognising the shape.
-  See [`bench/RESULTS.md`](bench/RESULTS.md) and [`bench/RESULTS-round2.md`](bench/RESULTS-round2.md).
+  Round 3 ran on a single model (no second route was available), so cross-model evidence
+  remains round 2's four adjudications.
+  See [`bench/RESULTS.md`](bench/RESULTS.md), [`bench/RESULTS-round2.md`](bench/RESULTS-round2.md),
+  and [`bench/RESULTS-round3.md`](bench/RESULTS-round3.md).
 - **The delivery-gate mechanism**, by running the real host plugin: blocking works, and the two
   documented ways of getting it wrong do not. See [`docs/dsh-stop-gate.md`](docs/dsh-stop-gate.md).
 

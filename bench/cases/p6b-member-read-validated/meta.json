@@ -2,10 +2,10 @@
   "id": "p6b-member-read-validated",
   "groundTruth": "false_positive",
   "category": "path_traversal_read",
-  "why": "The same read-side claim, but archive.js resolves the member root (DATA_DIR + datasetName) and requires it to stay inside data/ before tar runs, so no name - including the bare '..' - can make a member escape; the output-path containment from p5b is also present, making this tree clean on both axes.",
+  "why": "The same read-side claim, but archive.js allow-lists the dataset name to a bare name (no separators, no '..', no '@' operand syntax, no drive letters) and additionally requires both the resolved member root and the archive target to stay inside their directories, so no known member-path escape reaches tar.",
   "establishedBy": "execution",
-  "proof": "bench/exploits.js -> p6b submits both escaping shapes ('../secret-canary.txt' and the bare '..') through the same dashboard route and asserts the handler rejects both before any tar invocation and no tarball is produced.",
+  "proof": "bench/exploits.js -> p6b submits three escaping shapes through the same dashboard route - a separator-bearing '..' segment, the bare '..', and a leading-'@' bsdtar operand - and asserts the handler rejects all three before any tar invocation and no tarball is produced.",
   "neighbourOf": "p6-member-read-traversal",
   "neighbourNote": "Identical claim text to p6; only the guards differ.",
-  "residualNote": "The first version of this fixture rejected only names containing path separators, and the bare '..' - which has no separator - defeated it by packing the parent tree into the archive. A round-3 run-1 adjudicator found that defect; the guard now does a resolved containment check instead. The tar-behaviour side of this case is host-dependent (measured with bsdtar 3.8.8)."
+  "residualNote": "This fixture's guard was defeated twice by adjudicators, each fix verified by reproduction: v1 rejected only separator-bearing names and the bare '..' defeated it (round-3 run 1); v2 added a resolved containment check but bsdtar's '@' operand semantics - resolve(data, '@..\\\\..\\\\X') stays inside data/ while tar strips the '@' and opens '..\\\\..\\\\X' - defeated it (round-3 run3b). v3 allow-lists the name. The tar-behaviour side remains host-dependent (measured with bsdtar 3.8.8; GNU tar's '@' semantics differ and are untested here)."
 }

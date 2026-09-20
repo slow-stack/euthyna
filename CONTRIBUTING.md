@@ -37,10 +37,21 @@ could not be fetched — that is **not** a pass.
 
 ## Conventions
 
+### Commits
+
+- Commit messages follow **Conventional Commits** (`fix(bench): …`,
+  `docs(readme): …`) and are single-line.
+- A commit must be attributable to the person who made it: the author email
+  must belong to your GitHub account (your noreply address works — see
+  Settings → Emails). Commits that cannot be linked to an author will not be
+  merged — unattributed code has nobody to answer for it when a regression
+  arrives. Signed commits (GPG/SSH) are strongly recommended.
+
 ### Dependencies
 
 Adding a third-party dependency requires auditing its source first and stating
-the justification in the pull request. This is enforced by review, not by tooling.
+the justification in the pull request. This is enforced by review, not by
+tooling.
 
 ### Documentation
 
@@ -53,6 +64,13 @@ the justification in the pull request. This is enforced by review, not by toolin
   fetched on demand into `.refs/` (gitignored). Material added under
   `.agents/skills/euthyna/references/` must be original prose — a translation
   or a close paraphrase would make the licence claim false.
+
+### Testing
+
+- Tests use Node's built-in `node:test`; there is no third-party test framework.
+- A new feature or benchmark case requires tests. A change to core logic must
+  update the affected assertions before committing.
+- The history tests build real git repositories rather than mocking git.
 
 ### The benchmark
 
@@ -68,6 +86,27 @@ Small and focused beats large and general. CI must be green, and the
 description should say what you ran and what it printed. If a change touches
 the adjudication gates or the benchmark protocol, say so explicitly — those are
 the parts where the project's guarantees live.
+
+For external contributors this is the only path to `main`. Maintainers may push
+small fixes directly, but those commits must still satisfy the rules above.
+
+PRs that adapt the skill or CLI to another host (DSH, Claude Code, Codex, …)
+are welcome; keep the `SKILL.md` layer host-agnostic and describe the
+host-specific packaging separately. Host formats change without notice; a port
+that works today may break tomorrow.
+
+## Issue reporting
+
+A report must come from actually running the tool. Before opening an issue,
+read the template in `.github/ISSUE_TEMPLATE/` — it lists the required fields.
+In particular, redact anything a report may carry by accident: author names,
+commit messages, and local paths appear in `history` output and in
+`coverage-final.json`. Use a synthetic fixture where you can.
+
+Mass-submitted, fabricated, or template-incomplete reports are closed. Every
+report that meets the minimums gets a code-level verification and a reply.
+
+Security issues never go through a public issue — see [`SECURITY.md`](SECURITY.md).
 
 ## Working with AI coding agents?
 

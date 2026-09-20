@@ -29,13 +29,17 @@
 | p5 | 归档输出路径穿越 | tar 输出路径可被 `..` 段带出归档目录 | `path.resolve` + 归属检查 | **已裁定 TRUE POSITIVE（2026-09-20，六门禁全过）**——受控创建/覆盖 + 应用内授权差异，后缀固定 `.tgz`；报告见 `.scratch/adjacent-observations/p3b-archive-output-path/adjudication.md` |
 | p6 | tar 成员读取侧 | `datasetName` 作为成员可打包 `data/` 之外的文件 | 成员路径拒绝 `..` | 读取侧行为已有实测证据（上述报告 P2：归档收录了 `data/` 之外的源码文件）；作为独立案例仍需自己的断言与 exploit，并实测 bsdtar / GNU tar 行为差异 |
 | p7 | 开放重定向 | `redirect(用户URL)` | host 白名单 | 最干净，无需第三方库 |
-| p8 | CRLF 响应头注入 | `Location` 头拼接用户输入 | 头值剔除 CR/LF | 需原始 socket 验证 exploit |
-| p9 | SSRF | `http.get(用户URL)` | 目标清单校验 | exploit 需本地 http server，成本最高 |
+| p8 | CRLF 响应头注入 | `Location` 头拼接用户输入 | 头值剔除 CR/LF | **已按录取规则淘汰（2026-09-20）**：实测 Node 对响应头值中的 CR/LF 在 `writeHead` 阶段直接抛 `ERR_INVALID_CHAR`，payload 无法到达线上，「真案例」一侧建立不起来（复测脚本 `.scratch/test-header-crlf.cjs`，gitignored） |
+| p9 | SSRF | `http.get(用户URL)` | 目的地主机白名单 | **已录取**：exploit 用真实环回 HTTP 服务器作内部目标，服务进程真实取回 canary |
 
 候选取舍规则：**exploit 跑不出确定性结果的候选不进**（例：ReDoS 依赖计时，
 计时是宿主相关的，除非把「超过 N 秒」写成与宿主无关的判据，否则不采用）。
 断言文本有意保持与真实世界相同的精度水平——其中至少两条带「根因指错行」式的不精确，
 把它从第二轮的偶然发现变成受控变量。
+
+**录取结果（2026-09-20，18/18 exploit 一次全过）**：p5/p5b、p6/p6b、p7/p7b、p9/p9b
+进入靶场（真漏洞 4 → 8，总案例 10 → 18 达成）；p8 被录取规则淘汰。案例源码与
+exploits.js 的对应 producer 见 `bench/cases/` 与 `bench/exploits.js`。
 
 ### 一条来自相邻观察裁定的靶场原则
 

@@ -31,15 +31,20 @@ export function shellQuote(value) {
 }
 
 /**
- * Strip terminal control sequences from repo-controlled text at a render
- * boundary. stripVTControlCharacters handles CSI/OSC, but a lone BEL is legal
- * output of `git blame` on some histories and rings the bell / opens an OSC
- * context, so bare C0 controls are dropped as well.
+ * Render repo-controlled text safely for the terminal: every C0 control and
+ * DEL becomes a visible escape (\n, \r, \t, else \xHH). Nothing is preserved
+ * raw — a literal \r would let a filename overwrite the report line on screen
+ * — and nothing is deleted silently — a command whose BEL was dropped would
+ * no longer reproduce the fact when pasted. stripVTControlCharacters removes
+ * complete CSI/OSC sequences first; the regex catches the stragglers.
  */
 export function safeText(value) {
-  const stripped = stripVTControlCharacters(String(value));
-  // eslint-disable-next-line no-control-regex
-  return stripped.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  return stripVTControlCharacters(String(value)).replace(/[\x00-\x1F\x7F]/g, (ch) => {
+    if (ch === '\n') return '\\n';
+    if (ch === '\r') return '\\r';
+    if (ch === '\t') return '\\t';
+    return `\\x${ch.charCodeAt(0).toString(16).padStart(2, '0')}`;
+  });
 }
 
 /** Fact kinds. Kept explicit so an unknown kind fails loudly instead of passing. */

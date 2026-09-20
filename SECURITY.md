@@ -70,8 +70,8 @@ bug bounty.
 - **The bench fixtures (`bench/cases/`).** They are deliberately vulnerable by
   construction — that is how recall is measured. Do not report them.
 - The DSH host, Claude Code, Codex, or any harness the skill is loaded into.
-- The codebases the tool is run *against* (for example the axe-core case study
-  in `docs/`).
+- The codebases the tool is run *against* (for example the case-study targets
+  in `docs/` — axe-core and crewAI).
 - Best-practice hardening suggestions with no demonstrable defect.
 - Reports without a reproduction.
 

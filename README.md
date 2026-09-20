@@ -23,11 +23,11 @@ counts as a finding**.
 
 When an AI coding agent touches security, it fails in two specific ways:
 
-1. 🚨 **It reports things that are not real.** Code that *looks* dangerous gets called a
+1. **It reports things that are not real.** Code that *looks* dangerous gets called a
    vulnerability, without tracing the data. In one validation run on a real codebase,
    **5 out of 5** pattern-matched "vulnerabilities" were false — each died at a different
    gate. See the [case study](docs/case-study-axe-core.md).
-2. 🧾 **Its reassurances cannot be checked.** "I'm done." "The tests cover this." "It's
+2. **Its reassurances cannot be checked.** "I'm done." "The tests cover this." "It's
    safe now." These are assertions. You cannot tell a done-claim from a done-deal.
 
 Neither is fixed by telling the agent to be more careful. euthyna changes the handshake
@@ -40,22 +40,22 @@ between you and the agent:
 
 ## ⚖️ The two things it does
 
-### 1. 🧮 It measures what a model cannot
+### 1. It measures what a model cannot
 
 Two fact producers — a zero-dependency Node CLI:
 
-- 🕵️ **`history`** — for every line a change deletes, it finds the commit that introduced
+- **`history`** — for every line a change deletes, it finds the commit that introduced
   that line and classifies that commit from its own message. If the deleted code came
   from a security fix, that is flagged. This is git archaeology no model can do from
   reading a diff.
-- 🧪 **`coverage`** — was this symbol *ever actually invoked* by a test? It has exactly two
+- **`coverage`** — was this symbol *ever actually invoked* by a test? It has exactly two
   answers: never invoked (established), or entered but that proves nothing about any
   specific call site (unknown). **It never reports "executed"** — V8 coverage marks
   unreachable code as covered, and "line covered → call ran" is wrong in exactly the
   direction an audit cannot afford. The reasoning is in
   [`docs/fact-contract.md`](docs/fact-contract.md) §6.2.
 
-### 2. 🚦 It gates what the agent claims
+### 2. It gates what the agent claims
 
 The [skill](.agents/skills/euthyna/) is the audit discipline itself, as loadable
 Markdown. Every security claim must pass six gates — reachability, trust boundary, real
@@ -79,11 +79,11 @@ the project is deliberately zero-dependency.
 
 Two honest notes:
 
-- 📌 **The skill is the instructions; the CLI is the measurement.** The skill directory
+- **The skill is the instructions; the CLI is the measurement.** The skill directory
   does **not** contain the CLI. Keep this repository checked out; on a host without it,
   the skill requires the unmeasurable criteria to be recorded as *not evaluated* rather
   than guessed at — that fallback is the design, not a gap.
-- 📌 **The skill text and the CLI's reports are currently written in Chinese.** The
+- **The skill text and the CLI's reports are currently written in Chinese.** The
   discipline is host-agnostic Markdown, but an English reader should expect Chinese
   output from the tool itself.
 
@@ -114,7 +114,7 @@ Every deleted line is blamed back to the commit that introduced it, and the `复
 Add `--json` for the structured fact report, and `--pickaxe` to detect lines that were
 removed and are now being added back.
 
-### 🔢 Exit codes are part of the contract
+### Exit codes are part of the contract
 
 Surveying eight measurement plugins in this ecosystem found **none of them publishes a
 process exit code**, which makes their output unusable as a CI gate. This one does:
@@ -135,9 +135,9 @@ finding nothing* are different things.
 
 | Piece | What it is | Status |
 |---|---|---|
-| **Fact producers** | A zero-dependency Node CLI that answers two questions deterministically | ✅ Working, tested |
-| **The skill** | The audit discipline itself, as loadable Markdown | ✅ Working, loadable |
-| **The benchmark** | A blind recall measurement for the adjudication layer | ✅ Three rounds complete |
+| **Fact producers** | A zero-dependency Node CLI that answers two questions deterministically | Working, tested |
+| **The skill** | The audit discipline itself, as loadable Markdown | Working, loadable |
+| **The benchmark** | A blind recall measurement for the adjudication layer | Three rounds complete |
 
 ---
 
@@ -145,7 +145,7 @@ finding nothing* are different things.
 
 This project tries to be explicit about the difference. Current state:
 
-### ✅ Verified
+### Verified
 
 - **`history` attribution against a real repository.** Run against
   [axe-core](https://github.com/dequelabs/axe-core); 17 deleted lines attributed to the
@@ -170,7 +170,7 @@ This project tries to be explicit about the difference. Current state:
 - **The delivery-gate mechanism**, by running the real host plugin: blocking works, and the two
   documented ways of getting it wrong do not. See [`docs/dsh-stop-gate.md`](docs/dsh-stop-gate.md).
 
-### ⚠️ Not verified
+### Not verified
 
 - **Whether the method finds vulnerabilities in real code.** The benchmark measures whether the
   discipline reaches the right verdict *on a claim*. It does not measure whether the claims would

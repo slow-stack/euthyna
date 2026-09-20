@@ -1,0 +1,107 @@
+name: Bug report (CLI, fact producers, skill)
+description: Something in euthyna itself did not behave as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. Two requests before you fill the form —
+        both protect you:
+
+        1. **Build a minimal fixture instead of pasting real code.** This
+           project's own benchmark is built entirely from synthetic cases; a
+           small fake repository usually reproduces a bug faster than a
+           redacted real one.
+        2. **Redact anything that names people, repositories, or machines.**
+           `euthyna history` output contains commit author names, commit
+           messages, and local filesystem paths; `coverage-final.json` embeds
+           absolute paths on your machine as its keys. Replace them with
+           placeholders such as `AUTHOR-1`, `PROJECT-A`, `C:\…\PROJECT-A`.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect instead?
+      placeholder: |
+        Expected: …
+        Actual: …
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: The exact command you ran
+      description: The full command line, with real repository paths replaced by placeholders.
+      placeholder: node bin/euthyna.js history --repo PROJECT-A --base main --head HEAD
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: The tool's output
+      description: |
+        Paste what the tool actually printed, redacted as described above —
+        please do not paraphrase it, because a paraphrase cannot be checked.
+        With `--json`, the report also carries commit author and date fields.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: |
+        The smallest fixture that shows the behaviour. For `history`: a few
+        committed files and a diff between two commits is enough. For
+        `coverage`: a small JSON file in c8's shape is enough. If you could
+        not build one, say what you tried.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Linux
+        - macOS
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      description: Output of `node --version`.
+      placeholder: v22.11.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: context
+    attributes:
+      label: Where does euthyna run here?
+      description: The host that invoked the CLI or loaded the skill.
+      options:
+        - Terminal (direct CLI)
+        - DSH
+        - Claude Code
+        - Codex
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and found no duplicate.
+        - label: The samples above name no real person, repository, or machine.
+        - label: There are no secrets or tokens in anything I pasted.
+        - label: The output above is pasted from the actual run, not reconstructed from memory.

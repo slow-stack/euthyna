@@ -203,6 +203,7 @@ Full analysis: `docs/dsh-stop-gate.md`.
 | `.github/workflows/ci.yml` | CI: test matrix (Linux/Windows × Node 20/22/24) plus the live licence check. **The bench harness is deliberately not run here** — several cases verify bsdtar-specific semantics that GNU tar does not share |
 | `CONTRIBUTING.md` | The house rules in their public form |
 | `SECURITY.md` | Reporting policy and scope; notes that the bench fixtures are vulnerable by construction |
+| `.github/ISSUE_TEMPLATE/` | Issue forms: bug report / feature proposal / benchmark case proposal. The privacy guidance tells reporters to build synthetic fixtures and redact author names, commit messages, and local paths — `history` output and `coverage-final.json` both carry them |
 | `data/dsh-plugins.json` | Snapshot of 3931 DSH plugins (`updated=2026-09-18`) |
 | `.scratch/` | Scratch: downloaded sources and intermediate output (gitignored) |
 

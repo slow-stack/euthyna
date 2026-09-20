@@ -1,0 +1,65 @@
+name: Benchmark case proposal
+description: Propose a case for the recall benchmark — a claim plus its near-neighbour guard.
+labels: [benchmark]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A benchmark case is not "some vulnerable code". It is a package:
+
+        - a **claim** — the assertion an adjudicator receives (`claim.md`),
+        - the **code under audit** (`src/`), kept synthetic — never copied
+          from a real project,
+        - **ground truth** in `meta.json`, established by a deterministic
+          exploit (`bench/exploits.js`), not by argument,
+        - where possible a **near-neighbour**: the same pattern one guard away,
+          so a verdict has to come from reading the guard, not the shape.
+
+        The admission rule is strict: **a case that cannot produce a
+        deterministic exploit does not enter the set** — this rule has
+        actually rejected a candidate. See CONTRIBUTING.md and bench/README.md
+        first.
+
+  - type: input
+    id: pattern
+    attributes:
+      label: Vulnerability class or pattern
+      placeholder: e.g. archive member traversal, open redirect, prototype pollution
+    validations:
+      required: true
+
+  - type: textarea
+    id: claim
+    attributes:
+      label: The claim
+      description: The assertion an adjudicator would receive, written as a claim rather than as proof.
+    validations:
+      required: true
+
+  - type: textarea
+    id: guard
+    attributes:
+      label: The near-neighbour guard
+      description: What the fixed version of the same code looks like, and which single guard separates it from the vulnerable side.
+    validations:
+      required: false
+
+  - type: textarea
+    id: ground-truth
+    attributes:
+      label: How ground truth would be established
+      description: |
+        The exploit you would write, and what deterministic outcome it
+        produces. If tar is involved, note that the harness defines truth
+        against bsdtar's operand semantics (see bench/README.md).
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I have read CONTRIBUTING.md and bench/README.md.
+        - label: The case can be built entirely from synthetic code.
+        - label: I understand that without a deterministic exploit the case will not be admitted.

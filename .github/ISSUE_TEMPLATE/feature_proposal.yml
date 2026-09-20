@@ -1,0 +1,51 @@
+name: Feature proposal
+description: Suggest a capability, starting from the problem it solves.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two constraints shape what this project accepts, stated here so your
+        proposal can address them directly:
+
+        - **euthyna is not a scanner.** It produces deterministic facts and
+          adjudicates claims; it does not search for vulnerabilities.
+        - **Zero runtime dependencies is deliberate.** A proposal that needs a
+          dependency should argue why that dependency is necessary and how its
+          source was audited.
+
+        Describe the problem in terms of an audit you actually did. Please do
+        not paste proprietary code — describe the shape of it instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What were you auditing, what did you need to know, and what blocked you? Redact names, paths, and code.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What would the tool or skill do, concretely? Commands, outputs, or gate behaviour.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including "doing nothing" — what breaks or degrades if this is not built?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and found no duplicate.
+        - label: The proposal addresses the constraints above (or argues why they should change).
+        - label: The description contains no proprietary code and no real names or paths.

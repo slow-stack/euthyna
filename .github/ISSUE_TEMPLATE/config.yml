@@ -1,0 +1,7 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/slow-stack/euthyna/security/advisories/new
+    about: >-
+      Report suspected vulnerabilities privately through GitHub's vulnerability
+      reporting, not as a public issue. What is in scope: SECURITY.md.

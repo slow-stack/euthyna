@@ -117,14 +117,35 @@ euthyna euthyna-history — 被删除代码的来源归属与安全分类
 
 ```powershell
 node <euthyna 仓库>/bin/euthyna.js coverage `
-  --coverage <c8 的 coverage-final.json 绝对路径> `
+  --coverage <覆盖率文件绝对路径> `
   --symbol <符号名> --symbol <符号名>
 ```
 
 `--symbol` 可重复，一次查多个。加 `--file` 可限定到某个文件。
 
-覆盖率文件从哪来：项目自己产出就用它（c8 默认落在 `coverage/coverage-final.json`）。
-项目不产出覆盖率时，**要么用项目自己的方式跑一次测试产出它，要么把该判据标为「不可评估」**。
+**两种覆盖率格式都读**（自动识别，无需参数）：
+
+| 格式 | 来源 | 说明 |
+|---|---|---|
+| c8 / v8-to-istanbul `coverage-final.json` | JS 项目（c8 默认落在 `coverage/coverage-final.json`） | 每文件有 `fnMap` + `f`（调用计数数组） |
+| coverage.py JSON（format 3） | Python 项目（`coverage json` 产出） | 顶层 `{meta, files}`；`functions` 里「函数名 → 已执行行列表」，**无调用计数**。从未调用的函数仍在列表中且 `executed_lines` 为空 |
+
+coverage.py 的产出命令（Python 目标）：
+```powershell
+uv run --with coverage python -m coverage run `
+  --include="*/src/<package>/<file>.py" `
+  -m pytest <test-file> -o addopts="" -p no:randomly
+uv run --with coverage python -m coverage json -o <输出路径>.json
+```
+
+> 两个 Python 专属注意事项（在 crewAI 案例研究中实测）：
+> 1. **禁用 xdist**（`-o addopts=""`）——coverage 默认收集不到子进程的 trace，`-n auto`
+>    时报告是空的。仓库自带 xdist 默认值时用 `-o addopts=""` 覆盖。
+> 2. `--include` 按文件路径限定比 `--source` 对 src 布局更可靠（`--source=包名` 可能报
+>    `module-not-imported`）。
+
+覆盖率文件从哪来：项目自己产出就用它。项目不产出覆盖率时，**要么用项目自己的方式跑一次
+测试产出它，要么把该判据标为「不可评估」**。
 
 ### 输出长什么样（真实捕获，一次查询命中两种结果）
 

@@ -191,14 +191,16 @@ Full analysis: `docs/dsh-stop-gate.md`.
 
 | Path | What it is |
 |---|---|
-| `bin/` + `src/` | **Fact producers** (zero-dependency Node CLI). `src/contract.js` is the contract in code; `src/facts/history.js` and `src/facts/coverage.js` are the two measurements |
-| `test/` | 61 tests via `node --test`, no third-party framework. **The history tests build real git repositories rather than mocking** |
+| `bin/` + `src/` | **Fact producers** (zero-dependency Node CLI). `src/contract.js` is the contract in code; `src/facts/history.js` and `src/facts/coverage.js` are the two measurements. `coverage.js` reads **both** c8/V8 JSON and coverage.py JSON (format 3) |
+| `test/` | 67 tests via `node --test`, no third-party framework. **The history tests build real git repositories rather than mocking**; the coverage tests carry fixtures shaped like both c8 and coverage.py output |
 | `.agents/skills/euthyna/` | **The skill.** Doubles as source and as a project skill root (rank 200), so it is live in this workspace without a restart |
 | `bench/` | **The recall benchmark.** `exploits.js` establishes ground truth by execution (18 cases, 8 near-neighbour pairs); `prepare-blind.js` produces answer-free copies with per-round shuffled ids; `score.js` computes the confusion matrix and the pair view. Results: `bench/RESULTS.md` (round 1), `bench/RESULTS-round2.md` (round 2: three independent runs per case, zero flips), `bench/RESULTS-round3.md` (round 3: 18 cases, 54 adjudications, two fixture defects caught by adjudicators); protocols in `bench/README.md`, design pre-registrations in `bench/DESIGN-round3.md` |
 | `docs/positioning.md` + `-zh` | Competitive analysis across the DSH catalog, including three claims that were tested and refuted |
 | `docs/fact-contract.md` + `-zh` | The measurement ↔ adjudication interface. The project's core design artefact |
 | `docs/dsh-stop-gate.md` + `-zh` | Hook-gate facts, with reproduction |
-| `docs/case-study-axe-core.md` + `-zh` | One validation run against a real codebase |
+| `docs/case-study-axe-core.md` + `-zh` | Validation run #1: JavaScript (axe-core), 5/5 coarse-screen candidates refuted at the gates |
+| `docs/case-study-crewai.md` + `-zh` | Validation run #2: Python (crewAI). **Proved the Python claim**: `history` works on Python repos, and the coverage producer was extended to read coverage.py JSON. 3 candidates → 2 FP + 1 INCONCLUSIVE (pickle, supply-chain-dependent) |
+| `audits/` | **Audit reports, one per run, local-only** (never written into the target repository, and deliberately **not committed** here — the public form is `docs/case-study-*.md`). See `audits/CREWAI_EUTHYNA_AUDIT_2026-09-20.md` (gitignored) |
 | `tools/fetch-references.js` | Fetches upstream sources on demand into `.refs/` (gitignored). **The repo distributes no third-party files** |
 | `tools/check-license-text.mjs` | Verifies `LICENSE` against the canonical Apache-2.0 text, fetched live. **The licence claim is checkable rather than asserted** |
 | `.gitattributes` | Pins LF in checkouts so byte-level checks mean the same thing on every platform |

@@ -180,6 +180,8 @@ Full analysis: `docs/dsh-stop-gate.md`.
 | `node --test <directory>` is treated as a file path on Node 24 | Use plain `node --test` (auto-discovery) in `package.json`, not a directory argument |
 | `"type": "module"` at the repo root silently breaks CommonJS scripts in subdirectories | Scope them with their own `package.json` declaring `"type": "commonjs"` — see `tools/package.json` and `bench/package.json` |
 | PowerShell's `>` redirect writes UTF-16, producing JSON that will not parse | `\| Set-Content -Encoding UTF8` when capturing command output |
+| **`Set-Content -Encoding UTF8` still writes a BOM in Windows PowerShell 5.1** | The file is fine everywhere else, but `gh api --input` rejects it with "Problems parsing JSON" (HTTP 400). Write JSON bodies with `[System.IO.File]::WriteAllText($path, $body, (New-Object System.Text.UTF8Encoding($false)))` — no BOM |
+| **A jq filter containing `\|` gets split by this shell tool's pipeline parsing** | Use pipe-free expressions (e.g. `--jq '.names'` instead of `'.names \| join(", ")'`) |
 | **`core.autocrlf=true` with no `.gitattributes` gives a CRLF checkout while the repository stores LF** | Committed content is unaffected, but byte-level checks (file size, SHA-256, a diff against an upstream original) then report differences that do not exist. Hit while byte-checking `LICENSE` against the canonical Apache text, which produced a phantom 202-byte difference. Fixed by the `.gitattributes` at the repository root |
 | **A "corrupted" test fixture that silently failed to mutate** | The checker correctly reported VERIFIED, because the file was byte-identical to the control. Assert that every negative fixture actually differs from the control before trusting any result that comes out of it |
 

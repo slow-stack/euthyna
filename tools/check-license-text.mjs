@@ -23,8 +23,11 @@
 //      code contract in src/cli.js for why "could not measure" is kept distinct
 //      from "clean".
 //
-// Requires the local proxy (see the pitfall table in AGENTS.md). Override with
-// EUTHYNA_PROXY=host:port if the tunnel listens elsewhere.
+// Networking: the local proxy is tried first (on the development machine the
+// DNS is fake-ip, so a direct connection never leaves the host - see the
+// pitfall table in AGENTS.md). Where no proxy listens - CI runners, other
+// machines - the CONNECT is refused immediately and a direct fetch is tried
+// instead. Override the proxy with EUTHYNA_PROXY=host:port.
 
 import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
@@ -86,6 +89,51 @@ function get(target, requestPath) {
   });
 }
 
+/** Direct GET, for hosts where no local proxy is running. */
+function getDirect(target, requestPath) {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        host: target,
+        servername: target,
+        path: requestPath,
+        method: 'GET',
+        headers: { host: target, 'user-agent': 'euthyna-check-license-text' }
+      },
+      (resp) => {
+        const chunks = [];
+        resp.on('data', (c) => chunks.push(c));
+        resp.on('end', () =>
+          resolve({ status: resp.statusCode, body: Buffer.concat(chunks) })
+        );
+      }
+    );
+    req.on('error', reject);
+    req.setTimeout(30000, () => req.destroy(new Error('direct connect timeout')));
+    req.end();
+  });
+}
+
+/**
+ * Proxy first, then direct. On a machine behind fake-ip DNS the direct attempt
+ * can never succeed, so the proxy must have the first chance; where no proxy
+ * listens (CI), its CONNECT is refused at once and the direct fetch runs.
+ */
+async function fetchUpstream(target, requestPath) {
+  try {
+    return await get(target, requestPath);
+  } catch (proxyError) {
+    try {
+      return await getDirect(target, requestPath);
+    } catch (directError) {
+      throw new Error(
+        `proxy (${proxyHost}:${proxyPort}): ${proxyError.message}; ` +
+          `direct: ${directError.message}`
+      );
+    }
+  }
+}
+
 /** The appendix line that names the copyright holder; the one line we may change. */
 const isCopyrightLine = (line) => /^ {3}Copyright \S/.test(line ?? '');
 
@@ -98,13 +146,13 @@ async function main() {
 
   let upstreamRaw;
   try {
-    const res = await get(UPSTREAM_HOST, UPSTREAM_PATH);
+    const res = await fetchUpstream(UPSTREAM_HOST, UPSTREAM_PATH);
     if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
     upstreamRaw = res.body.toString('utf8');
   } catch (error) {
     process.stderr.write(
       `无法验证 LICENSE：取不到官方原文（${error.message}）\n` +
-        `这不是通过。代理默认 127.0.0.1:7897，可用 EUTHYNA_PROXY=host:port 覆盖。\n`
+        `这不是通过。已依次尝试本地代理与直连；代理端口可用 EUTHYNA_PROXY=host:port 覆盖。\n`
     );
     return EXIT.UNVERIFIED;
   }

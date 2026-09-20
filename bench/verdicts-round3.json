@@ -1,0 +1,20 @@
+{
+  "//": "Round-3 verdicts. Each case maps to an array of independent runs; run 1 used the seed-1912395651 blind shuffle. p6b-member-read-validated has no run-1 entry on purpose: its run-1 adjudication was correct for the copy it saw, but that copy's guard was later found incomplete (the bare name '..' defeats a separator-only check) and the fixture was fixed - the corrected case enters at run 2. See bench/RESULTS-round3.md for the full account.",
+  "c1-comment-only": ["FALSE POSITIVE"],
+  "c2-test-fixture": ["FALSE POSITIVE"],
+  "p1-prototype-pollution": ["TRUE POSITIVE"],
+  "p1b-prototype-pollution-guarded": ["FALSE POSITIVE"],
+  "p2-path-traversal": ["TRUE POSITIVE"],
+  "p2b-path-traversal-guarded": ["FALSE POSITIVE"],
+  "p3-command-injection": ["TRUE POSITIVE"],
+  "p3b-execfile": ["FALSE POSITIVE"],
+  "p4-code-injection": ["TRUE POSITIVE"],
+  "p4b-unreachable-eval": ["FALSE POSITIVE"],
+  "p5-output-path-traversal": ["TRUE POSITIVE"],
+  "p5b-output-path-contained": ["FALSE POSITIVE"],
+  "p6-member-read-traversal": ["TRUE POSITIVE"],
+  "p7-open-redirect": ["TRUE POSITIVE"],
+  "p7b-redirect-allowlist": ["FALSE POSITIVE"],
+  "p9-ssrf": ["TRUE POSITIVE"],
+  "p9b-ssrf-allowlist": ["FALSE POSITIVE"]
+}

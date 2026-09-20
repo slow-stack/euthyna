@@ -1,0 +1,50 @@
+# CI for euthyna.
+#
+# There is no install step: the project is deliberately zero-dependency, and
+# `npm test` runs `node --test` directly. The test suite builds real git
+# repositories rather than mocking, so both operating systems are exercised.
+#
+# The licence check is its own job: it fetches the canonical Apache-2.0 text
+# live and exits 2 when upstream cannot be reached, which must not be read as
+# a pass. It takes the direct-fetch path (no local proxy exists on a runner).
+#
+# The bench harness (bench/exploits.js) is deliberately NOT run here: several
+# of its cases verify bsdtar-specific operand semantics, which GNU tar on the
+# Linux runners does not share. Ground truth is established where it is
+# measured, on the development machine.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Test suite
+        run: npm test
+
+  license:
+    name: licence text vs upstream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify LICENSE against the canonical Apache-2.0 text
+        run: node tools/check-license-text.mjs

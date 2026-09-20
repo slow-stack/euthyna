@@ -200,6 +200,9 @@ Full analysis: `docs/dsh-stop-gate.md`.
 | `tools/fetch-references.js` | Fetches upstream sources on demand into `.refs/` (gitignored). **The repo distributes no third-party files** |
 | `tools/check-license-text.mjs` | Verifies `LICENSE` against the canonical Apache-2.0 text, fetched live. **The licence claim is checkable rather than asserted** |
 | `.gitattributes` | Pins LF in checkouts so byte-level checks mean the same thing on every platform |
+| `.github/workflows/ci.yml` | CI: test matrix (Linux/Windows × Node 20/22/24) plus the live licence check. **The bench harness is deliberately not run here** — several cases verify bsdtar-specific semantics that GNU tar does not share |
+| `CONTRIBUTING.md` | The house rules in their public form |
+| `SECURITY.md` | Reporting policy and scope; notes that the bench fixtures are vulnerable by construction |
 | `data/dsh-plugins.json` | Snapshot of 3931 DSH plugins (`updated=2026-09-18`) |
 | `.scratch/` | Scratch: downloaded sources and intermediate output (gitignored) |
 

@@ -24,9 +24,12 @@ counts as a finding**.
 When an AI coding agent touches security, it fails in two specific ways:
 
 1. **It reports things that are not real.** Code that *looks* dangerous gets called a
-   vulnerability, without tracing the data. In one validation run on a real codebase,
-   **5 out of 5** pattern-matched "vulnerabilities" were false — each died at a different
-   gate. See the [case study](docs/case-study-axe-core.md).
+   vulnerability, without tracing the data. In validation runs on real codebases — a
+   JavaScript one and a Python one — the pattern-matched "vulnerabilities" were mostly
+   false: **5 out of 5** refuted at the gates on the first run; **2 out of 3** refuted,
+   the third unresolved (INCONCLUSIVE, supply-chain-dependent) on the second. See the
+   [case studies](docs/case-study-crewai.md) ([Python/crewAI](docs/case-study-crewai.md),
+   [JavaScript/axe-core](docs/case-study-axe-core.md)).
 2. **Its reassurances cannot be checked.** "I'm done." "The tests cover this." "It's
    safe now." These are assertions. You cannot tell a done-claim from a done-deal.
 
@@ -147,11 +150,13 @@ This project tries to be explicit about the difference. Current state:
 
 ### Verified
 
-- **`history` attribution against a real repository.** Run against
-  [axe-core](https://github.com/dequelabs/axe-core); 17 deleted lines attributed to the
+- **`history` attribution against real repositories — in two languages.** Run against
+  [axe-core](https://github.com/dequelabs/axe-core) (JavaScript) and
+  [crewAI](https://github.com/crewAIInc/crewAI) (Python); deleted lines attributed to the
   commits that introduced them, then checked **by hand** against `git blame`. The checks
   developed for that comparison now run as regression tests in the suite.
-- **`coverage` on real c8 output**, distinguishing all three states correctly.
+- **`coverage` on real output in two formats** — c8/V8 JSON and coverage.py JSON (format 3) —
+  distinguishing all three states correctly.
 - **Adjudication recall and specificity**, measured blind: **10/10 cases**, 4 real
   vulnerabilities all caught, 6 non-vulnerabilities all correctly cleared, no abstentions.
   Round 2 repeated every case three times — **30 adjudications, zero flips**, four of them
@@ -174,11 +179,15 @@ This project tries to be explicit about the difference. Current state:
 
 - **Whether the method finds vulnerabilities in real code.** The benchmark measures whether the
   discipline reaches the right verdict *on a claim*. It does not measure whether the claims would
-  be found in the first place. The cases are deliberately constructed.
+  be found in the first place. The cases are deliberately constructed. The crewAI case study
+  surfaced one INCONCLUSIVE (pickle deserialization, supply-chain-dependent) and refuted the
+  rest — a directional signal, not a rate.
 - **Recall in the field.** Four real-bug samples is a directional signal, not a rate.
 - **Source maps, bundlers, monorepos** for the coverage producer. Untested.
-- **Anything about axe-core's security**, from the case study run — it found nothing, which is
-  not an endorsement. See [`docs/case-study-axe-core.md`](docs/case-study-axe-core.md).
+- **Anything about the case-study targets' security** — the runs found nothing to endorse or
+  condemn; that is not a statement about either project. See
+  [`docs/case-study-crewai.md`](docs/case-study-crewai.md) and
+  [`docs/case-study-axe-core.md`](docs/case-study-axe-core.md).
 
 ---
 

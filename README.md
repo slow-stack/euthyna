@@ -6,27 +6,122 @@
 
 [![CI](https://github.com/slow-stack/euthyna/actions/workflows/ci.yml/badge.svg)](https://github.com/slow-stack/euthyna/actions/workflows/ci.yml)
 
-A **code security audit framework** for AI coding agents.
-
-It is not another scanner. It **produces the deterministic facts an agent cannot compute**
-and **adjudicates the security claims an agent cannot stop itself from making**.
+**euthyna is a code security audit framework for AI coding agents.** It is not another
+scanner. It does two things: it **produces the facts an agent cannot compute by reading
+code**, and it **forces every security claim the agent makes through gates before it
+counts as a finding**.
 
 ---
 
-## The problem
+## The problem, in plain words
 
-AI coding agents write code well and report on it badly, in two specific ways:
+When an AI coding agent touches security, it fails in two specific ways:
 
-1. **They report things that are not real.** A pattern that resembles a vulnerability gets
-   called a vulnerability, without tracing the data flow, and with the severity rated high.
-2. **They cannot count.** Ask how many callers a function has and the answer is a guess from
-   a few files. Ask whether a change is covered by tests and the answer is an impression.
+1. **It reports things that are not real.** Code that *looks* dangerous gets called a
+   vulnerability, without tracing the data. In one validation run on a real codebase,
+   **5 out of 5** pattern-matched "vulnerabilities" were false — each died at a different
+   gate. See the [case study](docs/case-study-axe-core.md).
+2. **Its reassurances cannot be checked.** "I'm done." "The tests cover this." "It's
+   safe now." These are assertions. You cannot tell a done-claim from a done-deal.
 
-Neither is fixed by telling the agent to be more careful. So this project does two things:
+Neither is fixed by telling the agent to be more careful. euthyna changes the handshake
+between you and the agent:
 
-- **Supplies the numbers**: calls, coverage, and git history provenance, computed deterministically.
-- **Constrains the conclusions**: every claim passes six gates, and a claim that cannot produce
-  evidence gets downgraded to an observation rather than reported as a finding.
+> **The agent saying "I'm done" does not count. The accounts get handed over, and the
+> gates decide.**
+
+---
+
+## The two things it does
+
+### 1. It measures what a model cannot
+
+Two fact producers — a zero-dependency Node CLI:
+
+- **`history`** — for every line a change deletes, it finds the commit that introduced
+  that line and classifies that commit from its own message. If the deleted code came
+  from a security fix, that is flagged. This is git archaeology no model can do from
+  reading a diff.
+- **`coverage`** — was this symbol *ever actually invoked* by a test? It has exactly two
+  answers: never invoked (established), or entered but that proves nothing about any
+  specific call site (unknown). **It never reports "executed"** — V8 coverage marks
+  unreachable code as covered, and "line covered → call ran" is wrong in exactly the
+  direction an audit cannot afford. The reasoning is in
+  [`docs/fact-contract.md`](docs/fact-contract.md) §6.2.
+
+### 2. It gates what the agent claims
+
+The [skill](.agents/skills/euthyna/) is the audit discipline itself, as loadable
+Markdown. Every security claim must pass six gates — reachability, trust boundary, real
+impact, and their counterparts. A claim that cannot produce evidence is **downgraded to
+an observation**, not reported as a finding. "I'm done" becomes a package: claims,
+evidence, and the commands that reproduce both.
+
+---
+
+## Which tools it works in, and how to install
+
+**Prerequisite for everything**: Node >= 20 and git. There is nothing else to install —
+the project is deliberately zero-dependency.
+
+| Host | The skill (audit discipline) | The CLI (fact producers) |
+|---|---|---|
+| **DSH** | Copy `.agents/skills/euthyna/` into `~/.agents/skills/` (user-wide) or `<project>/.agents/skills/`. Markdown hot-reloads; no restart needed. | Runs in any terminal, from this repository |
+| **Claude Code** | Copy the same folder into `~/.claude/skills/` | Same |
+| **Codex** | The same Markdown layer works; packaging goes through Codex's plugin/marketplace format | Same |
+| **Any terminal** | — | `git clone`, then `node bin/euthyna.js …` |
+
+Two honest notes:
+
+- **The skill is the instructions; the CLI is the measurement.** The skill directory
+  does **not** contain the CLI. Keep this repository checked out; on a host without it,
+  the skill requires the unmeasurable criteria to be recorded as *not evaluated* rather
+  than guessed at — that fallback is the design, not a gap.
+- **The skill text and the CLI's reports are currently written in Chinese.** The
+  discipline is host-agnostic Markdown, but an English reader should expect Chinese
+  output from the tool itself.
+
+---
+
+## Quick start
+
+```sh
+git clone https://github.com/slow-stack/euthyna
+cd euthyna
+npm test                                              # 61 tests; no install step exists
+node bin/euthyna.js history --repo <path> --base main --head HEAD
+node bin/euthyna.js coverage --coverage coverage/coverage-final.json --symbol <name>
+```
+
+What `history` reports looks like this:
+
+```
+已确证 (7)
+  • 本次变更删除了 4 行来自提交 ab877f9d70 的代码，分布在 2 个文件。
+    提交信息："fix(link-in-text-block): don't match style or script text (#3775)"，分类：fix
+      证据: lib/checks/color/link-in-text-block-evaluate.js (ab877f9d70)
+      复现: git blame --porcelain -L 104,104 -L 114,114 <base> -- lib/checks/.../evaluate.js
+```
+
+Every deleted line is blamed back to the commit that introduced it, and the `复现`
+(Reproduce) command lets you re-derive the claim yourself without trusting the report.
+Add `--json` for the structured fact report, and `--pickaxe` to detect lines that were
+removed and are now being added back.
+
+### Exit codes are part of the contract
+
+Surveying eight measurement plugins in this ecosystem found **none of them publishes a
+process exit code**, which makes their output unusable as a CI gate. This one does:
+
+| Code | Meaning |
+|---|---|
+| `0` | Measured; nothing security-classified found |
+| `10` | Measured; at least one `security`-classified fact exists |
+| `1` | Usage error |
+| `2` | **Could not measure at all** — must not be read as clean |
+
+`2` being distinct from `0` is the whole point: *failing to measure* and *measuring and
+finding nothing* are different things.
 
 ---
 
@@ -38,87 +133,6 @@ Neither is fixed by telling the agent to be more careful. So this project does t
 | **The skill** | The audit discipline itself, as loadable Markdown | Working, loadable |
 | **The benchmark** | A blind recall measurement for the adjudication layer | Three rounds complete |
 
-### Fact producer 1 — `history`
-
-> *"The code this change deleted — where did it come from, and was that a security fix?"*
-
-```
-$ euthyna history --repo <path> --base main --head HEAD
-
-已确证 (7)
-  • 本次变更删除了 4 行来自提交 ab877f9d70 的代码，分布在 2 个文件。
-    提交信息："fix(link-in-text-block): don't match style or script text (#3775)"，分类：fix
-      证据: lib/checks/color/link-in-text-block-evaluate.js (ab877f9d70)
-      复现: git blame --porcelain -L 104,104 -L 114,114 <base> -- lib/checks/.../evaluate.js
-```
-
-Every deleted line is blamed back to the commit that introduced it, and that commit is
-classified from its own message. `--pickaxe` additionally detects a line that is absent at
-the base revision yet has earlier commits changing its occurrence count — which by
-construction means it was removed and is now being added back.
-
-### Fact producer 2 — `coverage`
-
-> *"Has any test ever actually invoked the symbol I just changed?"*
-
-Reads c8's `fnMap` invocation counts. It has exactly two outcomes and **no third**:
-
-| Count | Output | Meaning |
-|---|---|---|
-| `0` | `established` | The symbol was never invoked. Every caller lacks executed coverage. |
-| `> 0` | `unknown` | The symbol was entered — which proves **nothing** about any particular call site. |
-
-**There is no code path in this producer that emits "executed".** That is the design, not an
-omission. V8 block coverage reports unreachable code as covered, so a naive
-"line covered → call ran" join reports a call site that never ran as executed — wrong in the
-one direction a security audit cannot afford, because it hides a real gap and manufactures
-confidence at the same time. See [`docs/fact-contract.md`](docs/fact-contract.md) §6.2.
-
-### Exit codes are part of the contract
-
-Surveying eight measurement plugins in this ecosystem found **none of them publishes a process
-exit code**, which makes their output unusable as a CI gate. This one does:
-
-| Code | Meaning |
-|---|---|
-| `0` | Measured; nothing security-classified found |
-| `10` | Measured; at least one `security`-classified fact exists |
-| `1` | Usage error |
-| `2` | **Could not measure at all** — must not be read as clean |
-
-`2` being distinct from `0` is the whole point: *failing to measure* and *measuring and finding
-nothing* are different things.
-
----
-
-## Install and run
-
-Zero runtime dependencies. Running the test suite does not require `npm install`.
-
-```powershell
-git clone https://github.com/slow-stack/euthyna
-cd euthyna
-npm test                                        # 61 tests
-
-node bin/euthyna.js history --repo <path> --base main --head HEAD
-node bin/euthyna.js history --repo <path> --base main --pickaxe
-node bin/euthyna.js coverage --coverage coverage/coverage-final.json --symbol <name>
-```
-
-Add `--json` for the structured fact report.
-
-### Using the skill
-
-`.agents/skills/euthyna/` is a complete, self-contained skill directory. Copy it into any
-skill root DSH discovers (`~/.agents/skills/`, `~/.claude/skills/`, or a project's
-`.agents/skills/`). The Markdown layer is portable across Claude Code, Codex and DSH; only the
-hook configuration format and plugin packaging differ per host.
-
-The **text** is self-contained; the **fact producers are not inside the skill directory**.
-Copying the skill does not carry the CLI with it. On a host without this repository checked out
-(or the package installed), the skill requires those criteria to be recorded as not evaluated
-rather than guessed at — see `references/fact-producers.md`.
-
 ---
 
 ## What has been verified, and what has not
@@ -128,9 +142,9 @@ This project tries to be explicit about the difference. Current state:
 ### Verified
 
 - **`history` attribution against a real repository.** Run against
-  [axe-core](https://github.com/dequelabs/axe-core); 17 deleted lines attributed to the commits
-  that introduced them. The output was then checked **by hand** against `git blame`, which
-  caught two real bugs in this tool — see below.
+  [axe-core](https://github.com/dequelabs/axe-core); 17 deleted lines attributed to the
+  commits that introduced them, then checked **by hand** against `git blame`. The checks
+  developed for that comparison now run as regression tests in the suite.
 - **`coverage` on real c8 output**, distinguishing all three states correctly.
 - **Adjudication recall and specificity**, measured blind: **10/10 cases**, 4 real
   vulnerabilities all caught, 6 non-vulnerabilities all correctly cleared, no abstentions.
@@ -138,8 +152,8 @@ This project tries to be explicit about the difference. Current state:
   on a different model. Round 3 expanded the set to **18 cases** (8 real, 10 not) and
   reshuffled the blind ids every round: **54 adjudications**, 24/24 real-bug claims caught
   with no misses and no abstentions, 29/30 non-vulnerabilities correctly cleared — and the
-  single "false alarm" was the round's finding, not noise: the adjudicator caught a second
-  defect in a fixture's guard, confirmed by reproduction and fixed; that final guard version
+  single "false alarm" was the round's finding, not noise: the adjudicator caught a defect
+  in a fixture's guard, confirmed by reproduction and fixed; that final guard version
   has not yet faced a fresh blind round. 17/18 cases were stable across all three runs.
   Every case is a *near-neighbour pair* — same pattern, one guard
   apart — so the verdicts had to come from reading the guard rather than recognising the shape.
@@ -159,21 +173,6 @@ This project tries to be explicit about the difference. Current state:
 - **Source maps, bundlers, monorepos** for the coverage producer. Untested.
 - **Anything about axe-core's security**, from the case study run — it found nothing, which is
   not an endorsement. See [`docs/case-study-axe-core.md`](docs/case-study-axe-core.md).
-
----
-
-## Three bugs this project found in itself
-
-Recorded because they are the reason the verification steps exist.
-
-1. **A repeated `--symbol` flag overwrote instead of accumulating**, so asking about three
-   symbols silently answered about one. Caught by running against real coverage data.
-2. **"The change deleted nothing" was reported as a measurement failure** rather than as a
-   completed measurement with an empty answer. Caught by a test asserting the exit code.
-3. **`git blame --porcelain` was read from the wrong field.** It emits
-   `<sha> <origLine> <finalLine>`, and using `origLine` produces a command that exits 0, looks
-   plausible, and blames a completely different line. Caught by checking this tool's own output
-   against axe-core by hand. There is now a test that *runs the command the tool advertises*.
 
 ---
 

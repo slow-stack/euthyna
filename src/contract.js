@@ -14,7 +14,33 @@
  * See docs/fact-contract-zh.md.
  */
 
+import { stripVTControlCharacters } from 'node:util';
+
 export const SCHEMA_VERSION = '0.1';
+
+/**
+ * Quote a value for pasting into a POSIX shell.
+ *
+ * Single quotes make every byte literal except the single quote itself, which
+ * the `'\''` idiom escapes. JSON.stringify is not enough here: inside double
+ * quotes a backtick or $( ) still executes, so a repo-controlled filename or
+ * symbol would survive it as code, not data.
+ */
+export function shellQuote(value) {
+  return `'${String(value).replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * Strip terminal control sequences from repo-controlled text at a render
+ * boundary. stripVTControlCharacters handles CSI/OSC, but a lone BEL is legal
+ * output of `git blame` on some histories and rings the bell / opens an OSC
+ * context, so bare C0 controls are dropped as well.
+ */
+export function safeText(value) {
+  const stripped = stripVTControlCharacters(String(value));
+  // eslint-disable-next-line no-control-regex
+  return stripped.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+}
 
 /** Fact kinds. Kept explicit so an unknown kind fails loudly instead of passing. */
 export const KIND = Object.freeze({
@@ -142,7 +168,11 @@ export function notEvaluated(kind, reason) {
  * Ordering is deliberate: what was NOT measured comes last but is never
  * omitted, so a reader cannot finish the output without seeing it.
  */
-export function renderReport(report, { write = console.log } = {}) {
+export function renderReport(report, { write: rawWrite = console.log } = {}) {
+  // Render boundary: every repo-controlled string below passes through safeText
+  // exactly once, here, rather than at each producer. The JSON channel
+  // (cli.js) needs no equivalent — JSON.stringify escapes control bytes.
+  const write = (line) => rawWrite(safeText(line));
   const { producer, subject, facts, coverage } = report;
 
   const established = facts.filter(f => f.status === STATUS.ESTABLISHED);

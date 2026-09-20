@@ -10,7 +10,7 @@
  * This module produces facts. It does not decide whether a regression happened.
  */
 import { git, commitSummaries } from '../git.js';
-import { makeFact, notEvaluated as notEvaluatedEntry, KIND, STATUS } from '../contract.js';
+import { makeFact, notEvaluated as notEvaluatedEntry, KIND, STATUS, shellQuote } from '../contract.js';
 
 /**
  * Strong signal: the commit is about security.
@@ -234,7 +234,7 @@ export async function collectHistoryFacts({
         status: STATUS.ESTABLISHED,
         evidence: { file: primary.file, commit: hash, files: byFile.map(f => f.file) },
         method: 'command',
-        command: `git blame --porcelain ${lineFlags} ${base} -- ${primary.file}`,
+        command: `git blame --porcelain ${lineFlags} ${base} -- ${shellQuote(primary.file)}`,
         detail: {
           classification,
           commitSubject: summary.subject,
@@ -364,7 +364,7 @@ async function collectReintroductionFacts({
           status: STATUS.ESTABLISHED,
           evidence: { file, snippet: line.slice(0, 160), commit: hashes[0] },
           method: 'command',
-          command: `git log --format=%H -S${JSON.stringify(line.slice(0, 60))} ${base} -- ${file}`,
+          command: `git log --format=%H -S${shellQuote(line.slice(0, 60))} ${base} -- ${shellQuote(file)}`,
           detail: {
             line: line.slice(0, 400),
             candidateCommits: classified.map(c => ({

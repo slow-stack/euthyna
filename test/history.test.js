@@ -12,6 +12,42 @@ import { makeRepo, commitFiles, git } from './helpers.js';
 import { parseDeletedRanges, classifySubject, collectHistoryFacts } from '../src/facts/history.js';
 import { STATUS, KIND } from '../src/contract.js';
 
+/**
+ * Split a command line into argv the way a POSIX shell would for the subset
+ * euthyna emits: bare words and single-quoted fields. The emitted command is
+ * quoted precisely so that pasting it into a shell is safe; a reader who
+ * instead wants to replay it as argv needs this inverse.
+ */
+function splitShellWords(line) {
+  const words = [];
+  let current = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === "'") {
+      quoted = true;
+      // The '\'' idiom: close, escaped quote, reopen.
+      if (line.slice(i, i + 4) === "'\\''") {
+        current += "'";
+        i += 3;
+      }
+      continue;
+    }
+    if (ch === ' ' || ch === '\t') {
+      if (quoted) {
+        current += ch;
+        continue;
+      }
+      if (current !== '') words.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (current !== '' || quoted) words.push(current);
+  return words;
+}
+
 describe('parseDeletedRanges', () => {
   test('reads the deleted range out of a zero-context hunk header', () => {
     const diff = [
@@ -313,6 +349,46 @@ describe('reintroduction detection', () => {
     assert.match(command, new RegExp(base), 'the base revision must be named');
   });
 
+  test('a hostile filename cannot turn the emitted command into code', async () => {
+    // A repo author controls filenames; `;` is legal in them. The command is
+    // emitted for a reader to paste, so it must carry the filename as data.
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, 'feat: initial', {
+      'src/a; id; b.js': 'export const a = 1;\nexport const b = 2;\n'
+    });
+    await commitFiles(repo, 'refactor: drop one line', { 'src/a; id; b.js': 'export const a = 1;\n' });
+
+    const { facts } = await collectHistoryFacts({ cwd: repo, base, head: 'HEAD' });
+    assert.equal(facts.length, 1);
+    const command = facts[0].command;
+
+    // The path segment must be inside single quotes, not bare.
+    assert.match(command, /-- 'src\/a; id; b\.js'/, 'the hostile path must be single-quoted');
+
+    // Replaying the emitted argv must reproduce the fact, not execute `id`.
+    const args = splitShellWords(command.replace(/^git\s+/, ''));
+    assert.equal(args[args.length - 1], 'src/a; id; b.js', 'the path survives as one argv element');
+    const output = await git(repo, args);
+    assert.match(output, /export const b = 2;/, 'the replayed command still reproduces the attribution');
+  });
+
+  test('a filename containing a single quote round-trips through the emitted command', async () => {
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, "feat: it's initial", {
+      "src/a'b.js": 'export const a = 1;\nexport const b = 2;\n'
+    });
+    await commitFiles(repo, "refactor: drop one line", { "src/a'b.js": 'export const a = 1;\n' });
+
+    const { facts } = await collectHistoryFacts({ cwd: repo, base, head: 'HEAD' });
+    assert.equal(facts.length, 1);
+    const command = facts[0].command;
+
+    const args = splitShellWords(command.replace(/^git\s+/, ''));
+    assert.equal(args[args.length - 1], "src/a'b.js");
+    const output = await git(repo, args);
+    assert.match(output, /export const b = 2;/, 'the replayed command blames the surviving line');
+  });
+
   test('the emitted command really reproduces the attributed line', async () => {
     // The contract says every fact carries a command a reader can re-run. This
     // test runs it. It also pins down a bug found by hand against axe-core:
@@ -358,7 +434,7 @@ describe('reintroduction detection', () => {
     const fact = facts.find(f => f.detail.classification === 'security');
     assert.ok(fact, 'the guard origin should be attributed');
 
-    const args = fact.command.replace(/^git\s+/, '').split(/\s+/);
+    const args = splitShellWords(fact.command.replace(/^git\s+/, ''));
     const output = await git(repo, args);
 
     assert.match(

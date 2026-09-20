@@ -32,8 +32,34 @@ async function runExploits() {
   }
 }
 
+/**
+ * The exploit expectations are defined against bsdtar's operand semantics
+ * (see bench/README.md): the `@`-archive merge and the treatment of bare
+ * `..` members are libarchive behaviour that GNU tar does not share. On a
+ * platform whose `tar` is GNU tar the test reports itself as skipped, with
+ * the reason, rather than failing — the ground truth is not broken there,
+ * it is simply not defined for that binary. Where `tar` is bsdtar (the
+ * development machine, the Windows CI runners) it still runs.
+ */
+async function tarFlavor() {
+  try {
+    const { stdout } = await execFileAsync('tar', ['--version'], { encoding: 'utf8' });
+    return stdout.split('\n')[0].trim();
+  } catch (error) {
+    return `unavailable (${String(error.message).split('\n')[0]})`;
+  }
+}
+
 describe('benchmark ground truth', () => {
-  test('every exploit expectation holds', async () => {
+  test('every exploit expectation holds', async t => {
+    const flavor = await tarFlavor();
+    if (!flavor.includes('bsdtar')) {
+      t.skip(
+        `the exploit ground truth is defined against bsdtar, not "${flavor}" — ` +
+          'run node bench/exploits.js on a bsdtar machine to verify it'
+      );
+      return;
+    }
     const { code, stdout } = await runExploits();
     assert.equal(
       code,

@@ -8,10 +8,11 @@
 # live and exits 2 when upstream cannot be reached, which must not be read as
 # a pass. It takes the direct-fetch path (no local proxy exists on a runner).
 #
-# The bench harness (bench/exploits.js) is deliberately NOT run here: several
-# of its cases verify bsdtar-specific operand semantics, which GNU tar on the
-# Linux runners does not share. Ground truth is established where it is
-# measured, on the development machine.
+# The suite includes the bench ground-truth guard, which is defined against
+# bsdtar's operand semantics (the @-archive merge, bare .. members). It runs
+# on the Windows runners, whose tar is bsdtar; on Linux it reports itself as
+# skipped with that reason rather than failing, because the ground truth is
+# not defined for GNU tar (see test/bench.test.js).
 
 name: CI
 

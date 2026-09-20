@@ -69,6 +69,12 @@ node bench/prepare-blind.js         # 生成不透明编号的盲副本到 .scra
 node bench/score.js verdicts.json   # 用裁定结果算混淆矩阵
 ```
 
+**平台契约**：exploit 的 ground truth 定义在 **bsdtar** 的操作数语义上
+（`@` 归档并入、裸 `..` 成员——见 p6/p6b 的 `meta.json` 与 `RESULTS-round3.md`）。
+在 `tar` 是 GNU tar 的平台上这两条语义不存在，`node --test` 里的 ground truth
+守卫会**带原因跳过**而不是失败——truth 在那个二进制上不是被破坏了，而是未定义。
+Windows 的 `tar` 是 bsdtar，CI 的三个 Windows job 照常全量运行该守卫。
+
 **裁定必须是盲的**：裁定者只看自己的 `case-NN/`，不看 `meta.json`、不看别的案例、
 不看 `RESULTS.md`。自己做完再看答案，等于没测。
 

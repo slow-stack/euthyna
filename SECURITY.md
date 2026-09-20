@@ -12,9 +12,10 @@ only, on a best-effort basis.
 
 ## Reporting a vulnerability
 
-Use GitHub's **private vulnerability reporting**: on this repository, open the
-*Security* tab and choose *Report a vulnerability*. Please do not open a public
-issue for a suspected vulnerability.
+Use GitHub's **private vulnerability reporting** — on this repository, open
+the *Security* tab and choose *Report a vulnerability* — or email
+`work@modusensus.space`. Please do not open a public issue for a suspected
+vulnerability.
 
 A report is most useful when it includes:
 
@@ -36,8 +37,9 @@ the missing detail to reopen.
 | Fix | severity-dependent; the timeline is agreed in the private thread |
 | Disclosure | coordinated — a fix and a security advisory are published together |
 
-If you have not received an acknowledgment within 48 hours, comment in the
-advisory thread to follow up — the report may have been missed.
+If you have not received an acknowledgment within 48 hours, follow up: comment
+in the advisory thread, or resend to `work@modusensus.space` with the subject
+prefix `[SECURITY][FOLLOW-UP]` and the original report timestamp.
 
 Severity follows [CVSS v3.1](https://www.first.org/cvss/v3.1/specification-document):
 Critical (9.0–10.0), High (7.0–8.9), Medium (4.0–6.9), Low (0.1–3.9).

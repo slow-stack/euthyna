@@ -106,7 +106,9 @@ commit messages, and local paths appear in `history` output and in
 Mass-submitted, fabricated, or template-incomplete reports are closed. Every
 report that meets the minimums gets a code-level verification and a reply.
 
-Security issues never go through a public issue — see [`SECURITY.md`](SECURITY.md).
+Security issues never go through a public issue — report them via the private
+channel in [`SECURITY.md`](SECURITY.md) (GitHub private vulnerability
+reporting, or `work@modusensus.space`).
 
 ## Working with AI coding agents?
 

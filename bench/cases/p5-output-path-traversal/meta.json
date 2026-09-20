@@ -1,0 +1,11 @@
+{
+  "id": "p5-output-path-traversal",
+  "groundTruth": "true_positive",
+  "category": "path_traversal_write",
+  "why": "The archive target is path.join(ARCHIVE_DIR, datasetName + '.tgz') with no containment check. path.join normalizes '..', which is exactly what lets a '..' segment move the target above ARCHIVE_DIR; nothing in the code or the environment restricts where the tarball lands. Note the claim's wording is deliberately imprecise: it blames missing normalization, while normalization is present and containment is what is missing.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p5 drives the dashboard route with datasetName '../escaped' and asserts a real tar run created the archive at the case root, outside backups/.",
+  "neighbourOf": "p5b-output-path-contained",
+  "neighbourNote": "Identical claim text to p5b. The guarded twin adds a path.resolve containment check before tar runs, so the verdict has to come from reading the guard.",
+  "residualNote": "This source tree is the one the round-2 case-08 (p3b-execfile) adjudication left an observation on. A false-positive case means its claim fails, not that the code is clean: the command-injection claim on this same tree is false while this write-side claim is true. Member-path (read-side) traversal is also present here; it is p6's claim, not this one."
+}

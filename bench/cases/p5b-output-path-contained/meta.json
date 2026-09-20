@@ -1,0 +1,10 @@
+{
+  "id": "p5b-output-path-contained",
+  "groundTruth": "false_positive",
+  "category": "path_traversal_write",
+  "why": "The same claim as p5, but archive.js resolves the target and rejects anything outside ARCHIVE_DIR before tar runs. The containment check is the load-bearing guard; normalization alone would not be.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p5b submits the same '../escaped' payload through the same dashboard route and asserts the handler rejects it and no file appears outside backups/.",
+  "neighbourOf": "p5-output-path-traversal",
+  "neighbourNote": "Identical claim text to p5; only the guard differs."
+}

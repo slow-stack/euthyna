@@ -1,0 +1,10 @@
+{
+  "id": "p9-ssrf",
+  "groundTruth": "true_positive",
+  "category": "ssrf",
+  "why": "fetchUrl performs an HTTP GET to any URL the request body supplies, with no host, scheme or network-zone restriction, on a route any logged-in user can reach. The request originates from the service's own network position, which is the SSRF primitive.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p9 starts a local HTTP server as the stand-in internal target, drives the import route with its URL, and asserts the service fetched the canary from it.",
+  "neighbourOf": "p9b-ssrf-allowlist",
+  "neighbourNote": "Identical claim text to p9b. The guarded twin pins the destination host to an allow-list and rejects everything else before any request is made."
+}

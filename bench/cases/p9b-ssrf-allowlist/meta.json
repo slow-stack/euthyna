@@ -1,0 +1,10 @@
+{
+  "id": "p9b-ssrf-allowlist",
+  "groundTruth": "false_positive",
+  "category": "ssrf",
+  "why": "The same claim as p9, but fetchUrl validates the parsed URL's protocol and host against an allow-list before any request is made, so an attacker-supplied destination never receives a request from the service.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p9b submits the same local canary URL and asserts the handler rejects it and the canary server records zero hits.",
+  "neighbourOf": "p9-ssrf",
+  "neighbourNote": "Identical claim text to p9; only the guard differs."
+}

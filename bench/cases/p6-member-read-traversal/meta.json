@@ -1,0 +1,11 @@
+{
+  "id": "p6-member-read-traversal",
+  "groundTruth": "true_positive",
+  "category": "path_traversal_read",
+  "why": "datasetName is passed to tar as a member path relative to the data/ working directory with no rejection of path separators or '..' segments, so a name pointing outside data/ gets packed into the archive. Whoever can retrieve the archive can read what the service account can read.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p6 places a canary outside data/, drives the dashboard route with an escaping member name, and asserts the produced tarball's member list (read back with tar -tf) contains the canary.",
+  "neighbourOf": "p6b-member-read-validated",
+  "neighbourNote": "Identical claim text to p6b. The guarded twin rejects dataset names containing path separators before tar runs.",
+  "residualNote": "Measured with bsdtar 3.8.8 (the Windows system tar). Some GNU tar versions warn about or skip escaping member names, so the tar-behaviour side of this case is host-dependent; the missing member-name validation in the source is not. The write-side traversal on this same tree is p5's claim, not this one."
+}

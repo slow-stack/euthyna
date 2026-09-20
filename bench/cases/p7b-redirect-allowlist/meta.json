@@ -1,0 +1,10 @@
+{
+  "id": "p7b-redirect-allowlist",
+  "groundTruth": "false_positive",
+  "category": "open_redirect",
+  "why": "The same claim as p7, but buildRedirect parses the target and rejects any host outside ALLOWED_TARGET_HOSTS before emitting the redirect, so no caller-chosen off-site target is ever emitted.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p7b submits the same external URL through the same route and asserts the handler rejects it.",
+  "neighbourOf": "p7-open-redirect",
+  "neighbourNote": "Identical claim text to p7; only the guard differs."
+}

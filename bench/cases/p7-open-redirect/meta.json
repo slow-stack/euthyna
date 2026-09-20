@@ -1,0 +1,10 @@
+{
+  "id": "p7-open-redirect",
+  "groundTruth": "true_positive",
+  "category": "open_redirect",
+  "why": "buildRedirect copies the caller-supplied target into the Location header of a 302 with no destination restriction, and the route is reachable by any logged-in user. The redirect carries the trusted origin, which is what makes it usable for phishing.",
+  "establishedBy": "execution",
+  "proof": "bench/exploits.js -> p7 drives the goto route with an external URL and asserts the handler emits it verbatim as the Location of the 302.",
+  "neighbourOf": "p7b-redirect-allowlist",
+  "neighbourNote": "Identical claim text to p7b. The guarded twin validates the target host against an allow-list before building the redirect. The claim's wording is deliberately imprecise: it blames missing encoding, but encoding would not close an open redirect - the allow-list is the missing control."
+}

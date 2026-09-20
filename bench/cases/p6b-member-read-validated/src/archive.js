@@ -13,12 +13,15 @@ const { execFileSync } = require('node:child_process');
 
 const ARCHIVE_DIR = path.resolve(path.join(__dirname, '..', 'backups'));
 const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_ROOT = path.resolve(DATA_DIR);
 
 function archiveDataset(datasetName) {
-  // The name becomes a tar member path relative to data/, so it must stay a
-  // bare name: any separator would let it point outside data/.
-  if (datasetName.includes('/') || datasetName.includes('\\')) {
-    const error = new Error('dataset name must not contain path separators');
+  // The name becomes a tar member path relative to data/, so the resolved
+  // member root must stay inside data/. Checking for separators is not enough:
+  // the bare name ".." carries no separator and would still escape.
+  const memberRoot = path.resolve(DATA_DIR, datasetName);
+  if (memberRoot !== DATA_ROOT && !memberRoot.startsWith(DATA_ROOT + path.sep)) {
+    const error = new Error('dataset name must resolve inside the data directory');
     error.status = 400;
     throw error;
   }

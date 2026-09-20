@@ -2,9 +2,10 @@
   "id": "p6b-member-read-validated",
   "groundTruth": "false_positive",
   "category": "path_traversal_read",
-  "why": "The same read-side claim, but archive.js rejects dataset names containing path separators before tar runs, so no member can escape data/; the output-path containment from p5b is also present, making this tree clean on both axes.",
+  "why": "The same read-side claim, but archive.js resolves the member root (DATA_DIR + datasetName) and requires it to stay inside data/ before tar runs, so no name - including the bare '..' - can make a member escape; the output-path containment from p5b is also present, making this tree clean on both axes.",
   "establishedBy": "execution",
-  "proof": "bench/exploits.js -> p6b submits the same escaping member name through the same dashboard route and asserts the handler rejects it before any tar invocation and no tarball is produced.",
+  "proof": "bench/exploits.js -> p6b submits both escaping shapes ('../secret-canary.txt' and the bare '..') through the same dashboard route and asserts the handler rejects both before any tar invocation and no tarball is produced.",
   "neighbourOf": "p6-member-read-traversal",
-  "neighbourNote": "Identical claim text to p6; only the guards differ."
+  "neighbourNote": "Identical claim text to p6; only the guards differ.",
+  "residualNote": "The first version of this fixture rejected only names containing path separators, and the bare '..' - which has no separator - defeated it by packing the parent tree into the archive. A round-3 run-1 adjudicator found that defect; the guard now does a resolved containment check instead. The tar-behaviour side of this case is host-dependent (measured with bsdtar 3.8.8)."
 }

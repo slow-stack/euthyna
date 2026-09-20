@@ -40,7 +40,19 @@ describe('benchmark ground truth', () => {
       0,
       `bench/exploits.js is red, so the ground truth is not trustworthy:\n${stdout}`
     );
-    assert.match(stdout, /10\/10 expectations held/);
+    // The count is derived, not hardcoded: a case directory without an exploit
+    // entry, or an exploit without a case, must fail here too.
+    const caseCount = (await readdir(CASES, { withFileTypes: true }))
+      .filter(e => e.isDirectory())
+      .length;
+    const match = stdout.match(/(\d+)\/(\d+) expectations held/);
+    assert.ok(match, 'exploits.js must report its expectation count');
+    assert.equal(match[1], match[2], 'every expectation must hold');
+    assert.equal(
+      Number(match[1]),
+      caseCount,
+      'exploits.js must run exactly one expectation per case directory'
+    );
   });
 
   test('every case declares a ground truth and a reason', async () => {

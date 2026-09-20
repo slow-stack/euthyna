@@ -6,7 +6,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeFact, makeReport, assertNoVerdictFields, notEvaluated, STATUS, KIND } from '../src/contract.js';
+import { makeFact, makeReport, assertNoVerdictFields, notEvaluated, renderReport, shellQuote, safeText, STATUS, KIND } from '../src/contract.js';
 
 const validFact = {
   id: 'f1',
@@ -120,5 +120,69 @@ describe('report envelope', () => {
     });
     assert.deepEqual(report.coverage, { evaluated: [], notEvaluated: [] });
     assert.equal(report.schemaVersion, '0.1');
+  });
+});
+
+describe('shellQuote', () => {
+  test('a plain path stays readable', () => {
+    assert.equal(shellQuote('src/a.js'), `'src/a.js'`);
+  });
+
+  test('an embedded single quote survives round-trip', () => {
+    assert.equal(shellQuote("a'b.js"), `'a'\\''b.js'`);
+  });
+
+  test('shell metacharacters stay data: everything lands inside single quotes', () => {
+    // The safety property is not "metacharacters disappear" (inside single
+    // quotes $( ) and backticks are literal) — it is "no metacharacter is ever
+    // outside a quoted context". Exactly: output starts and ends with a quote,
+    // and the only inner quotes belong to the '\'' escape idiom.
+    for (const hostile of ['a; id; b.js', 'a$(id)b.js', 'a`id`b.js', "a'b.js", "a; rm -rf /; #'b.js"]) {
+      const q = shellQuote(hostile);
+      assert.ok(q.startsWith("'") && q.endsWith("'"), `must open and close quoted: ${q}`);
+      const inner = q.slice(1, -1).replaceAll(`'\\''`, '');
+      assert.ok(!inner.includes("'"), `every inner quote must be the escape idiom: ${q}`);
+    }
+    assert.equal(shellQuote('a$(id)b.js'), `'a$(id)b.js'`);
+  });
+});
+
+describe('safeText (render boundary)', () => {
+  test('strips CSI and OSC sequences', () => {
+    assert.equal(safeText('a\u001b[31mred\u001b[0mb'), 'aredb');
+    assert.equal(safeText('a\u001b]0;pwned\u0007b'), 'ab');
+  });
+
+  test('strips a lone BEL that stripVTControlCharacters misses', () => {
+    assert.equal(safeText('ring\u0007end'), 'ringend');
+  });
+
+  test('drops other bare C0 controls but keeps text, spaces and newlines', () => {
+    assert.equal(safeText('a\u0000\u0007\u001b[31mb'), 'ab');
+    assert.equal(safeText('keep space\tand\nnewline'), 'keep space\tand\nnewline');
+  });
+
+  test('renderReport sanitizes repo-controlled strings before writing', () => {
+    const report = makeReport({
+      producer: { name: 'x', version: '0' },
+      subject: { repo: 'normal' },
+      facts: [
+        makeFact({
+          id: 'f1',
+          kind: KIND.HISTORY,
+          statement: 'deleted lines',
+          status: STATUS.ESTABLISHED,
+          evidence: { file: 'src/a.js' },
+          method: 'command',
+          command: 'git blame -- src/a.js'
+        })
+      ]
+    });
+    report.facts[0].evidence.file = '\u001b]0;pwned\u0007x.js';
+    const lines = [];
+    renderReport(report, { write: (l) => lines.push(l) });
+    const all = lines.join('\n');
+    assert.doesNotMatch(all, /\u001b|\u0007/, 'no escape byte may reach the writer');
+    assert.match(all, /x\.js/, 'the readable suffix of the name survives');
   });
 });

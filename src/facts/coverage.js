@@ -19,7 +19,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { makeFact, notEvaluated as notEvaluatedEntry, KIND, STATUS } from '../contract.js';
+import { makeFact, notEvaluated as notEvaluatedEntry, KIND, STATUS, shellQuote } from '../contract.js';
 
 /** c8's default exclusions. A production file matching one of these vanishes from the report. */
 const C8_DEFAULT_EXCLUDES = [
@@ -53,9 +53,9 @@ function matchesTarget(entryPath, target) {
  */
 function reproduceCommand({ coverageFile, symbol, file }) {
   return (
-    `euthyna coverage --coverage ${JSON.stringify(coverageFile)} ` +
-    `--symbol ${JSON.stringify(symbol)}` +
-    (file ? ` --file ${JSON.stringify(file)}` : '')
+    `euthyna coverage --coverage ${shellQuote(coverageFile)} ` +
+    `--symbol ${shellQuote(symbol)}` +
+    (file ? ` --file ${shellQuote(file)}` : '')
   );
 }
 

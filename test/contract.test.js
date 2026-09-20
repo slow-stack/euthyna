@@ -153,13 +153,19 @@ describe('safeText (render boundary)', () => {
     assert.equal(safeText('a\u001b]0;pwned\u0007b'), 'ab');
   });
 
-  test('strips a lone BEL that stripVTControlCharacters misses', () => {
-    assert.equal(safeText('ring\u0007end'), 'ringend');
+  test('escapes a lone BEL that stripVTControlCharacters misses', () => {
+    assert.equal(safeText('ring\u0007end'), 'ring\\x07end');
   });
 
-  test('drops other bare C0 controls but keeps text, spaces and newlines', () => {
-    assert.equal(safeText('a\u0000\u0007\u001b[31mb'), 'ab');
-    assert.equal(safeText('keep space\tand\nnewline'), 'keep space\tand\nnewline');
+  test('escapes CR and LF instead of preserving them as terminal input', () => {
+    // A literal \r would let a repo-controlled name overwrite the rendered
+    // line on screen; the escape is visible data, not control.
+    assert.equal(safeText('a\rb\nc'), 'a\\rb\\nc');
+  });
+
+  test('escapes other bare C0 controls but keeps text and spaces', () => {
+    assert.equal(safeText('a\u0000\u0007\u001b[31mb'), 'a\\x00\\x07b');
+    assert.equal(safeText('keep space and visible text'), 'keep space and visible text');
   });
 
   test('renderReport sanitizes repo-controlled strings before writing', () => {
@@ -184,5 +190,31 @@ describe('safeText (render boundary)', () => {
     const all = lines.join('\n');
     assert.doesNotMatch(all, /\u001b|\u0007/, 'no escape byte may reach the writer');
     assert.match(all, /x\.js/, 'the readable suffix of the name survives');
+  });
+
+  test('rendered commands stay faithful: control bytes are escaped, not deleted', () => {
+    // A command whose control byte was silently dropped would no longer
+    // reproduce the fact when pasted; the escaped form still identifies the
+    // real path while showing the byte as data.
+    const report = makeReport({
+      producer: { name: 'x', version: '0' },
+      subject: { repo: 'normal' },
+      facts: [
+        makeFact({
+          id: 'f1',
+          kind: KIND.HISTORY,
+          statement: 'deleted lines',
+          status: STATUS.ESTABLISHED,
+          evidence: { file: "src/be\u0007ll.js" },
+          method: 'command',
+          command: "git blame -- 'src/be\u0007ll.js'"
+        })
+      ]
+    });
+    const lines = [];
+    renderReport(report, { write: (l) => lines.push(l) });
+    const all = lines.join('\n');
+    assert.doesNotMatch(all, /\u0007/, 'no raw BEL may reach the writer');
+    assert.match(all, /src\/be\\x07ll\.js/, 'the command keeps the byte as a visible escape');
   });
 });

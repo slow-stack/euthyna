@@ -80,6 +80,7 @@ the project is deliberately zero-dependency.
 | **Claude Code** | Copy the same folder into `~/.claude/skills/` | Same |
 | **Codex** | The same Markdown layer works; packaging goes through Codex's plugin/marketplace format | Same |
 | **Hermes** | Copy the same folder into `~/.hermes/skills/` under a category folder (Hermes reads the open skill standard; or install from a repo with `hermes skills install`) | Same |
+| **OpenCode** | Copy the same folder into `~/.agents/skills/` or `~/.config/opencode/skills/` (OpenCode loads both; unknown frontmatter fields are ignored) | Same |
 | **Any terminal** | — | `npm install -g euthyna`, then `euthyna …` |
 
 Two honest notes:

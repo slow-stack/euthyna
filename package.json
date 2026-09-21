@@ -3,12 +3,16 @@
   "version": "0.1.1",
   "description": "Deterministic fact producers for security auditing: which deleted code came from a security fix, and which changed symbols no test ever executed.",
   "type": "module",
+  "main": "./plugin/index.js",
   "bin": {
     "euthyna": "./bin/euthyna.js"
   },
   "files": [
     "bin/",
     "src/",
+    "plugin/",
+    "cordis.patch.yml",
+    ".agents/skills/euthyna/",
     "assets/euthyna.png",
     "NOTICE.md"
   ],
@@ -25,7 +29,10 @@
     "code-review",
     "coverage",
     "ai-agents",
-    "ai-coding-agents"
+    "ai-coding-agents",
+    "dsh-plugin",
+    "deepseek-harness",
+    "skill"
   ],
   "author": "modusensus",
   "license": "Apache-2.0",
@@ -36,5 +43,18 @@
   "bugs": {
     "url": "https://github.com/slow-stack/euthyna/issues"
   },
-  "homepage": "https://github.com/slow-stack/euthyna#readme"
+  "homepage": "https://github.com/slow-stack/euthyna#readme",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.1.2-rc.1 <0.2.0 || >=0.1.5-alpha.1 <0.2.0 || >=0.1.6-0 <0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-skill-filesystem": {
+      "optional": true
+    }
+  }
 }

@@ -46,10 +46,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # registry-url is deliberately NOT set: setup-node writes a .npmrc and
+      # exports NODE_AUTH_TOKEN from the repository's NPM_TOKEN secret when it
+      # is, which put a retired token back in the environment on every step and
+      # let the publish fall back to it. Trusted publishing needs no .npmrc —
+      # the CLI detects the OIDC environment on its own.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
 
       - name: Resolve the version being shipped
         id: version

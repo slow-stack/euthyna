@@ -191,11 +191,15 @@ require github.com/single/dep v2.0.0
     assert.equal(facts.length, 3);
     const bar = facts.find((f) => f.detail.dependency === 'github.com/foo/bar');
     assert.equal(bar.status, STATUS.ESTABLISHED);
-    assert.deepEqual(bar.detail.resolvedVersions, ['v1.2.3']);
+    assert.deepEqual(bar.detail.declaredVersions, ['v1.2.3']);
+    assert.ok(
+      !('resolvedVersions' in bar.detail),
+      'a go.mod fact must not label declared versions as resolved'
+    );
     assert.match(bar.statement, /被声明为版本 v1\.2\.3/);
     assert.match(bar.statement, /声明的需求版本/);
     const single = facts.find((f) => f.detail.dependency === 'github.com/single/dep');
-    assert.deepEqual(single.detail.resolvedVersions, ['v2.0.0']);
+    assert.deepEqual(single.detail.declaredVersions, ['v2.0.0']);
   });
 });
 
@@ -239,6 +243,37 @@ describe('dependency facts — unmeasurable cases are notEvaluated, never clean'
     assert.equal(measured, false);
     assert.equal(notEvaluated.length, 1);
     assert.match(notEvaluated[0].reason, /解析失败/);
+  });
+
+  test('a structurally empty lockfile (e.g. {}) is not evaluated, never clean', async () => {
+    const file = await writeLockfile('package-lock.json', '{}');
+    const { facts, notEvaluated, measured } = await collectDependencyFacts({
+      lockfile: file,
+      deps: ['lodash']
+    });
+
+    assert.equal(facts.length, 0);
+    assert.equal(measured, false);
+    assert.equal(notEvaluated.length, 1);
+    assert.match(notEvaluated[0].reason, /结构不完整/);
+  });
+
+  test('a coexisting unsupported lockfile is named even when a supported one is measured', async () => {
+    const dir2 = await mkdtemp(path.join(tmpdir(), 'euthyna-deps-coexist-'));
+    await writeFile(path.join(dir2, 'package-lock.json'), NPM_V3, 'utf8');
+    await writeFile(path.join(dir2, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n', 'utf8');
+
+    const { facts, notEvaluated, measured } = await collectDependencyFacts({
+      cwd: dir2,
+      deps: ['lodash']
+    });
+
+    assert.equal(measured, true);
+    assert.equal(facts.length, 1);
+    assert.ok(
+      notEvaluated.some((n) => /pnpm-lock\.yaml/.test(n.reason)),
+      'the unsupported lockfile must be named even though a supported one was measured'
+    );
   });
 
   test('an explicit --lockfile pointing at a missing file is not evaluated', async () => {

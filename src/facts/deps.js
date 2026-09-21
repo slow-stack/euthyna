@@ -45,11 +45,17 @@ const UNSUPPORTED = [
 
 /** 1-indexed line of the first line containing `needle`, or null. */
 function lineOf(text, needle) {
-  const lines = text.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes(needle)) return i + 1;
+  return lineOfAt(text, text.indexOf(needle));
+}
+
+/** 1-indexed line of the absolute text index, or null when it is not found. */
+function lineOfAt(text, index) {
+  if (index < 0) return null;
+  let line = 1;
+  for (let i = 0; i < index; i++) {
+    if (text[i] === '\n') line++;
   }
-  return null;
+  return line;
 }
 
 /**
@@ -76,10 +82,14 @@ function resolveNpm(root, dep, text) {
       for (const [name, meta] of Object.entries(tree)) {
         if (!meta || typeof meta !== 'object') continue;
         if (name === dep && meta.version) {
+          // Anchor at this dep's own block: a same-version string earlier in the
+          // file (some other package) must not hijack the evidence pointer.
+          const blockAt = text.indexOf(`"${name}":`);
+          const verAt = blockAt < 0 ? -1 : text.indexOf(`"version": "${meta.version}"`, blockAt);
           found.push({
             version: meta.version,
             location: `dependencies.${name}`,
-            line: lineOf(text, `"version": "${meta.version}"`)
+            line: lineOfAt(text, verAt)
           });
         }
         if (meta.dependencies && typeof meta.dependencies === 'object') walk(meta.dependencies);
@@ -98,10 +108,15 @@ function resolveCargo(text, dep) {
     const name = /^\s*name\s*=\s*"([^"]+)"/m.exec(block);
     const version = /^\s*version\s*=\s*"([^"]+)"/m.exec(block);
     if (!name || !version || name[1] !== dep) continue;
+    // Package names are unique in a Cargo.lock, so anchoring the version line
+    // at this dep's own name block keeps the pointer on this crate even when a
+    // different crate earlier in the file pins the same version string.
+    const nameAt = text.indexOf(`name = "${dep}"`);
+    const verAt = nameAt < 0 ? -1 : text.indexOf(`version = "${version[1]}"`, nameAt);
     found.push({
       version: version[1],
       location: `[[package]] ${dep}`,
-      line: lineOf(text, `name = "${dep}"`)
+      line: lineOfAt(text, verAt)
     });
   }
   return found;
@@ -137,10 +152,30 @@ function resolveGo(text, dep) {
 function makeResolver(type, text) {
   if (type === 'npm') {
     const root = JSON.parse(text); // throws on malformed JSON
+    // A syntactically valid but structurally empty file (e.g. `{}`) is not a
+    // lockfile; treating it as one would report every dependency as "absent"
+    // and exit clean on garbage.
+    if (
+      !root ||
+      typeof root !== 'object' ||
+      (root.packages === undefined && root.dependencies === undefined && root.lockfileVersion === undefined)
+    ) {
+      throw new Error('package-lock.json 结构不完整（缺 lockfileVersion/packages/dependencies），不像真实的 npm 锁文件');
+    }
     return (dep) => resolveNpm(root, dep, text);
   }
-  if (type === 'cargo') return (dep) => resolveCargo(text, dep);
-  if (type === 'go') return (dep) => resolveGo(text, dep);
+  if (type === 'cargo') {
+    if (!/\[\[package\]\]|^version\s*=/m.test(text)) {
+      throw new Error('Cargo.lock 结构不完整（无 [[package]] 块或 version 头），不像真实的 Cargo 锁文件');
+    }
+    return (dep) => resolveCargo(text, dep);
+  }
+  if (type === 'go') {
+    if (!/^module\s+\S+/m.test(text)) {
+      throw new Error('go.mod 结构不完整（无 module 行），不像真实的 go.mod');
+    }
+    return (dep) => resolveGo(text, dep);
+  }
   throw new Error(`不受支持的依赖清单格式: ${type}`);
 }
 
@@ -231,6 +266,19 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
       return { facts, evaluated, notEvaluated, measured: false };
     }
     target = found[0];
+    // A repo can carry both a supported and an unsupported lockfile (e.g. a
+    // pnpm-lock.yaml alongside a leftover package-lock.json). The unsupported
+    // one must still be named, so a reader knows the tree it measured is not
+    // necessarily the tree the project actually installs from.
+    const unsupported = await unsupportedIn(cwd);
+    if (unsupported.length > 0) {
+      notEvaluated.push(
+        notEvaluatedEntry(
+          KIND.DEPENDENCY,
+          `同目录还检测到 ${unsupported.join('、')}（Tier 0 暂不支持），本次只测了 ${target.file}`
+        )
+      );
+    }
   }
 
   let text;
@@ -283,7 +331,10 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
             lockfileType: target.type,
             dependency: dep,
             verb,
-            resolvedVersions: versions,
+            // go.mod declares a requirement; calling it "resolved" would let a
+            // consumer mistake it for the final build version. The field name
+            // must not oversell what the source can prove.
+            ...(target.type === 'go' ? { declaredVersions: versions } : { resolvedVersions: versions }),
             locations: hits.map((h) => h.location)
           }
         })
@@ -298,7 +349,12 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
           evidence: { file: target.path },
           method: 'command',
           command: reproduce,
-          detail: { lockfileType: target.type, dependency: dep, resolvedVersions: [], reason: 'absent_from_lockfile' }
+          detail: {
+            lockfileType: target.type,
+            dependency: dep,
+            ...(target.type === 'go' ? { declaredVersions: [] } : { resolvedVersions: [] }),
+            reason: 'absent_from_lockfile'
+          }
         })
       );
     }

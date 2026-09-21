@@ -61,10 +61,15 @@ const FIELDS = {
 /** `门禁全部通过。` may share its line with the evidence that follows it. */
 const ALL_PASS = /^门禁全部通过[。.]?/;
 
-/** Extract {file, line, commit} from an evidence string like `src/a.js:123 (abc1234)`. */
+/**
+ * Extract {file, line, commit} from an evidence string. Both `src/a.js:123`
+ * and the skill's documented `src/a.js:L123` form are accepted — the skill
+ * states the evidence form as `path:L123`, so a validator that only accepted
+ * the bare numeric form would downgrade every report written to spec.
+ */
 export function parseEvidence(text) {
   const value = String(text).trim();
-  const withLine = /^(.*?):(\d+)\s*(?:\(([^)]*)\))?$/.exec(value);
+  const withLine = /^(.*?):L?(\d+)\s*(?:\(([^)]*)\))?$/.exec(value);
   if (withLine) {
     return { file: withLine[1], line: Number(withLine[2]), commit: withLine[3] ?? null, raw: value };
   }
@@ -257,18 +262,33 @@ export function splitCommand(line) {
 }
 
 /**
- * Tools a reproduce command may invoke under --verify. The report is written
- * by an agent under audit; running its commands is the point, but only through
- * an allowlist so a hostile report cannot turn `euthyna gate` into `rm -rf`.
+ * Tools a reproduce command may invoke under --verify, split by what they can
+ * do. A report is written by the agent under audit, so its reproduce commands
+ * are untrusted input that `--verify` would execute with the user's
+ * privileges; the allowlist is a blast-radius limit, not a sandbox.
+ *
+ * `git` is a reproduce tool: it reads repository history, which is what the
+ * facts are about. Interpreters (node, npm, python) can run arbitrary code by
+ * construction — `node -e`, `python -c`, an npm script — so they are NOT
+ * reachable by default: running one requires `--allow-exec`, which is the
+ * caller saying "I trust this report". Narrowing the list further would not
+ * close the hole (git itself can reach a pager or `-c core.…`); the honest
+ * boundary is the explicit consent, not the list.
  */
-export const ALLOWED_VERIFY = new Set(['git', 'node', 'npm', 'python', 'python3']);
+export const SAFE_VERIFY_TOOLS = new Set(['git']);
+export const INTERPRETER_VERIFY_TOOLS = new Set(['node', 'npm', 'python', 'python3']);
+export const ALLOWED_VERIFY = new Set([...SAFE_VERIFY_TOOLS, ...INTERPRETER_VERIFY_TOOLS]);
 
 /**
  * Re-run one finding's reproduce command.
  *
- * @returns {{status: 'verified'|'failed'|'refused'|'no-command'|'unparseable', tool?, exitCode?, detail?}}
+ * @param {{allowInterpreters?: boolean}} [options] set from --allow-exec
+ * @returns {{status: 'verified'|'failed'|'refused'|'needs-consent'|'no-command'|'unparseable', tool?, exitCode?, detail?}}
  */
-export async function verifyFinding(finding, { cwd = process.cwd(), timeoutMs = 30000 } = {}) {
+export async function verifyFinding(
+  finding,
+  { cwd = process.cwd(), timeoutMs = 30000, allowInterpreters = false } = {}
+) {
   if (!finding.reproduce) return { status: 'no-command' };
   let argv;
   try {
@@ -277,6 +297,11 @@ export async function verifyFinding(finding, { cwd = process.cwd(), timeoutMs = 
     return { status: 'unparseable', detail: error.message };
   }
   if (argv.length === 0) return { status: 'no-command' };
+  if (INTERPRETER_VERIFY_TOOLS.has(argv[0]) && !allowInterpreters) {
+    // Deliberately not executed: an interpreter command from an untrusted
+    // report is arbitrary code, and running it is the caller's decision.
+    return { status: 'needs-consent', tool: argv[0] };
+  }
   if (!ALLOWED_VERIFY.has(argv[0])) return { status: 'refused', tool: argv[0] };
   try {
     await execFileAsync(argv[0], argv.slice(1), { cwd, timeout: timeoutMs, env: process.env });
@@ -304,7 +329,8 @@ export function renderGateReport(result, { write: rawWrite = console.log } = {})
   write('euthyna gate — 6 门禁契约校验（不测量，只核对报告的自我声明）');
   write(`报告: ${file}`);
   if (verify) {
-    write('⚠ --verify 会以当前用户权限执行报告中的复现命令（工具白名单，按 argv 执行不走 shell）。');
+    write('⚠ --verify 以当前用户权限执行报告中的复现命令（按 argv 执行，不经过 shell）。');
+    write('  默认只执行 git 命令；解释器命令（node/npm/python）需要显式 --allow-exec。');
     write('  它不是一个安全沙箱：只对你自己信任的报告使用。');
   }
   write('');
@@ -327,9 +353,11 @@ export function renderGateReport(result, { write: rawWrite = console.log } = {})
             ? `(exit ${v.exitCode ?? '?'}${v.detail ? `: ${v.detail}` : ''})`
             : v.status === 'refused'
               ? `(拒绝运行 ${v.tool} —— 不在白名单)`
-              : v.status === 'unparseable'
-                ? '(命令无法拆分为 argv)'
-                : '(无复现命令)';
+              : v.status === 'needs-consent'
+                ? `(未执行 ${v.tool} 解释器命令 —— 需要 --allow-exec)`
+                : v.status === 'unparseable'
+                  ? '(命令无法拆分为 argv)'
+                  : '(无复现命令)';
       write(`     复现核验 ${mark} ${how}`);
     }
     for (const violation of entry.violations) {

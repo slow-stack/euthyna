@@ -9,6 +9,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -97,6 +98,15 @@ describe('parseEvidence', () => {
     assert.deepEqual(parseEvidence('src/a.js:123 (abc1234)'), {
       file: 'src/a.js', line: 123, commit: 'abc1234', raw: 'src/a.js:123 (abc1234)'
     });
+  });
+
+  test('the skill-documented path:L123 form is accepted too', () => {
+    // The skill states the evidence form as `path:L123`; a validator that only
+    // took the bare numeric form downgraded every report written to spec.
+    const e = parseEvidence('src/a.js:L123 (abc1234)');
+    assert.equal(e.file, 'src/a.js');
+    assert.equal(e.line, 123);
+    assert.equal(e.commit, 'abc1234');
   });
 
   test('a Windows drive path keeps its colons', () => {
@@ -336,6 +346,38 @@ describe('gate CLI', () => {
     const { output } = await runGateCli(['gate', file, '--verify']);
     assert.match(output, /以当前用户权限执行报告中的复现命令/, 'the boundary is stated, not hidden');
     assert.match(output, /只对你自己信任的报告使用/);
+    assert.match(output, /默认只执行 git 命令/, 'the default blast radius is stated');
+  });
+
+  test('an interpreter reproduce command is not executed without --allow-exec', async () => {
+    // Sourcery finding: the allowlist permitted node/npm/python, so a hostile
+    // report reached arbitrary code execution. Interpreters are now behind an
+    // explicit consent flag; without it the command is reported, not run.
+    const dir = await mkdtemp(path.join(tmpdir(), 'euthyna-gate-'));
+    const repo = await makeRepo();
+    await commitFiles(repo, 'feat: init', { 'src/a.js': 'export const a = 1;\n' });
+
+    const report = TP.replace(
+      'node bench/exploits.js p3',
+      'node -e "require(\'node:fs\').writeFileSync(\'evidence-of-execution.txt\', \'ran\')"'
+    );
+    const file = path.join(dir, 'report.md');
+    await writeFile(file, report, 'utf8');
+
+    const gated = await runGateCli(['gate', file, '--verify', '--cwd', repo]);
+    assert.equal(gated.code, EXIT.FLAGGED, 'an unverified reproduction is a downgrade');
+    assert.match(gated.output, /解释器命令/);
+    assert.match(gated.output, /--allow-exec/);
+    assert.equal(
+      existsSync(path.join(repo, 'evidence-of-execution.txt')),
+      false,
+      'without --allow-exec the command must not have run'
+    );
+
+    // With explicit consent the same command runs and verifies.
+    const consented = await runGateCli(['gate', file, '--verify', '--allow-exec', '--cwd', repo]);
+    assert.equal(consented.code, EXIT.CLEAN, 'a consented, succeeding command verifies');
+    assert.equal(existsSync(path.join(repo, 'evidence-of-execution.txt')), true);
   });
 
   test('a missing report path is a usage error', async () => {

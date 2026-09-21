@@ -17,6 +17,7 @@ import process from 'node:process';
 import path from 'node:path';
 import { collectHistoryFacts } from './facts/history.js';
 import { collectCoverageFacts } from './facts/coverage.js';
+import { collectDependencyFacts } from './facts/deps.js';
 import { makeReport, renderReport, safeTextLines, KIND } from './contract.js';
 import { repoToplevel, revParse } from './git.js';
 
@@ -37,6 +38,11 @@ const COVERAGE_PRODUCER = {
   version: '0.1.0',
   purpose: '符号调用计数（只能证伪）'
 };
+const DEPS_PRODUCER = {
+  name: 'euthyna-deps',
+  version: '0.1.0',
+  purpose: '依赖锁定版本（读取 lockfile，不含漏洞判定）'
+};
 
 const HELP = `
 euthyna —— 给 AI 编码 agent 用的确定性事实产出器
@@ -46,6 +52,7 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
 用法:
   euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--json]
   euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--json]
+  euthyna deps     [--repo <dir>] [--lockfile <file>] --dep <name> [--dep <name>] [--json]
 
 命令:
   history    本次变更删掉了哪些代码、它们分别由哪个提交引入、该提交是不是安全修复
@@ -56,6 +63,11 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
              --coverage  覆盖率数据文件，c8 的 coverage-final.json
              --symbol    要查询的符号名，可重复
              --file      可选，限定到某个文件
+  deps       某个依赖在 lockfile 里被锁定/声明成什么版本（供应链声明的裁决依据）
+             --repo      可选，依赖清单所在目录（默认当前目录，自动检测）
+             --lockfile  可选，显式指定清单文件（支持 package-lock.json / Cargo.lock / go.mod）
+             --dep       要查询的依赖名，可重复
+             注：只报版本事实，不判「是否含漏洞」——版本到 CVE 的映射归判定层
 
 退出码:
   0   已测量，没有安全相关的发现
@@ -198,6 +210,33 @@ async function runCoverage(flags) {
   return { exit: measured ? EXIT.CLEAN : EXIT.UNMEASURED, report };
 }
 
+async function runDeps(flags) {
+  const cwd = path.resolve(flags.repo ? String(flags.repo) : process.cwd());
+  const deps = asArray(flags.dep).map(String);
+  const lockfile = flags.lockfile ? String(flags.lockfile) : undefined;
+
+  // Asking for nothing is a caller mistake, not a measurement failure.
+  if (deps.length === 0) {
+    return { exit: EXIT.USAGE, error: 'deps 需要至少一个 --dep <name>' };
+  }
+
+  const { facts, evaluated, notEvaluated, measured } = await collectDependencyFacts({
+    cwd,
+    lockfile,
+    deps
+  });
+
+  const report = makeReport({
+    producer: DEPS_PRODUCER,
+    subject: { repo: cwd, lockfile: lockfile ?? '(自动检测)', deps },
+    facts,
+    evaluated,
+    notEvaluated
+  });
+
+  return { exit: measured ? EXIT.CLEAN : EXIT.UNMEASURED, report };
+}
+
 /** Entry point. Returns the process exit code. */
 export async function main(argv = process.argv.slice(2)) {
   const { positional, flags } = parseArgs(argv);
@@ -213,6 +252,8 @@ export async function main(argv = process.argv.slice(2)) {
     result = await runHistory(flags);
   } else if (command === 'coverage') {
     result = await runCoverage(flags);
+  } else if (command === 'deps') {
+    result = await runDeps(flags);
   } else {
     // stderr boundary, mirroring the render boundary in contract.js: text that
     // reaches the error channel may carry user or repo-controlled bytes (an

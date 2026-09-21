@@ -334,6 +334,33 @@ Hence the hard constraints at the contract level:
 The **line-number alignment between tsserver and c8 has had no integration verification** (call sites in the fixture were located with a regex; what was verified is the shape, not the integration);
 **source-map remapping, bundled artifacts, monorepos, scale and performance are all untested**.
 
+### 6.3 `dependency` — the lockfile as the ground truth for supply-chain claims
+
+**The question to answer**: what version is this dependency *actually* pinned to — or is it in the tree at all?
+
+This is the fact that turns a supply-chain claim ("the app uses a vulnerable version of X") from INCONCLUSIVE
+into adjudicable. A model guesses at the version from `package.json` ranges; the lockfile is the deterministic
+record of what is actually resolved.
+
+**Scope (Tier 0)** — three formats, all parseable with zero dependencies:
+
+| Format | What is reported | Honesty constraint |
+|---|---|---|
+| `package-lock.json` (npm v1/v2/v3) | Resolved pinned versions (incl. nested/scoped) | Absence from a well-formed lockfile is an **established "not in the tree"** fact, never a silent skip |
+| `Cargo.lock` (Rust) | Resolved pinned versions per `[[package]]` | Same |
+| `go.mod` (Go) | The **declared requirement** version | go.sum carries hashes, not versions — the resolved build version cannot be verified here, so this producer says **"declared"**, never "locked" |
+
+Anything else detected at auto-detect (`pnpm-lock.yaml`, `yarn.lock`, `poetry.lock`, …) is reported as
+*not evaluated* with the filenames named — never guessed at.
+
+**What it refuses to say is as important as what it says.** It emits versions, and nothing else:
+no "vulnerable", no severity, no CVE mapping. The version-to-CVE mapping is the adjudication layer's job
+(the `assertNoVerdictFields` guard enforces this mechanically). A producer that emitted "version 4.17.21 is
+affected by CVE-XXXX" would have decided for the adjudicator, and the decision would not be recomputable.
+
+**Not-yet-verified** (must not be treated as known): pnpm/yarn/poetry parsing, go resolved-version verification,
+SBOM/audit-tool ingestion, and large-monorepo scale.
+
 ---
 
 ## 7. Open questions (must be answered in the next round)

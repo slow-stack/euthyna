@@ -79,6 +79,7 @@ the project is deliberately zero-dependency.
 | **DSH** | Copy `.agents/skills/euthyna/` into `~/.agents/skills/` (user-wide) or `<project>/.agents/skills/`. Markdown hot-reloads; no restart needed. | `npm install -g euthyna` — runs in any terminal |
 | **Claude Code** | Copy the same folder into `~/.claude/skills/` | Same |
 | **Codex** | The same Markdown layer works; packaging goes through Codex's plugin/marketplace format | Same |
+| **Hermes** | Copy the same folder into `~/.hermes/skills/` under a category folder (Hermes reads the open skill standard; or install from a repo with `hermes skills install`) | Same |
 | **Any terminal** | — | `npm install -g euthyna`, then `euthyna …` |
 
 Two honest notes:

@@ -64,6 +64,15 @@ for (const id of ids) {
   const rawRuns = Array.isArray(submitted[id]) ? submitted[id] : [submitted[id]];
   const runs = [];
   for (const raw of rawRuns) {
+    // A null slot is a missing run, not a verdict that can be scored. It is
+    // reported as a problem so a case whose collected runs are all missing
+    // cannot slip through as a green score: "no adjudication happened" and
+    // "the adjudication was right" must not look the same in the exit code.
+    // (A one-run round writes a one-element array, so it has no null slots.)
+    if (raw === null || raw === undefined) {
+      unparsed.push(`${id}: missing run`);
+      continue;
+    }
     const verdict = normalise(raw);
     if (!verdict) unparsed.push(`${id}: could not parse ${JSON.stringify(raw)}`);
     else runs.push(verdict);

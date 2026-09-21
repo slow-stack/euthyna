@@ -58,6 +58,9 @@ bench/
 │   ├── src/           ← 被审代码
 │   └── meta.json      ← ground truth，裁定者看不到
 ├── exploits.js        ← 证明「真」案例真的可利用
+├── prepare-blind.js   ← 生成不透明编号的盲副本到 .scratch/blind/
+├── adjudicate.js      ← 一键闭环：盲树 → 逐案裁定 → 机器校验 → 计分
+├── collect-verdicts.js← 机器校验报告文件并提取裁定（主控不读正文）
 ├── score.js           ← 拿裁定结果算混淆矩阵
 └── perf.js            ← `history` 产出器的扩展性基准（固定文件大小、递增删除区间数）
 ```
@@ -66,16 +69,38 @@ bench/
 
 ```powershell
 node bench/exploits.js              # 跑通全部 PoC —— 不通过就说明「真」集合不可信
-node bench/prepare-blind.js         # 生成不透明编号的盲副本到 .scratch/blind/
-node bench/score.js verdicts.json   # 用裁定结果算混淆矩阵
+node bench/adjudicate.js --round 5 --runs 3 `
+  --adjudicator "<裁定者命令，含 {case} {results} {blindId} {run} 占位符>"
+node bench/adjudicate.js --round 0 --runs 3 --adjudicator golden `
+  --out .scratch/verdicts-ci-round0.json   # 确定性管线自检（CI 用，非真实裁定）
+node bench/prepare-blind.js         # 只生成盲副本（adjudicate.js 内部会调用它）
+node bench/score.js verdicts.json   # 只计分（adjudicate.js 内部会调用它）
 node bench/perf.js                  # history 顺序 blame 的缩放曲线（--total/--min/--max 可调）
 ```
 
-**平台契约**：exploit 的 ground truth 定义在 **bsdtar** 的操作数语义上
-（`@` 归档并入、裸 `..` 成员——见 p6/p6b 的 `meta.json` 与 `RESULTS-round3.md`）。
-在 `tar` 是 GNU tar 的平台上这两条语义不存在，`node --test` 里的 ground truth
-守卫会**带原因跳过**而不是失败——truth 在那个二进制上不是被破坏了，而是未定义。
-Windows 的 `tar` 是 bsdtar，CI 的三个 Windows job 照常全量运行该守卫。
+`adjudicate.js` 就是 issue #7 要的那个闭环：一条命令从盲树走到计分表。
+裁定者按盲协议写自己的报告文件、只回一行 `DONE`；harness 只看文件在不在，
+不读正文。`golden` 模式把 ground truth 写进报告，让 CI 能确定性地验证整条管线
+（含「裁定错了 score 会红」）——它读 `meta.json`，**永远不许当真实裁定引用**。
+
+## 已验证平台矩阵
+
+exploit 的 ground truth 是**按平台**定义的：它依赖 `tar` 的操作数行为，且只影响
+tar 相关案例。`node bench/exploits.js` 每次运行都会打印平台行与跳过原因，
+`test/bench.test.js` 断言跳过集与平台一致——这张表不是声明，是可复核的。
+
+| 案例 | 依赖的 tar 语义 | Windows（bsdtar） | Linux（GNU tar） | macOS（bsdtar） |
+|---|---|---|---|---|
+| `p6-member-read-traversal` | `@` 归档并入、裸 `..` 成员 | ✅ 已实测（exploits.js 全量） | ⛔ **未定义**：GNU tar 无此语义，带原因跳过——truth 不是被破坏，而是对该二进制未定义 | 未在本项目验证 |
+| `p6b-member-read-validated` | 同上（守卫侧：在 tar 之前拒绝 payload） | ✅ 已实测 | 未在本项目验证（套件整体跳过） | 未在本项目验证 |
+| 其余 16 案 | 无 tar 专属语义 | ✅ 已实测 | 未在本项目验证（GNU tar 上套件整体跳过） | 未在本项目验证 |
+
+为什么是「跳过」而不是「失败」：p6 的 truth 定义在 bsdtar 语义上，
+GNU tar 上这两个语义不存在，`node --test` 里的守卫会**带原因跳过**而不是报错。
+p6 的源码侧缺陷（成员名缺少校验）不依赖 tar 行为，这部分在任何平台上都可核；
+依赖 tar 的只是「利用真的能把外部文件打包进归档」那一半。
+CI 的三个 Windows job 照常全量运行该守卫；Linux job 上它整体跳过。
+
 
 **裁定必须是盲的**：裁定者只看自己的 `case-NN/`，不看 `meta.json`、不看别的案例、
 不看 `RESULTS.md`。自己做完再看答案，等于没测。

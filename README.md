@@ -48,9 +48,12 @@ between you and the agent:
 
 Three fact producers — a zero-dependency Node CLI:
 
-- **`history`** — for every line a change deletes, it finds the commit that introduced
-  that line and classifies that commit from its own message. If the deleted code came
-  from a security fix, that is flagged. This is git archaeology no model can do from
+- **`history`** — for every line a change deletes, it attributes the line to a commit
+  and classifies that commit from its message, its own diff, and the deleted line's
+  content (a deleted `if (!authorized)` is flagged even under a "tweaks" subject). By
+  default the attribution is blame's "last touched"; `--origins` digs for the commit
+  that *first introduced* the content with `git log -S`. If the deleted code came from
+  a security fix, that is flagged. This is git archaeology no model can do from
   reading a diff.
 - **`coverage`** — was this symbol *ever actually invoked* by a test? It has exactly two
   answers: never invoked (established), or entered but that proves nothing about any
@@ -72,6 +75,14 @@ Markdown. Every security claim must pass six gates — reachability, trust bound
 impact, and their counterparts. A claim that cannot produce evidence is **downgraded to
 an observation**, not reported as a finding. "I'm done" becomes a package: claims,
 evidence, and the commands that reproduce both.
+
+The gates are not only prose. `euthyna gate <report>` reads an adjudication report and
+mechanically checks every finding against its verdict — evidence down to `path:L123`, a
+reproduce command, an impact statement, consistent gate statuses — and downgrades
+whatever does not measure up. `--verify` re-runs the reproduce commands: `git` commands
+by default, interpreter commands (`node`/`npm`/`python`) only with the explicit
+`--allow-exec`, because an interpreter command from a report is arbitrary code and the
+flag is the caller vouching for that report.
 
 ---
 
@@ -106,9 +117,10 @@ Two honest notes:
 
 ```sh
 npm install -g euthyna
-euthyna history --repo <path> --base main --head HEAD
+euthyna history --repo <path> --base main --head HEAD          # add --origins to chase the first introducer
 euthyna coverage --coverage coverage/coverage-final.json --symbol <name>
 euthyna deps --repo <path> --dep <name>
+euthyna gate <adjudication-report.md> --verify --cwd <repo>    # mechanically check the six gates
 ```
 
 Or without a global install: `npx euthyna history --repo <path> --base main`.
@@ -117,7 +129,7 @@ From a checkout instead (development):
 
 ```sh
 git clone https://github.com/slow-stack/euthyna
-cd euthyna && npm test                                 # 107 tests; no install step exists
+cd euthyna && npm test                                 # 167 tests; no install step exists
 node bin/euthyna.js history --repo <path> --base main --head HEAD
 ```
 
@@ -131,10 +143,11 @@ What `history` reports looks like this:
       复现: git blame --porcelain -L 104,104 -L 114,114 <base> -- lib/checks/.../evaluate.js
 ```
 
-Every deleted line is blamed back to the commit that introduced it, and the `复现`
+Every deleted line is blamed back to a commit, and the `复现`
 (Reproduce) command lets you re-derive the claim yourself without trusting the report.
-Add `--json` for the structured fact report, and `--pickaxe` to detect lines that were
-removed and are now being added back.
+Add `--json` for the structured fact report, `--pickaxe` to detect lines that were
+removed and are now being added back, and `--origins` to attribute deleted lines to the
+commit that first introduced their content rather than to blame's last modifier.
 
 ### Exit codes are part of the contract
 
@@ -143,10 +156,10 @@ process exit code**, which makes their output unusable as a CI gate. This one do
 
 | Code | Meaning |
 |---|---|
-| `0` | Measured; nothing security-classified found |
-| `10` | Measured; at least one `security`-classified fact exists |
+| `0` | Measured; nothing security-classified found — or a `gate` report fully passes |
+| `10` | Measured; at least one `security`-classified fact exists — or a `gate` report has findings downgraded to observations |
 | `1` | Usage error |
-| `2` | **Could not measure at all** — must not be read as clean |
+| `2` | **Could not measure at all** — must not be read as clean (also: a `gate` report that cannot be read or has no findings) |
 
 `2` being distinct from `0` is the whole point: *failing to measure* and *measuring and
 finding nothing* are different things.
@@ -159,7 +172,7 @@ finding nothing* are different things.
 |---|---|---|
 | **Fact producers** | A zero-dependency Node CLI that answers three questions deterministically | Working, tested |
 | **The skill** | The audit discipline itself, as loadable Markdown | Working, loadable |
-| **The benchmark** | A blind recall measurement for the adjudication layer | Four rounds complete |
+| **The benchmark** | A blind recall measurement for the adjudication layer | Four rounds complete; the loop is one command (`bench/adjudicate.js`), with a deterministic golden round on CI |
 
 ---
 
@@ -201,6 +214,16 @@ This project tries to be explicit about the difference. Current state:
   and [`bench/RESULTS-round4.md`](https://github.com/slow-stack/euthyna/blob/main/bench/RESULTS-round4.md).
 - **The delivery-gate mechanism**, by running the real host plugin: blocking works, and the two
   documented ways of getting it wrong do not. See [`docs/dsh-stop-gate.md`](https://github.com/slow-stack/euthyna/blob/main/docs/dsh-stop-gate.md).
+- **The gate discipline, mechanically.** `euthyna gate` is not a claim in prose: the suite
+  pins the contract per verdict (a TRUE POSITIVE without `path:L123` evidence, a reproduce
+  command or all six gates passing is downgraded; a FALSE POSITIVE needs a failing gate with
+  a reason), and `--verify` is tested to *not* execute an interpreter command without
+  `--allow-exec`. `test/skill.test.js` fails CI if the skill text stops declaring the six
+  gates, the three verdicts, or the command that enforces them.
+- **The adjudication loop, end to end and on CI.** `bench/adjudicate.js` runs a whole round —
+  blind tree, one adjudicator process per case, machine-validated reports, scoring — and a
+  deterministic `golden` round runs on every push, so the pipeline (and `score.js` going red
+  on a wrong verdict) is checked without a model.
 
 ### Not verified
 
@@ -212,6 +235,12 @@ This project tries to be explicit about the difference. Current state:
 - **Recall in the field.** The benchmark's real-bug cases are constructed; whether the
   discipline helps on code nobody staged for it is unmeasured.
 - **Source maps, bundlers, monorepos** for the coverage producer. Untested.
+- **A real model round on CI.** The golden round is deterministic plumbing, not an
+  adjudication: it writes the ground truth into the reports by design. A model round needs
+  credentials and is non-deterministic by nature, so it stays a local/manual step
+  (`bench/README.md` documents the command) rather than a CI gate that could flake.
+- **`--verify` as a sandbox.** It is not one, and does not claim to be: it executes the
+  report's commands with your privileges, `git` only unless `--allow-exec` is passed.
 - **`deps` beyond three formats and version facts only.** pnpm/yarn/poetry lockfiles are
   detected but not parsed (reported as *not evaluated*, never guessed at); go.mod reports the
   *declared* requirement, not the resolved build version; and the producer never maps a version

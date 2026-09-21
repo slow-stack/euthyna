@@ -122,17 +122,53 @@ Not inferred. Do not re-research these.
 
 ### Skill contract
 
-DSH skill frontmatter recognises exactly five fields:
-`name` / `description` / `whenToUse` / `invocation` / `metadata`.
+Measured against `@deepseek-ai/dsh-skill-filesystem` **0.1.5-rc.2** on this machine
+(`lib/index.js:676-703` parses a file, `:833-865` reads the invocation policy). Frontmatter
+keys the provider actually reads:
 
-- `name` must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`
-- `invocation` defaults to `{ modelInvocable: true, userInvocable: true }`
+| Key | Required | Meaning |
+|---|---|---|
+| `name` | yes | must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`, else the file is ignored |
+| `description` | yes | a missing name or description logs `frontmatter requires name and description` and skips the file |
+| `whenToUse` | no | passed through as a string |
+| `metadata` | no | passed through |
+| `disable-model-invocation` | no | `true` → `modelInvocable: false`. **Top level, kebab-case** |
+| `user-invocable` | no | `false` → `userInvocable: false`; default true |
+
+- **There is no `invocation:` mapping reader.** A nested block parses, logs nothing, and is
+  ignored. Rejected legacy top-level spellings: `disableModelInvocation`, `modelInvocable`,
+  `userInvocable` — each throws (`frontmatter field "X" is unsupported; use "Y"`), which
+  aborts the parse and logs `skill file <path> ignored: invalid invocation frontmatter`.
+- Defaults when the two policy keys are absent: `{ modelInvocable: true, userInvocable: true }`.
 - **Claude Code's `allowed-tools` is not recognised** — strip it when porting a skill from
-  elsewhere
+  elsewhere.
+
+#### ⚠️ A conclusion this project got wrong
+
+This section used to say the frontmatter recognises `invocation` as one of five fields and
+that it controls `modelInvocable` / `userInvocable`. Both halves were wrong, and the way they
+were wrong is the useful part: the skill declared
+
+```yaml
+invocation:
+  modelInvocable: false
+  userInvocable: true
+```
+
+which **is not read by anything**. No error, no warning — the keys sit inside `data.invocation`
+while the reader looks at `data['disable-model-invocation']` at the top level, so the policy
+silently defaulted to model-invocable: the opposite of what the file said, for as long as the
+file said it.
+
+What caught it was driving the real provider instead of reading the file — `apply()` +
+`provider.get()` reported `{"modelInvocable":true,"userInvocable":true}`, and
+`test/skill.test.js` now pins the canonical keys. A declaration that nothing parses is worse
+than a missing one, because it reads as a decision.
 
 ### Skill discovery paths (lower number wins; project can override global)
 
-Source: `dsh-skill-filesystem/lib/index.js:150-187` (`roots()`).
+Source: `@deepseek-ai/dsh-skill-filesystem` 0.1.5-rc.2 — the ranks are the constants at
+`lib/index.js:21-25`, consumed by the provider's `roots()`.
 
 ```
 <project>/.dsh/skills       100   PROJECT_DSH_RANK
@@ -229,6 +265,50 @@ Full analysis: `docs/dsh-stop-gate.md`.
 - Minimal skill-pack plugin: reuse the official `FileSystemSkillProvider`; the core is about
   6 lines. Sample: `node tools/fetch-references.js competitors` →
   `.refs/competitors/provider-index.ts`
+- **What makes a package installable** (measured 2026-09-21, against the shop front's own
+  rules in `awesome-dsh-plugin/contributing.md` and `dshmarket`'s checker):
+
+  ```jsonc
+  "main": "./plugin/index.js",                        // the host resolves the package name here
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+  ```
+
+  and beside it a `cordis.patch.yml` that inserts the package by name:
+
+  ```yaml
+  - insert:
+      - id: euthyna
+        name: 'euthyna'
+  ```
+
+  🧪 `dshmarket` reports `bundle declares no dsh.bundle.patch — the profile will fail to boot`
+  (`src/check.ts:944`), and a package with only `dsh.client` counts as client-only
+  (`src/verify.ts:232`). The front's CI reads `dsh.bundle` straight from `package.json`
+  (root, or a `packages/` · `plugins/` · `apps/` subpackage).
+- **A skill-pack plugin is ~20 lines**: export `name`, `inject: ['skills']`, and
+  `apply(ctx, config)` → `ctx.skills.registerProvider(control => new FileSystemSkillProvider(
+  ctx, control, { providerName, includeDefaultRoots: false, customSkillDirs: [root], watch: false }))`.
+  `includeDefaultRoots: false` keeps the bundle's provider to its own root, so installing it
+  adds a skill instead of replacing the user's catalogue. Working reference:
+  `PerryLink/dsh-skill-pack-security`'s provider in `.refs/competitors/provider-index.ts`.
+- 🧪 **`npm pack` does include an explicitly listed dot-directory.** With
+  `.agents/skills/euthyna/` in `files`, the tarball carries `SKILL.md` plus its seven
+  references (23 files in total, measured). That is what lets **one** canonical skill location
+  be both this repository's project skill root and the packaged payload — there is no second
+  copy to keep in sync.
+- 🧪 The provider is imported, not reimplemented: this package declares
+  `@deepseek-ai/dsh-skill-filesystem` as an **optional** peer, so `npm install -g euthyna`
+  still pulls nothing while the plugin half resolves the harness's own copy at runtime.
+- 🧪 Official `@deepseek-ai/*` packages are peerDependencies and their ranges need **one
+  prerelease branch per version tuple**: `>=0.1.2-rc.1 <0.2.0 || >=0.1.5-alpha.1 <0.2.0 ||
+  >=0.1.6-0 <0.2.0` is the convention in `dsh-skill-pack-security`. node-semver admits a
+  prerelease only when some comparator shares its tuple *and* itself carries a prerelease tag,
+  so a single `^0.1.5-rc.2` silently excludes `0.1.6-rc.*` and the user meets an `ERESOLVE`.
+- 🧪 Reproduce the mount without installing a profile: `node .scratch/probe-plugin.mjs` (needs
+  an installed DSH — reach it by junctioning the app's `node_modules` into the repo, which
+  `.gitignore` already covers). It calls `apply()` with a minimal ctx and drives the **real**
+  provider against the packaged root. That probe is how the invocation-policy bug above was
+  found: reading the file would never have caught it.
 
 ---
 

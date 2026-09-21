@@ -63,14 +63,29 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Skip the upload when this version is already on npm
+        id: gate
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          if npm view "euthyna@$PKG" version >/dev/null 2>&1; then
+            echo "euthyna@$PKG is already on the registry; the upload is skipped"
+            echo "already-published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "euthyna@$PKG is new"
+            echo "already-published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish (rehearsal, nothing is uploaded)
-        if: github.event_name == 'workflow_dispatch' && inputs.publish != true
+        if: github.event_name == 'workflow_dispatch' && inputs.publish != true && steps.gate.outputs.already-published != 'true'
         run: npm publish --dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
+        if: >-
+          (github.event_name == 'push' ||
+           (github.event_name == 'workflow_dispatch' && inputs.publish == true)) &&
+          steps.gate.outputs.already-published != 'true'
         run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

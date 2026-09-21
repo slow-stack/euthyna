@@ -124,10 +124,11 @@ Not inferred. Do not re-research these.
   hand-written notes; `v0.1.1`'s was created with `gh release create` from a
   template render whose publish bullet was corrected by hand, because the
   workflow skipped the release (see the `EOTP` entry above).
-- 🧪 Set the secret through the GitHub web UI. `gh secret set` with its hidden
-  paste prompt stored an **empty** value twice on this machine's embedded
-  terminal (the browser field works); the workflow's `npm whoami` step is what
-  catches an empty or invalid token before anything ships.
+- 🧪 Set a secret through the GitHub web UI, not `gh secret set`: `gh secret set`
+  with its hidden paste prompt stored an **empty** value twice on this machine's
+  embedded terminal (the browser field works). Historical note: the `NPM_TOKEN`
+  secret this documented is gone (deleted 2026-09-21, see the `EOTP` entry), as
+  is the workflow's `npm whoami` gate — publishing is OIDC-only now.
 - 🧪 Local npm still needs the proxy env, **with the scheme**: `HTTPS_PROXY` /
   `HTTP_PROXY` = `http://127.0.0.1:7897`. The bare `127.0.0.1:7897` form makes
   `npm publish` die with `ERR_INVALID_URL` inside `@npmcli/agent`'s

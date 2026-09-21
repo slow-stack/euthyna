@@ -309,6 +309,8 @@ return checkPermission(user, 'never');     // 从未执行，但 c8 报 hits=1
 | c8 默认排除规则 | `test/**`、`**/*.test.js`、`**/__tests__/**` 被排掉 | 生产调用方落这些 glob 会**静默消失** |
 | V8 块范围负列号 | 实测出现 `L9:-1-L10:0` | 朴素列比较会崩 |
 | 模块顶层调用点 | 只在 `branchMap` 里（`fnMap` 过滤掉 `functionName===""`） | 不能只查 `fnMap` |
+| 根本不是覆盖率文件 | 既无 `fnMap`/`f`（c8/istanbul）也无 `functions`（coverage.py） | 报 **notEvaluated**——喂给定位器会一本正经地答"符号未定位" |
+| 符号被改名 | 新名字不在 `fnMap` 里 | `unknown`，**绝不**「已确证从未被调用」 |
 
 #### 其他语言：比 JS 更差，不要外推
 

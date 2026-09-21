@@ -62,6 +62,9 @@ export function parseDeletedRanges(diffText) {
  */
 export async function blameRanges({ cwd, rev, file, ranges }) {
   const byCommit = new Map();
+  // ponytail: 顺序 blame，每个区间一次 git 进程，耗时与删除区间数线性相关
+  // （基准见 bench/perf.js）。若吞吐不满足要求：改成每文件一次 blame 覆盖
+  // 全部区间，或对单行区间做有界并发。
   for (const range of ranges) {
     const end = range.start + range.count - 1;
     const out = await git(

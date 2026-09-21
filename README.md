@@ -140,7 +140,7 @@ finding nothing* are different things.
 |---|---|---|
 | **Fact producers** | A zero-dependency Node CLI that answers two questions deterministically | Working, tested |
 | **The skill** | The audit discipline itself, as loadable Markdown | Working, loadable |
-| **The benchmark** | A blind recall measurement for the adjudication layer | Three rounds complete |
+| **The benchmark** | A blind recall measurement for the adjudication layer | Four rounds complete |
 
 ---
 
@@ -164,14 +164,15 @@ This project tries to be explicit about the difference. Current state:
   reshuffled the blind ids every round: **54 adjudications**, 24/24 real-bug claims caught
   with no misses and no abstentions, 29/30 non-vulnerabilities correctly cleared — and the
   single "false alarm" was the round's finding, not noise: the adjudicator caught a defect
-  in a fixture's guard, confirmed by reproduction and fixed; that final guard version
-  has not yet faced a fresh blind round. 17/18 cases were stable across all three runs.
-  Every case is a *near-neighbour pair* — same pattern, one guard
-  apart — so the verdicts had to come from reading the guard rather than recognising the shape.
-  Round 3 ran on a single model (no second route was available), so cross-model evidence
-  remains round 2's four adjudications.
+  in a fixture's guard, confirmed by reproduction and fixed. Every case is a *near-neighbour
+  pair* — same pattern, one guard apart — so the verdicts had to come from reading the guard
+  rather than recognising the shape. Round 4 re-ran the full set under fresh id shuffles, with
+  the twice-defeated guard — rebuilt as a bare-name allow-list — facing its first blind
+  adjudication: **54/54 correct**, all 8 pairs separated, and a third run on a second model
+  family agreed with the first two on every case.
   See [`bench/RESULTS.md`](bench/RESULTS.md), [`bench/RESULTS-round2.md`](bench/RESULTS-round2.md),
-  and [`bench/RESULTS-round3.md`](bench/RESULTS-round3.md).
+  [`bench/RESULTS-round3.md`](bench/RESULTS-round3.md),
+  and [`bench/RESULTS-round4.md`](bench/RESULTS-round4.md).
 - **The delivery-gate mechanism**, by running the real host plugin: blocking works, and the two
   documented ways of getting it wrong do not. See [`docs/dsh-stop-gate.md`](docs/dsh-stop-gate.md).
 
@@ -182,7 +183,8 @@ This project tries to be explicit about the difference. Current state:
   be found in the first place. The cases are deliberately constructed. The crewAI case study
   surfaced one INCONCLUSIVE (pickle deserialization, supply-chain-dependent) and refuted the
   rest — a directional signal, not a rate.
-- **Recall in the field.** Four real-bug samples is a directional signal, not a rate.
+- **Recall in the field.** The benchmark's real-bug cases are constructed; whether the
+  discipline helps on code nobody staged for it is unmeasured.
 - **Source maps, bundlers, monorepos** for the coverage producer. Untested.
 - **Anything about the case-study targets' security** — the runs found nothing to endorse or
   condemn; that is not a statement about either project. See

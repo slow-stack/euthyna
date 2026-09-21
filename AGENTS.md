@@ -54,6 +54,18 @@ have to be handed over and the gates have to pass.**
 Established by reading the local DSH source and, where marked 🧪, by **executing** something.
 Not inferred. Do not re-research these.
 
+### npm publication
+
+- `euthyna@0.1.0` published 2026-09-21, unscoped name (`npm install -g euthyna`).
+  Publish-prep commit `783a494`; CI `35568417444` green; registry shasum
+  `95d2573a08…` byte-identical to the locally smoke-tested tarball.
+- 🧪 Publishing from this machine: npm needs the proxy env (`HTTPS_PROXY`/
+  `HTTP_PROXY` = `127.0.0.1:7897`), and the account's 2FA makes `npm publish`
+  require a **web approval**. A non-interactive shell gets `EOTP` with the URL
+  masked — the final publish must run in an interactive terminal whose browser
+  approval can complete. CI-driven publishing would need a Granular Access
+  Token in a repository secret; that is not set up yet.
+
 ### Skill contract
 
 DSH skill frontmatter recognises exactly five fields:

@@ -67,6 +67,14 @@ Not inferred. Do not re-research these.
   shasum `5f568d0321f37df10e938beea04ef7c99531b270`), tag run `35621228533`
   green (suite + `npm whoami` passed; the upload was skipped as
   already-published), GitHub release cut by hand.
+- `euthyna@0.2.0` published 2026-09-21 **by the release workflow itself**
+  through trusted publishing (OIDC): the run signed provenance and cut the
+  GitHub release (`euthyna 0.2.0`, author `github-actions[bot]`) from the
+  template — no manual 2FA, no `gh release create`. Run `35631154728`. The
+  published tarball carries the dsh bundle (verified inside the tarball:
+  `plugin/index.js`, `cordis.patch.yml`, `.agents/skills/euthyna/` plus its
+  seven references), so `dsh plugin --profile web add euthyna` now installs the
+  skill. `npm view euthyna dist-tags` → `latest: 0.2.0`.
 - 🧪 Releases run through `.github/workflows/publish.yml`: pushing a `v*` tag
   (the tag must match `package.json`) runs the suite and publishes with
   `--provenance` through trusted publishing (OIDC); a version already on the

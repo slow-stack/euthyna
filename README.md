@@ -129,7 +129,7 @@ From a checkout instead (development):
 
 ```sh
 git clone https://github.com/slow-stack/euthyna
-cd euthyna && npm test                                 # 167 tests; no install step exists
+cd euthyna && npm test                                 # 178 tests; no install step exists
 node bin/euthyna.js history --repo <path> --base main --head HEAD
 ```
 

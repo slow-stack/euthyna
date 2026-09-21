@@ -1,6 +1,6 @@
 {
   "name": "euthyna",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Deterministic fact producers for security auditing: which deleted code came from a security fix, and which changed symbols no test ever executed.",
   "type": "module",
   "bin": {

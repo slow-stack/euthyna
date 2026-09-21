@@ -58,13 +58,23 @@ Not inferred. Do not re-research these.
 
 - `euthyna@0.1.0` published 2026-09-21, unscoped name (`npm install -g euthyna`).
   Publish-prep commit `783a494`; CI `35568417444` green; registry shasum
-  `95d2573a08…` byte-identical to the locally smoke-tested tarball.
-- 🧪 Publishing from this machine: npm needs the proxy env (`HTTPS_PROXY`/
-  `HTTP_PROXY` = `127.0.0.1:7897`), and the account's 2FA makes `npm publish`
-  require a **web approval**. A non-interactive shell gets `EOTP` with the URL
-  masked — the final publish must run in an interactive terminal whose browser
-  approval can complete. CI-driven publishing would need a Granular Access
-  Token in a repository secret; that is not set up yet.
+  `95d2573a08…` byte-identical to the locally smoke-tested tarball. Tag `v0.1.0`
+  and its [release](https://github.com/slow-stack/euthyna/releases/tag/v0.1.0)
+  followed the same day.
+- 🧪 Releases run through `.github/workflows/publish.yml`: pushing a `v*` tag
+  (the tag must match `package.json`) runs the suite, proves the token with
+  `npm whoami`, and publishes with `--provenance`; a version already on the
+  registry is skipped by the gate instead of failing the run. The token is a
+  Granular Access Token scoped to the euthyna package, stored in the
+  `NPM_TOKEN` repository secret.
+- 🧪 Set the secret through the GitHub web UI. `gh secret set` with its hidden
+  paste prompt stored an **empty** value twice on this machine's embedded
+  terminal (the browser field works); the workflow's `npm whoami` step is what
+  catches an empty or invalid token before anything ships.
+- 🧪 Local npm still needs the proxy env (`HTTPS_PROXY`/`HTTP_PROXY` =
+  `127.0.0.1:7897`), and a manual `npm publish` from a non-interactive shell
+  gets `EOTP` with a masked URL — the interactive-terminal browser approval is
+  the manual fallback when a tag push is not an option.
 
 ### Skill contract
 

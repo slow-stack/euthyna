@@ -342,3 +342,102 @@ describe('coverage facts — coverage.py JSON (format 3)', () => {
     assert.equal(facts[0].detail.reason, 'symbol_not_located_in_fnmap');
   });
 });
+
+describe('coverage facts — classic istanbul (jest / nyc) and format detection', () => {
+  // Classic istanbul emits the same fnMap/f shape c8 does, plus a `hash` field
+  // that c8 lacks. The locator only reads fnMap/f, so both resolve identically.
+  function istanbulEntry(filePath, functions) {
+    const fnMap = {};
+    const f = {};
+    functions.forEach((fn, index) => {
+      fnMap[String(index)] = {
+        name: fn.name,
+        decl: { start: { line: fn.line, column: 0 }, end: { line: fn.line, column: 1 } },
+        loc: { start: { line: fn.line, column: 0 }, end: { line: fn.line, column: 1 } },
+        line: fn.line
+      };
+      f[String(index)] = fn.count;
+    });
+    return [
+      filePath,
+      { path: filePath, hash: 'abc123', statementMap: {}, s: {}, branchMap: {}, b: {}, fnMap, f }
+    ];
+  }
+
+  test('istanbul output resolves through the same locator, named as istanbul', async () => {
+    const file = await writeCoverage('istanbul.json', Object.fromEntries([
+      istanbulEntry('/proj/src/guard.js', [{ name: 'checkPermission', line: 12, count: 0 }])
+    ]));
+
+    const { facts, evaluated } = await collectCoverageFacts({
+      coverageFile: file,
+      targets: [{ symbol: 'checkPermission' }]
+    });
+
+    assert.equal(facts.length, 1);
+    assert.equal(facts[0].status, STATUS.ESTABLISHED);
+    assert.equal(facts[0].detail.invocationCount, 0);
+    assert.equal(evaluated[0].format, 'istanbul', 'the consumed format must be named');
+  });
+
+  test('a non-coverage JSON file is not evaluated, never fed to the locator', async () => {
+    const file = await writeCoverage('not-coverage.json', {
+      'package.json': { name: 'app', version: '1.0.0' },
+      'README.md': { title: 'x' }
+    });
+
+    const { facts, notEvaluated, measured } = await collectCoverageFacts({
+      coverageFile: file,
+      targets: [{ symbol: 'anything' }]
+    });
+
+    assert.equal(facts.length, 0);
+    assert.equal(measured, false);
+    assert.equal(notEvaluated.length, 1);
+    assert.match(notEvaluated[0].reason, /不是可识别的报告形状/);
+  });
+
+  test('a partial shape with fnMap but no f is not evaluated, never "never invoked"', async () => {
+    // A file carrying fnMap without the f invocation counters is not a coverage
+    // report — accepting it would default every count to zero and fabricate an
+    // "established: never invoked" fact from arbitrary JSON.
+    const file = await writeCoverage('partial.json', {
+      '/proj/src/guard.js': {
+        path: '/proj/src/guard.js',
+        fnMap: { 0: { name: 'checkPermission', decl: { start: { line: 12 } }, loc: { start: { line: 12 } }, line: 12 } },
+        statementMap: {},
+        s: {}
+      }
+    });
+
+    const { facts, notEvaluated, measured } = await collectCoverageFacts({
+      coverageFile: file,
+      targets: [{ symbol: 'checkPermission' }]
+    });
+
+    assert.equal(facts.length, 0);
+    assert.equal(measured, false);
+    assert.equal(notEvaluated.length, 1);
+    assert.match(notEvaluated[0].reason, /不是可识别的报告形状/);
+  });
+
+  test('a renamed symbol is unknown, never "established as never invoked"', async () => {
+    const file = await writeCoverage('renamed.json', Object.fromEntries([
+      entry('/proj/src/guard.js', [{ name: 'oldName', line: 12, count: 0 }])
+    ]));
+
+    const { facts } = await collectCoverageFacts({
+      coverageFile: file,
+      targets: [{ symbol: 'newName' }]
+    });
+
+    assert.equal(facts.length, 1);
+    assert.equal(facts[0].status, STATUS.UNKNOWN);
+    assert.notEqual(
+      facts[0].status,
+      STATUS.ESTABLISHED,
+      'a symbol the report cannot locate must not be claimed never-invoked — it may have been renamed'
+    );
+    assert.equal(facts[0].detail.reason, 'symbol_not_located_in_fnmap');
+  });
+});

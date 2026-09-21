@@ -85,6 +85,8 @@ the project is deliberately zero-dependency.
 | **DSH** | Copy `.agents/skills/euthyna/` into `~/.agents/skills/` (user-wide) or `<project>/.agents/skills/`. Markdown hot-reloads; no restart needed. | `npm install -g euthyna` — runs in any terminal |
 | **Claude Code** | Copy the same folder into `~/.claude/skills/` | Same |
 | **Codex** | The same Markdown layer works; packaging goes through Codex's plugin/marketplace format | Same |
+| **Hermes** | Copy the same folder into `~/.hermes/skills/` under a category folder (Hermes reads the open skill standard; or install from a repo with `hermes skills install`) | Same |
+| **OpenCode** | Copy the same folder into `~/.agents/skills/` or `~/.config/opencode/skills/` (OpenCode loads both; unknown frontmatter fields are ignored) | Same |
 | **Any terminal** | — | `npm install -g euthyna`, then `euthyna …` |
 
 Two honest notes:
@@ -172,8 +174,10 @@ This project tries to be explicit about the difference. Current state:
   [crewAI](https://github.com/crewAIInc/crewAI) (Python); deleted lines attributed to the
   commits that introduced them, then checked **by hand** against `git blame`. The checks
   developed for that comparison now run as regression tests in the suite.
-- **`coverage` on real output in two formats** — c8/V8 JSON and coverage.py JSON (format 3) —
-  distinguishing all three states correctly.
+- **`coverage` on real output in three formats** — c8/V8 JSON, classic istanbul (jest/nyc, same
+  fnMap/f shape) and coverage.py JSON (format 3) — distinguishing all three states correctly, and
+  refusing anything that is not a recognizable coverage report instead of answering "symbol not
+  located" against it.
 - **`deps` against a real lockfile** — resolved versions reported with a line-level evidence
   pointer into the lockfile, and absent dependencies reported as established absences rather
   than silent skips. Verified against a populated npm v3 lockfile and fixture lockfiles for

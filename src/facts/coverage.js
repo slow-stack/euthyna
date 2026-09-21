@@ -62,14 +62,18 @@ function reproduceCommand({ coverageFile, symbol, file }) {
 /**
  * Read a coverage report.
  *
- * Two formats are accepted:
+ * Three formats are accepted, all identified by shape rather than by filename:
  *
  * 1. c8 / v8-to-istanbul `coverage-final.json` — per-file keys are
  *    path/all/statementMap/s/branchMap/b/fnMap/f. There is no istanbul `hash`,
  *    and `branchMap` is a relabelled V8 block range rather than an if/else
  *    model, so a consumer written against classic istanbul field lists reads
  *    the wrong thing.
- * 2. coverage.py JSON (`coverage json`, format 3) — top level is
+ * 2. classic istanbul (jest's default provider, nyc) `coverage-final.json` —
+ *    the same per-file statementMap/s/branchMap/b/fnMap/f plus a `hash` field.
+ *    The symbol locator only reads fnMap/f, which classic istanbul and c8 emit
+ *    in the same shape, so both resolve through the same code path.
+ * 3. coverage.py JSON (`coverage json`, format 3) — top level is
  *    `{meta, files}`, and per-file `functions` maps a function name
  *    (`name`, or `Class.method` for methods) to
  *    `{executed_lines, missing_lines, start_line, ...}`. There is **no
@@ -77,6 +81,10 @@ function reproduceCommand({ coverageFile, symbol, file }) {
  *    evidence that the function was never entered. coverage.py reports
  *    functions that were never called as long as their module was loaded,
  *    which is exactly what makes "never invoked" an established fact.
+ *
+ * Anything that matches none of these shapes is **not a coverage report this
+ * producer can read**, and is reported as notEvaluated — never fed through the
+ * locator, where it would answer "symbol not located" with a straight face.
  */
 export async function loadCoverage(coverageFile) {
   const raw = await readFile(coverageFile, 'utf8');
@@ -96,6 +104,35 @@ function isCoveragePyReport(coverage) {
     coverage.files &&
     typeof coverage.files === 'object'
   );
+}
+
+/**
+ * Identify the coverage format by shape, or null when the file is not a
+ * coverage report at all. c8 and classic istanbul share the fnMap/f shape the
+ * locator reads; they differ only in `hash` (istanbul has it, c8 does not) and
+ * `all` (c8 has it), neither of which the locator reads — but naming the format
+ * honestly is still part of the fact, so the distinction is kept.
+ */
+export function detectCoverageFormat(coverage) {
+  if (isCoveragePyReport(coverage)) return 'coverage.py';
+
+  const entries = Object.entries(coverage).filter(([, v]) => v && typeof v === 'object');
+  if (entries.length === 0) return null;
+
+  // A real c8/istanbul entry carries both `fnMap` (function metadata) and `f`
+  // (per-index invocation counts). Requiring both stops a partial shape — a
+  // file with `fnMap` but no `f`, say — from being classified as coverage and
+  // then emitting "never invoked" for a count a missing `f` defaults to zero.
+  // coverage.py's per-file `functions` is only valid inside a `meta.files`
+  // report, which isCoveragePyReport already handled above; a bare `functions`
+  // object is not a JS report and must not be accepted here.
+  const jsShaped = entries.some(
+    ([, e]) =>
+      e.fnMap && typeof e.fnMap === 'object' && e.f && typeof e.f === 'object'
+  );
+  if (!jsShaped) return null;
+
+  return entries.some(([, e]) => typeof e === 'object' && 'hash' in e) ? 'istanbul' : 'c8';
 }
 
 /**
@@ -210,6 +247,21 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
         KIND.TEST_COVERAGE,
         '覆盖率数据为空对象。这通常意味着测试运行没有加载到被测代码（常见于缺少 --all 或 --source），' +
           '因此任何「未在数据中」的文件都必须按未覆盖处理，而这里连文件清单都没有'
+      )
+    );
+    return { facts, evaluated, notEvaluated, measured: false };
+  }
+
+  // A non-empty object that matches no known shape is not a coverage report at
+  // all. Feeding it through the locator would answer "symbol not located" with
+  // a straight face — the confident wrong answer this producer exists to refuse.
+  const format = detectCoverageFormat(coverage);
+  if (format === null) {
+    notEvaluated.push(
+      notEvaluatedEntry(
+        KIND.TEST_COVERAGE,
+        '覆盖率数据不是可识别的报告形状（既无 c8/istanbul 的 fnMap/f，也无 coverage.py 的 functions）——' +
+          '它可能根本不是覆盖率文件，任何「符号未定位/未覆盖」的结论在此都不可信'
       )
     );
     return { facts, evaluated, notEvaluated, measured: false };
@@ -331,6 +383,7 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
   evaluated.push({
     kind: KIND.TEST_COVERAGE,
     producer: 'euthyna-coverage',
+    format,
     count: facts.length
   });
 

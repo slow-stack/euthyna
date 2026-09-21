@@ -308,6 +308,8 @@ Hence the hard constraints at the contract level:
 | c8's default exclude rules | `test/**`, `**/*.test.js`, `**/__tests__/**` are excluded | Production callers that fall under these globs **silently disappear** |
 | Negative column numbers in V8 block ranges | `L9:-1-L10:0` seen in real testing | Naive column comparison breaks |
 | Module top-level call sites | Present only in `branchMap` (`fnMap` filters out `functionName===""`) | You cannot query `fnMap` alone |
+| A file that is not coverage data at all | Has neither `fnMap`/`f` (c8/istanbul) nor `functions` (coverage.py) | Report as *not evaluated* — feeding it to the locator would answer "symbol not located" with a straight face |
+| A symbol that was renamed | Not in `fnMap` under the new name | `unknown`, **never** "established as never invoked" |
 
 #### Other languages: worse than JS — do not extrapolate
 

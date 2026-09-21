@@ -11,14 +11,38 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, mkdtemp } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const CASES = path.join(ROOT, 'bench', 'cases');
+
+/**
+ * A minimal blind adjudicator for the harness plumbing tests: it writes the
+ * report where the harness told it to and exits. Not a real adjudicator.
+ */
+const FAKE_ADJUDICATOR = `'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const [caseDir, resultsDir, blindId, run] = process.argv.slice(2);
+const nn = String(blindId).slice('case-'.length);
+fs.writeFileSync(path.join(resultsDir, \`case-\${nn}-run\${run}.md\`), [
+  '# smoke report',
+  'GATES: 六门禁未评估（冒烟裁定者）',
+  'REASONING: 无',
+  'CONTEXT DECLARATION:',
+  '  A. 无',
+  '  B. 无',
+  '  C. 否',
+  '',
+  'VERDICT: INCONCLUSIVE',
+  ''
+].join('\\n'), 'utf8');
+`;
 
 async function runExploits() {
   try {
@@ -202,5 +226,120 @@ describe('benchmark ground truth', () => {
     const gnu = buildSkips('tar (GNU tar) 1.34');
     assert.deepEqual([...gnu.keys()], ['p6-member-read-traversal'], 'only p6 is bsdtar-defined');
     assert.match(gnu.get('p6-member-read-traversal'), /bsdtar/, 'the skip reason names the semantics');
+  });
+
+  test('the results directory is absolute even when every temp variable is empty', async () => {
+    // Sourcery finding: the harness and the collector each built this path from
+    // process.env.TEMP, which is unset on most non-Windows hosts — producing a
+    // *relative* path, written under the caller's cwd and read under ROOT. The
+    // shared helper must never be able to return a relative path; the naive
+    // expression it replaced could, which is asserted here so the test cannot
+    // pass vacuously.
+    const { resultsDir } = createRequire(import.meta.url)('../bench/results-dir.js');
+    const saved = { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP };
+    try {
+      process.env.TMPDIR = '';
+      process.env.TMP = '';
+      process.env.TEMP = '';
+      assert.ok(
+        path.isAbsolute(resultsDir(7)),
+        `resultsDir(7) must be absolute with no temp variable set, got ${resultsDir(7)}`
+      );
+      const naive = path.join(process.env.TEMP ?? '', 'euthyna-blind-results-r7');
+      assert.ok(!path.isAbsolute(naive), 'the replaced expression was relative in exactly this state');
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  test('a round run from outside the repository collects every case', async () => {
+    // The parent's cwd is outside the repository here, while the collector it
+    // spawns runs with cwd=ROOT: the two must still agree on where the reports
+    // are. A unique round number keeps a directory left behind by an earlier
+    // run from satisfying the collector and hiding a regression.
+    const outside = await mkdtemp(path.join(tmpdir(), 'euthyna-outside-'));
+    const out = path.join(outside, 'verdicts.json');
+    const round = 900000 + (process.pid % 100000);
+
+    const { stdout } = await execFileAsync(
+      'node',
+      [
+        path.join(ROOT, 'bench', 'adjudicate.js'),
+        '--round', String(round), '--runs', '1', '--adjudicator', 'golden', '--out', out
+      ],
+      { cwd: outside, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }
+    );
+
+    const printed = /results dir: (.+)/.exec(stdout);
+    assert.ok(printed, 'the harness prints the results directory it will use');
+    assert.ok(path.isAbsolute(printed[1].trim()), `the results directory must be absolute, got ${printed[1]}`);
+
+    const verdicts = JSON.parse(await readFile(out, 'utf8'));
+    const collected = Object.keys(verdicts).filter(k => !k.startsWith('//')).length;
+    assert.ok(collected >= 18, `every case must be collected, got ${collected}`);
+  });
+
+  test('a results directory containing spaces survives placeholder expansion', async () => {
+    // Sourcery finding: the template was expanded *before* being split into
+    // argv, so a path with a space became several arguments and the adjudicator
+    // received a truncated results path.
+    const base = await mkdtemp(path.join(tmpdir(), 'euthyna-space-'));
+    const resultsBase = path.join(base, 'results with space');
+    await mkdir(resultsBase, { recursive: true });
+    const adjudicator = path.join(base, 'fake-adjudicator.cjs');
+    await writeFile(adjudicator, FAKE_ADJUDICATOR, 'utf8');
+    const out = path.join(base, 'verdicts.json');
+
+    const { stdout } = await execFileAsync(
+      'node',
+      [
+        path.join(ROOT, 'bench', 'adjudicate.js'),
+        '--round', '0', '--runs', '1',
+        '--adjudicator', `node ${adjudicator} {case} {results} {blindId} {run}`,
+        '--out', out
+      ],
+      {
+        cwd: ROOT,
+        env: { ...process.env, TEMP: resultsBase, TMP: resultsBase, TMPDIR: resultsBase },
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024 * 1024
+      }
+    );
+
+    // Every report was written where the collector looked for it, which is only
+    // true if `{results}` arrived as one argument.
+    assert.match(stdout, /score green/);
+  });
+
+  test('a case whose collected runs are all null is a missing run, not a green score', async () => {
+    // Sourcery finding: a case key present with only null slots was skipped
+    // silently, so a completely missing adjudication run scored as clean. Every
+    // other case here carries its correct verdict, so the exit code can only
+    // come from the null case — otherwise the "no verdict submitted" errors
+    // would make this pass for the wrong reason.
+    const ids = (await readdir(CASES, { withFileTypes: true }))
+      .filter(e => e.isDirectory())
+      .map(e => e.name);
+    const submitted = {};
+    for (const id of ids) {
+      const meta = JSON.parse(await readFile(path.join(CASES, id, 'meta.json'), 'utf8'));
+      submitted[id] = [meta.groundTruth === 'true_positive' ? 'TRUE POSITIVE' : 'FALSE POSITIVE'];
+    }
+    submitted[ids[0]] = [null];
+
+    const file = path.join(ROOT, '.scratch', `verdicts-null-${process.pid}.json`);
+    await writeFile(file, JSON.stringify(submitted, null, 2), 'utf8');
+
+    await assert.rejects(
+      execFileAsync('node', ['bench/score.js', file], { cwd: ROOT, encoding: 'utf8' }),
+      error => {
+        assert.equal(error.code, 1, 'a case with no scored run must not exit clean');
+        assert.match(String(error.stdout), /missing run/, 'and it must say which case is missing');
+        return true;
+      }
+    );
   });
 });

@@ -29,6 +29,8 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { randomInt } = require('node:crypto');
 
+const { resultsDir } = require('./results-dir.js');
+
 const ROOT = path.join(__dirname, '..');
 const SCRATCH = path.join(ROOT, '.scratch');
 const CASES = path.join(__dirname, 'cases');
@@ -50,7 +52,10 @@ const ADJUDICATOR = flag('--adjudicator');
 const SEEDS = (flag('--seeds') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const OUT = path.resolve(process.cwd(), flag('--out') ?? path.join(__dirname, `verdicts-round${ROUND}.json`));
 const TIMEOUT_MS = Number(flag('--timeout-ms') ?? 15 * 60 * 1000);
-const RESULTS_DIR = path.join(process.env.TEMP ?? '', `euthyna-blind-results-r${ROUND}`);
+// Where the reports go. Defined once and shared with collect-verdicts.js: the
+// writer and the collector must resolve the same absolute directory, or every
+// report is written to one place and looked for in another.
+const RESULTS_DIR = resultsDir(ROUND);
 const RUNS_LIST = Array.from({ length: RUNS }, (_, i) => i + 1).join(',');
 
 const VERDICTS = ['TRUE POSITIVE', 'FALSE POSITIVE', 'INCONCLUSIVE'];
@@ -172,16 +177,25 @@ for (let run = 1; run <= RUNS; run++) {
     }
 
     const caseDir = path.join(SCRATCH, 'blind', blindId);
-    const hasPlaceholders = ADJUDICATOR.includes('{');
-    const template = hasPlaceholders
+    const substitutions = new Map([
+      ['{case}', caseDir],
+      ['{results}', RESULTS_DIR],
+      ['{blindId}', blindId],
+      ['{run}', String(run)],
+      ['{round}', String(ROUND)]
+    ]);
+    const template = ADJUDICATOR.includes('{')
       ? ADJUDICATOR
-          .replaceAll('{case}', caseDir)
-          .replaceAll('{results}', RESULTS_DIR)
-          .replaceAll('{blindId}', blindId)
-          .replaceAll('{run}', String(run))
-          .replaceAll('{round}', String(ROUND))
-      : `${ADJUDICATOR} ${caseDir} ${RESULTS_DIR} ${blindId} ${run}`;
-    const cmd = splitCommand(template);
+      : `${ADJUDICATOR} {case} {results} {blindId} {run}`;
+    // Placeholders are substituted *after* the split, per argument: a path may
+    // contain spaces (a checkout under "Program Files", a temp directory with a
+    // space), and substituting first would turn one argument into several —
+    // handing the adjudicator a truncated path that cannot write its report.
+    const cmd = splitCommand(template).map((arg) => {
+      let expanded = arg;
+      for (const [token, value] of substitutions) expanded = expanded.replaceAll(token, value);
+      return expanded;
+    });
     const result = spawnSync(cmd[0], cmd.slice(1), {
       cwd: ROOT,
       encoding: 'utf8',

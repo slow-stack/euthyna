@@ -29,6 +29,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { resultsDir } = require('./results-dir.js');
+
 const CASES = path.join(__dirname, 'cases');
 
 const argv = process.argv.slice(2);
@@ -51,7 +53,9 @@ if (!Number.isInteger(ROUND) || ROUND < 0) {
 }
 
 const RUNS = 3;
-const RESULTS_DIR = path.join(process.env.TEMP ?? '', `euthyna-blind-results-r${ROUND}`);
+// Same definition the harness writes with (bench/results-dir.js) — the writer
+// and the collector must resolve the identical absolute directory.
+const RESULTS_DIR = resultsDir(ROUND);
 const SCRATCH = path.join(__dirname, '..', '.scratch');
 const OUT = path.resolve(process.cwd(), flag('--out') ?? path.join(__dirname, `verdicts-round${ROUND}.json`));
 const seeds = (flag('--seeds') ?? '').split(',').map(s => s.trim()).filter(Boolean);

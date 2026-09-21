@@ -268,23 +268,21 @@ async function runGate(flags, positional) {
     validated.push({ unparseableLine: line, violations: ['无法解析的 BUG 行'], downgraded: true });
   }
 
-  const verification = [];
   if (flags.verify) {
     const cwd = path.resolve(flags.cwd ? String(flags.cwd) : process.cwd());
     for (const entry of validated) {
       if (entry.unparseableLine) continue;
-      const result = await verifyFinding(entry.finding, { cwd });
-      entry.verification = result;
-      verification.push(result);
-      if (result.status === 'failed') {
-        entry.violations.push(`复现命令未通过（exit ${result.exitCode ?? '?'}${result.detail ? `: ${result.detail}` : ''}）`);
+      entry.verification = await verifyFinding(entry.finding, { cwd });
+      if (entry.verification.status === 'failed') {
+        const v = entry.verification;
+        entry.violations.push(`复现命令未通过（exit ${v.exitCode ?? '?'}${v.detail ? `: ${v.detail}` : ''}）`);
         entry.downgraded = true;
       }
     }
   }
 
   const downgraded = validated.filter(e => e.downgraded).length;
-  const result = { file, findings: validated, unparseable, downgraded, verification };
+  const result = { file, findings: validated, unparseable, downgraded };
 
   if (flags.json) {
     return {

@@ -46,7 +46,7 @@ between you and the agent:
 
 ### 1. It measures what a model cannot
 
-Two fact producers — a zero-dependency Node CLI:
+Three fact producers — a zero-dependency Node CLI:
 
 - **`history`** — for every line a change deletes, it finds the commit that introduced
   that line and classifies that commit from its own message. If the deleted code came
@@ -58,6 +58,12 @@ Two fact producers — a zero-dependency Node CLI:
   unreachable code as covered, and "line covered → call ran" is wrong in exactly the
   direction an audit cannot afford. The reasoning is in
   [`docs/fact-contract.md`](https://github.com/slow-stack/euthyna/blob/main/docs/fact-contract.md) §6.2.
+- **`deps`** — what version is a dependency *actually* pinned to? It reads the lockfile
+  (package-lock.json / Cargo.lock / go.mod) and reports the resolved versions, or that a
+  dependency is absent from the tree entirely. This is the fact that resolves
+  supply-chain claims ("the app uses a vulnerable version of X"): the version-to-CVE
+  mapping is left to the adjudication layer, exactly as the fact contract requires. See
+  [`docs/fact-contract.md`](https://github.com/slow-stack/euthyna/blob/main/docs/fact-contract.md) §6.3.
 
 ### 2. It gates what the agent claims
 
@@ -100,6 +106,7 @@ Two honest notes:
 npm install -g euthyna
 euthyna history --repo <path> --base main --head HEAD
 euthyna coverage --coverage coverage/coverage-final.json --symbol <name>
+euthyna deps --repo <path> --dep <name>
 ```
 
 Or without a global install: `npx euthyna history --repo <path> --base main`.
@@ -108,7 +115,7 @@ From a checkout instead (development):
 
 ```sh
 git clone https://github.com/slow-stack/euthyna
-cd euthyna && npm test                                 # 92 tests; no install step exists
+cd euthyna && npm test                                 # 107 tests; no install step exists
 node bin/euthyna.js history --repo <path> --base main --head HEAD
 ```
 
@@ -148,7 +155,7 @@ finding nothing* are different things.
 
 | Piece | What it is | Status |
 |---|---|---|
-| **Fact producers** | A zero-dependency Node CLI that answers two questions deterministically | Working, tested |
+| **Fact producers** | A zero-dependency Node CLI that answers three questions deterministically | Working, tested |
 | **The skill** | The audit discipline itself, as loadable Markdown | Working, loadable |
 | **The benchmark** | A blind recall measurement for the adjudication layer | Four rounds complete |
 
@@ -167,6 +174,10 @@ This project tries to be explicit about the difference. Current state:
   developed for that comparison now run as regression tests in the suite.
 - **`coverage` on real output in two formats** — c8/V8 JSON and coverage.py JSON (format 3) —
   distinguishing all three states correctly.
+- **`deps` against a real lockfile** — resolved versions reported with a line-level evidence
+  pointer into the lockfile, and absent dependencies reported as established absences rather
+  than silent skips. Verified against a populated npm v3 lockfile and fixture lockfiles for
+  Cargo.lock and go.mod.
 - **Adjudication recall and specificity**, measured blind: **10/10 cases**, 4 real
   vulnerabilities all caught, 6 non-vulnerabilities all correctly cleared, no abstentions.
   Round 2 repeated every case three times — **30 adjudications, zero flips**, four of them
@@ -197,6 +208,10 @@ This project tries to be explicit about the difference. Current state:
 - **Recall in the field.** The benchmark's real-bug cases are constructed; whether the
   discipline helps on code nobody staged for it is unmeasured.
 - **Source maps, bundlers, monorepos** for the coverage producer. Untested.
+- **`deps` beyond three formats and version facts only.** pnpm/yarn/poetry lockfiles are
+  detected but not parsed (reported as *not evaluated*, never guessed at); go.mod reports the
+  *declared* requirement, not the resolved build version; and the producer never maps a version
+  to a CVE — that mapping is deliberately left to the adjudication layer.
 - **Anything about the case-study targets' security** — the runs found nothing to endorse or
   condemn; that is not a statement about either project. See
   [`docs/case-study-crewai.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md) and

@@ -333,6 +333,31 @@ return checkPermission(user, 'never');     // 从未执行，但 c8 报 hits=1
 tsserver × c8 的**行号对齐未做集成验证**（fixture 里的调用点是用正则找的，验的是形状不是集成）；
 **source map 重映射、打包产物、monorepo、规模与性能全部未测**。
 
+### 6.3 `dependency` —— 以 lockfile 为供应链声明的裁决依据
+
+**要回答的**：这个依赖**实际上**被锁定成什么版本——或者根本不在依赖树里？
+
+这是把供应链声明（"应用用了有漏洞的 X 版本"）从 INCONCLUSIVE 变成可裁决的那条事实。
+模型会从 `package.json` 的 range 猜版本；lockfile 才是「实际解析出什么」的确定性记录。
+
+**范围（Tier 0）** —— 三种格式，全部零依赖可解析：
+
+| 格式 | 报什么 | 诚实约束 |
+|---|---|---|
+| `package-lock.json`（npm v1/v2/v3） | 解析后的锁定版本（含嵌套/scoped） | 结构良好的 lockfile 里缺席 = **已确证「不在树里」**，绝不静默跳过 |
+| `Cargo.lock`（Rust） | 每个 `[[package]]` 的锁定版本 | 同上 |
+| `go.mod`（Go） | **声明的需求**版本 | go.sum 只带哈希不带版本，解析结果这里验不了，所以只报**「声明」**，绝不报「锁定」 |
+
+自动检测到的其他格式（`pnpm-lock.yaml`、`yarn.lock`、`poetry.lock` 等）一律报
+**notEvaluated** 并点名文件名——绝不猜。
+
+**拒绝说什么和说什么同样重要。** 只报版本，其他一概不报：没有"有漏洞"、没有严重性、没有 CVE 映射。
+版本 → CVE 的映射归判定层（`assertNoVerdictFields` 在机制上强制这一点）。
+一个报出"版本 4.17.21 受 CVE-XXXX 影响"的产出器等于替判定层下了结论，而那个结论不可复算。
+
+**未验证的部分**（不许当成已知）：pnpm/yarn/poetry 解析、go 的解析后版本核验、SBOM/审计工具接入、
+大型 monorepo 的量级。
+
 ---
 
 ## 7. 待定问题（下一轮必须回答）

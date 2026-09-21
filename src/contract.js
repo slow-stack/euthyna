@@ -66,7 +66,8 @@ export function safeTextLines(value) {
 export const KIND = Object.freeze({
   HISTORY: 'history',
   REINTRODUCTION: 'reintroduction',
-  TEST_COVERAGE: 'test_coverage'
+  TEST_COVERAGE: 'test_coverage',
+  DEPENDENCY: 'dependency'
 });
 
 /** Fact status. `unknown` is a first-class value, not an error. */

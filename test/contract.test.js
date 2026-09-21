@@ -6,7 +6,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeFact, makeReport, assertNoVerdictFields, notEvaluated, renderReport, shellQuote, safeText, STATUS, KIND } from '../src/contract.js';
+import { makeFact, makeReport, assertNoVerdictFields, notEvaluated, renderReport, shellQuote, safeText, safeTextLines, STATUS, KIND } from '../src/contract.js';
 
 const validFact = {
   id: 'f1',
@@ -216,5 +216,22 @@ describe('safeText (render boundary)', () => {
     const all = lines.join('\n');
     assert.doesNotMatch(all, /\u0007/, 'no raw BEL may reach the writer');
     assert.match(all, /src\/be\\x07ll\.js/, 'the command keeps the byte as a visible escape');
+  });
+});
+
+describe('safeTextLines (stderr boundary)', () => {
+  test('preserves line structure while making each line terminal-safe', () => {
+    // A stack trace flattened into one line of \n escapes would be unreadable;
+    // a control that acts on the terminal must not survive.
+    assert.equal(safeTextLines('a\u0007b\nc\u001b[31md\ne'), 'a\\x07b\ncd\ne');
+  });
+
+  test('escapes CR so a repo-controlled name cannot overwrite a stack line', () => {
+    assert.equal(safeTextLines('x\ry'), 'x\\ry');
+  });
+
+  test('is idempotent: a second pass through a boundary changes nothing', () => {
+    const once = safeTextLines('git blame: fatal \u0007ring \u001b[31mred\ndone');
+    assert.equal(safeTextLines(once), once);
   });
 });

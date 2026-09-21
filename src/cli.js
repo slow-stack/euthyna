@@ -17,7 +17,7 @@ import process from 'node:process';
 import path from 'node:path';
 import { collectHistoryFacts } from './facts/history.js';
 import { collectCoverageFacts } from './facts/coverage.js';
-import { makeReport, renderReport, KIND } from './contract.js';
+import { makeReport, renderReport, safeTextLines, KIND } from './contract.js';
 import { repoToplevel, revParse } from './git.js';
 
 export const EXIT = Object.freeze({
@@ -214,12 +214,17 @@ export async function main(argv = process.argv.slice(2)) {
   } else if (command === 'coverage') {
     result = await runCoverage(flags);
   } else {
-    process.stderr.write(`未知命令: ${command}\n${HELP}`);
+    // stderr boundary, mirroring the render boundary in contract.js: text that
+    // reaches the error channel may carry user or repo-controlled bytes (an
+    // unknown command echoes argv; a usage error embeds flag values), so it is
+    // made terminal-safe once, here. HELP is multi-line and static; safeTextLines
+    // preserves its line structure and is a no-op on its plain text.
+    process.stderr.write(safeTextLines(`未知命令: ${command}\n${HELP}`));
     return EXIT.USAGE;
   }
 
   if (result.error) {
-    process.stderr.write(`${result.error}\n`);
+    process.stderr.write(safeTextLines(`${result.error}\n`));
     return result.exit;
   }
 

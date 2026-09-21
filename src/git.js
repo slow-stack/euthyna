@@ -8,10 +8,34 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { safeText, shellQuote } from './contract.js';
+
 const execFileAsync = promisify(execFile);
 
 // Large repositories produce large diffs; the default 1 MB buffer is not enough.
 const MAX_BUFFER = 256 * 1024 * 1024;
+
+/**
+ * The message for a failed git invocation.
+ *
+ * Two transforms, both required. The argv is shell-quoted so the message can be
+ * pasted back into a shell to reproduce the failure — the same shellQuote the
+ * emitted commands use; an unquoted argv with a hostile filename in it would
+ * execute as code when the reader does exactly that. The assembled message is
+ * then made terminal-safe as a whole: the argv itself carries repo-controlled
+ * filenames in the measurement flows (git diff -- <file>), and quoting alone
+ * does not neutralize a control byte — a BEL inside single quotes still beeps.
+ * git's stderr gets the same treatment because git embeds repository-controlled
+ * text (filenames, refs) in its messages.
+ *
+ * Exported so both transforms are testable against hostile input directly: a
+ * repository carrying a control byte in a filename cannot be built on every
+ * host this suite runs on.
+ */
+export function gitFailureMessage(args, detail) {
+  const argv = args.map(shellQuote).join(' ');
+  return safeText(`git ${argv} failed: ${detail}`);
+}
 
 /**
  * Run a git command and return stdout. Throws on a non-zero exit.
@@ -33,10 +57,12 @@ export async function git(args, options = {}) {
     return stdout;
   } catch (error) {
     if (allowFailure) return '';
+    // git writes its own diagnosis to stderr; when it wrote none, the exit
+    // status is all there is. error.message is deliberately not used: it
+    // embeds the argv unquoted, which is the shape this path exists to remove.
     const stderr = (error.stderr || '').trim();
-    throw new Error(
-      `git ${args.join(' ')} failed${stderr ? `: ${stderr}` : `: ${error.message}`}`
-    );
+    const detail = stderr || `exit status ${error.code ?? error.signal ?? 'unknown'}`;
+    throw new Error(gitFailureMessage(args, detail));
   }
 }
 

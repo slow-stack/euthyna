@@ -7,12 +7,17 @@
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 
 import { parseArgs, EXIT } from '../src/cli.js';
-import { makeRepo, commitFiles } from './helpers.js';
+import { makeRepo, commitFiles, git } from './helpers.js';
+
+const execFileAsync = promisify(execFile);
 
 describe('parseArgs', () => {
   test('separates positional arguments from flags', () => {
@@ -111,5 +116,81 @@ describe('json output', () => {
     assert.ok(report.producer.name);
     assert.ok(report.coverage);
     assert.ok(Array.isArray(report.facts));
+  });
+});
+
+describe('stderr boundary', () => {
+  test('a usage error embedding a hostile flag value reaches stderr sanitized', async () => {
+    const { main } = await import('../src/cli.js');
+    const repo = await makeRepo();
+
+    const chunks = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = chunk => {
+      chunks.push(String(chunk));
+      return true;
+    };
+    try {
+      const code = await main(['history', '--repo', repo, '--base', '\u0007bel\u001b[31mred']);
+      assert.equal(code, EXIT.USAGE);
+    } finally {
+      process.stderr.write = original;
+    }
+
+    const all = chunks.join('');
+    assert.doesNotMatch(all, /\u0007|\u001b/, 'no raw control byte may reach the writer');
+    assert.match(all, /\\x07/, 'the byte survives as a visible escape');
+    assert.match(all, /belred/, 'the readable text survives');
+  });
+
+  test('an unknown command echoing hostile argv reaches stderr sanitized', async () => {
+    const { main } = await import('../src/cli.js');
+
+    const chunks = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = chunk => {
+      chunks.push(String(chunk));
+      return true;
+    };
+    try {
+      const code = await main(['frobnicate\u0007']);
+      assert.equal(code, EXIT.USAGE);
+    } finally {
+      process.stderr.write = original;
+    }
+
+    const all = chunks.join('');
+    assert.doesNotMatch(all, /\u0007/, 'no raw control byte may reach the writer');
+    assert.match(all, /frobnicate/, 'the command name survives');
+  });
+});
+
+describe('crash path (bin entry)', () => {
+  test('an unexpected git failure exits 2 with a terminal-safe crash report', async () => {
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, 'feat: base', { 'src/a.js': 'export const a = 1;\n' });
+    await commitFiles(repo, 'feat: head', { 'src/b.js': 'export const b = 2;\n' });
+
+    // Force a genuine measurement crash the way a corrupt repository would:
+    // head's tree object is deleted after the commit is recorded. rev-parse
+    // still succeeds (the commit object is intact); the diff cannot read the
+    // tree and git fails — the throw propagates out of main() to bin's catch.
+    const tree = (await git(repo, ['rev-parse', 'HEAD^{tree}'])).trim();
+    await rm(path.join(repo, '.git', 'objects', tree.slice(0, 2), tree.slice(2)));
+
+    const bin = fileURLToPath(new URL('../bin/euthyna.js', import.meta.url));
+    await assert.rejects(
+      execFileAsync(process.execPath, [bin, 'history', '--repo', repo, '--base', base], {
+        encoding: 'utf8'
+      }),
+      (error) => {
+        assert.equal(error.code, 2, 'an unmeasurable crash must not read as clean');
+        const stderr = String(error.stderr || '');
+        assert.match(stderr, /测量过程抛出异常/, 'the crash line is present');
+        assert.match(stderr, /unable to read tree/, 'git diagnosis survives sanitization');
+        assert.doesNotMatch(stderr, /\u0007|\u001b/, 'no raw control byte may reach stderr');
+        return true;
+      }
+    );
   });
 });

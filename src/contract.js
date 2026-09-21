@@ -47,6 +47,21 @@ export function safeText(value) {
   });
 }
 
+/**
+ * safeText for multi-line text: every line is made terminal-safe, real newlines
+ * are preserved as structure. The render boundary never sees a newline
+ * (renderReport writes line by line), but the error path does — a stack trace
+ * flattened into one line of \n escapes would be unreadable. What must never
+ * survive is a control that acts on the terminal: CR (line overwrite), BEL,
+ * ESC, every other C0 and DEL are still made visible, per line.
+ */
+export function safeTextLines(value) {
+  return String(value)
+    .split('\n')
+    .map(safeText)
+    .join('\n');
+}
+
 /** Fact kinds. Kept explicit so an unknown kind fails loudly instead of passing. */
 export const KIND = Object.freeze({
   HISTORY: 'history',

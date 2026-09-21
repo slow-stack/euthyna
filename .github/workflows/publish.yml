@@ -6,22 +6,21 @@
 #                        version exactly; a mismatch fails before anything ships.
 #   workflow_dispatch  — a rehearsal by default: the full chain runs, the
 #                        release notes are rendered for inspection, and
-#                        `npm publish --dry-run` validates the token and the
-#                        tarball without uploading. Tick "publish" to release
-#                        manually.
+#                        `npm publish --dry-run` validates the tarball without
+#                        uploading. Tick "publish" to release manually.
 #
 # The release notes are a versioned template (.github/release-notes-template.md)
 # with the version substituted in, so every release carries the same format and
 # format changes are reviewed like any other file.
 #
-# NPM_TOKEN is a Granular Access Token scoped to the euthyna package; it exists
-# so a release does not need the account owner's browser for the 2FA approval
-# (an interactive `npm publish` does; see AGENTS.md).
-#
-# --provenance publishes a public "built by GitHub Actions" attestation on the
-# package page. For a fact producer an auditor is meant to trust, the provenance
-# claim is checkable rather than asserted — the same standard as everything
-# else here.
+# Publishing uses trusted publishing (OIDC): the npm CLI exchanges the runner's
+# id-token for a short-lived registry token, so there is no long-lived NPM_TOKEN
+# secret at all. The trust relationship is configured on npmjs.com — the
+# package's Settings → Publishing access lists this workflow (publish.yml) as a
+# GitHub Actions publisher, with direct `npm publish` allowed (a configuration
+# created after 2026-09-03 allows only `npm stage publish` unless direct
+# publishing is selected explicitly). npm attaches a provenance attestation
+# automatically on trusted-publisher publishes.
 #
 # A version already on the registry is skipped by the gate rather than failing
 # the run, which makes a duplicated tag a no-op.
@@ -68,11 +67,6 @@ jobs:
       - name: Test suite
         run: npm test
 
-      - name: The token must act as the maintainer
-        run: npm whoami
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Skip the upload when this version is already on npm
         id: gate
         run: |
@@ -95,8 +89,6 @@ jobs:
       - name: Publish (rehearsal, nothing is uploaded)
         if: github.event_name == 'workflow_dispatch' && inputs.publish != true && steps.gate.outputs.already-published != 'true'
         run: npm publish --dry-run
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish
         if: >-
@@ -104,8 +96,6 @@ jobs:
            (github.event_name == 'workflow_dispatch' && inputs.publish == true)) &&
           steps.gate.outputs.already-published != 'true'
         run: npm publish --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create the GitHub release
         if: >-

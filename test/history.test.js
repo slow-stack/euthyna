@@ -152,6 +152,17 @@ describe('parseDeletedLines', () => {
       { line: 41, content: 'c' }
     ]);
   });
+
+  test('a deleted line whose content starts with -- is not mistaken for a file header', () => {
+    // git writes a deleted line with content `--flag` as `---flag`, which looks
+    // exactly like the `--- a/file` header. Only header lines (outside hunks)
+    // may be skipped; this one is inside a hunk and must be captured.
+    const diff = ['--- a/x.js', '+++ b/x.js', '@@ -5,2 +5,0 @@', '---flag', '--dec'].join('\n');
+    assert.deepEqual(parseDeletedLines(diff), [
+      { line: 5, content: '--flag' },
+      { line: 6, content: '-dec' }
+    ]);
+  });
 });
 
 describe('securityRelevantLines', () => {
@@ -424,6 +435,106 @@ describe('collectHistoryFacts against a real repository', () => {
       notEvaluated.some(n => /来源探针上限 3 已用尽/.test(n.reason)),
       'a cap that changed the answer must appear in the coverage report'
     );
+  });
+
+  test('refining one file must not drop the same line number in another file', async () => {
+    // Sourcery finding: the refined set held only line numbers, so refining
+    // line 4 in one file removed line 4 from the remainder of every other file.
+    // Both files' line 4 are owned by the same chore commit; only a.js's line 4
+    // is a copy of an earlier security guard, so only it should be refined.
+    const repo = await makeRepo();
+    const fix = await commitFiles(repo, 'fix: prevent an authorization bypass', {
+      'src/a.js': ['export function f() {', '  if (!authorized) return null;', '  return 1;', '}', ''].join('\n'),
+      'src/b.js': ['export const b1 = 1;', 'export const b2 = 2;', 'export const b3 = 3;', ''].join('\n')
+    });
+    const chore = await commitFiles(repo, 'chore: extend the module', {
+      'src/a.js': ['export function f() {', '  if (!authorized) return null;', '  return 1;', '}', '  if (!authorized) return null;', ''].join('\n'),
+      'src/b.js': ['export const b1 = 1;', 'export const b2 = 2;', 'export const b3 = 3;', 'export const note = "n";', ''].join('\n')
+    });
+    const base = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+    // Delete both files' line 4: a.js's guard copy and b.js's plain note.
+    await commitFiles(repo, 'refactor: trim', {
+      'src/a.js': ['export function f() {', '  if (!authorized) return null;', '  return 1;', '}', ''].join('\n'),
+      'src/b.js': ['export const b1 = 1;', 'export const b2 = 2;', 'export const b3 = 3;', ''].join('\n')
+    });
+
+    const { facts } = await collectHistoryFacts({ cwd: repo, base, head: 'HEAD', origins: true });
+
+    const refined = facts.filter(f => f.detail?.originMethod === 'pickaxe');
+    assert.equal(refined.length, 1, 'only a.js line 4 is a copy of an earlier guard');
+    assert.equal(refined[0].evidence.commit, fix, 'a.js line 4 refines to the introducing fix');
+    assert.deepEqual(refined[0].detail.byFile.map(f => f.file), ['src/a.js']);
+
+    // The chore commit's own remainder must still carry b.js line 4: refining
+    // a.js line 4 must not have dropped b.js line 4 from the report.
+    const remainder = facts.find(f => f.detail?.originMethod === 'blame' && f.evidence.commit === chore);
+    assert.ok(remainder, 'the chore commit keeps a blame fact for its unrefined lines');
+    const b = remainder.detail.byFile.find(f => f.file === 'src/b.js');
+    assert.ok(b, 'b.js must retain its line in the blame remainder');
+    assert.deepEqual(b.ranges, [{ start: 4, end: 4 }], 'b.js line 4 is untouched by the a.js refinement');
+  });
+
+  test('one origin commit with several distinct lines in one file keeps every content', async () => {
+    // Sourcery finding: the origin group stored one content per file, so a
+    // second distinct deleted line overwrote the first, and the reproduction
+    // command covered only the last. Every probed content must survive.
+    const repo = await makeRepo();
+    const fix = await commitFiles(repo, 'fix: prevent an authorization bypass', {
+      'src/a.js': [
+        'export function f() {',
+        '  if (!authorized) return null;',
+        '  const secret = loadSecret();',
+        '  return secret;',
+        '}',
+        ''
+      ].join('\n')
+    });
+    const chore = await commitFiles(repo, 'chore: mirror the pattern', {
+      'src/a.js': [
+        'export function f() {',
+        '  if (!authorized) return null;',
+        '  const secret = loadSecret();',
+        '  return secret;',
+        '}',
+        'export function g() {',
+        '  if (!authorized) return null;',
+        '  const secret = loadSecret();',
+        '  return secret;',
+        '}',
+        ''
+      ].join('\n')
+    });
+    const base = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+    await commitFiles(repo, 'refactor: trim', {
+      'src/a.js': [
+        'export function f() {',
+        '  if (!authorized) return null;',
+        '  const secret = loadSecret();',
+        '  return secret;',
+        '}',
+        ''
+      ].join('\n')
+    });
+
+    const { facts } = await collectHistoryFacts({ cwd: repo, base, head: 'HEAD', origins: true });
+    const refined = facts.filter(f => f.detail?.originMethod === 'pickaxe');
+    assert.equal(refined.length, 1, 'both mirrored lines refine to the same earlier fix');
+    assert.equal(refined[0].evidence.commit, fix, 'origin is the fix commit');
+    assert.equal(refined[0].detail.blameCommit, chore);
+
+    const contents = refined[0].detail.contents['src/a.js'];
+    assert.ok(Array.isArray(contents), 'contents must be a list, not a single overwritten value');
+    // The mirrored g() body contributes three distinct lines that trace back to
+    // the fix (guard, secret, return); the function signature line does not.
+    assert.equal(contents.length, 3, 'every distinct mirrored line survives');
+    assert.ok(contents.includes('  if (!authorized) return null;'));
+    assert.ok(contents.includes('  const secret = loadSecret();'));
+    assert.ok(contents.includes('  return secret;'));
+
+    // The reproduction command carries the full first probed content, not a
+    // truncation (Sourcery finding about the 200-char slice).
+    assert.match(refined[0].command, /-S'  if \(!authorized\) return null;'/);
+    assert.doesNotMatch(refined[0].command, /return null;' \.slice/);
   });
 });
 

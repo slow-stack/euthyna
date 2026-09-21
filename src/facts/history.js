@@ -127,8 +127,13 @@ export function parseDeletedLines(diffText) {
       oldLine = Number(hunk[1]);
       continue;
     }
-    if (raw.startsWith('-') && !raw.startsWith('---')) {
-      if (oldLine !== null) out.push({ line: oldLine++, content: raw.slice(1) });
+    // A deleted line inside a hunk always starts with '-', even when its own
+    // content starts with '-' or '--' (git writes `---foo` for content
+    // `--foo`). The `--- a/file` headers only ever appear outside hunks, where
+    // oldLine is null, so they are the ones excluded here — not the deleted
+    // lines themselves.
+    if (raw.startsWith('-') && oldLine !== null) {
+      out.push({ line: oldLine++, content: raw.slice(1) });
       continue;
     }
     if (raw.startsWith('+') && !raw.startsWith('+++')) continue;
@@ -187,8 +192,8 @@ export function classifySubject(subject, { securityPattern = SECURITY_PATTERN, f
  *     line's content" by probing `git log -S` and re-attributes the line when
  *     the introducing commit differs and classifies security or fix.
  *   - classification looks at the commit message first, then at whether the
- *     commit's own diff touched security-vocabulary lines, then at whether the
- *     deleted line content itself is security vocabulary. All three err broad
+ *     deleted line content itself is security vocabulary, then at whether the
+ *     commit's own diff touched security-vocabulary lines. All three err broad
  *     on purpose: under-classifying hides exactly the deleted-code-origin case
  *     this tool exists to surface.
  *
@@ -283,12 +288,15 @@ export async function collectHistoryFacts({
     return result;
   };
 
-  // Origin refinement (--origins): a deleted line whose blame owner is not
-  // message-classified as security is probed with `git log -S` to find the
-  // commit that FIRST introduced its content. If that commit classifies
-  // security or fix and differs from the blame owner, the line is
-  // re-attributed to it — the format commit that moved a security line stops
-  // masquerading as its origin.
+  // Origin refinement (--origins): every deleted line whose blame owner is not
+  // itself the first introducer is probed with `git log -S` to find the commit
+  // that FIRST introduced its content. If that commit classifies security or
+  // fix and differs from the blame owner, the line is re-attributed to it —
+  // the format commit that moved a security line stops masquerading as its
+  // origin. No blame group is skipped up front: a commit whose subject says
+  // "security" can still be a reformatting commit whose lines have an earlier
+  // introducer, and --origins is precisely about not trusting blame's answer.
+  // The probe cap (maxOrigins) bounds the cost.
   const originGroups = new Map(); // blameHash -> Map<originHash, group>
   if (origins) {
     let probed = 0;
@@ -296,8 +304,6 @@ export async function collectHistoryFacts({
     let shortSkipped = 0;
     for (const [hash, entry] of blameByCommit) {
       if (capped) break;
-      const summary = summaries.get(hash);
-      if (classifySubject(summary?.subject, { securityPattern, fixPattern }) === 'security') continue;
       for (const [file, lineNumbers] of entry.byFile) {
         if (capped) break;
         const deleted = deletedLinesByFile.get(file) ?? [];
@@ -352,7 +358,10 @@ export async function collectHistoryFacts({
           }
           const existing = byOrigin.byFile.get(file) ?? [];
           byOrigin.byFile.set(file, [...existing, ...lines]);
-          byOrigin.contents.set(file, content);
+          // One origin commit can account for several distinct deleted lines in
+          // the same file; every content is kept so the fact can reproduce each.
+          const existingContents = byOrigin.contents.get(file) ?? [];
+          byOrigin.contents.set(file, [...existingContents, content]);
         }
       }
     }
@@ -393,10 +402,20 @@ export async function collectHistoryFacts({
       pending.push({ hash, entry, summary, originMethod: 'blame' });
       continue;
     }
-    const refined = new Set([...groups.values()].flatMap(g => [...g.byFile.values()]).flat());
+    // Line numbers are only meaningful per file: a refined line 10 in one file
+    // must not remove line 10 from the remainder of an unrelated file. The
+    // refined set is therefore keyed by file.
+    const refinedByFile = new Map();
+    for (const group of groups.values()) {
+      for (const [file, lineNumbers] of group.byFile) {
+        const set = refinedByFile.get(file) ?? new Set();
+        for (const n of lineNumbers) set.add(n);
+        refinedByFile.set(file, set);
+      }
+    }
     const remainderByFile = new Map();
     for (const [file, lineNumbers] of entry.byFile) {
-      const rest = lineNumbers.filter(n => !refined.has(n));
+      const rest = lineNumbers.filter(n => !(refinedByFile.get(file)?.has(n) ?? false));
       if (rest.length) remainderByFile.set(file, rest);
     }
     if (remainderByFile.size) {
@@ -503,7 +522,7 @@ export async function collectHistoryFacts({
       detail.blameCommit = blameCommit;
       detail.originCommit = hash;
       detail.contents = Object.fromEntries(
-        [...contents.entries()].map(([file, content]) => [file, content.slice(0, 400)])
+        [...contents.entries()].map(([file, list]) => [file, list.map(c => c.slice(0, 400))])
       );
     }
 
@@ -511,8 +530,10 @@ export async function collectHistoryFacts({
     const lineFlags = primary.ranges.map(r => `-L ${r.start},${r.end}`).join(' ');
     const command =
       originMethod === 'pickaxe'
-        ? // The reproducible claim is "this commit introduced that content".
-          `git log --format=%H -S${shellQuote(contents.get(primary.file).slice(0, 200))} ${base} -- ${shellQuote(primary.file)}`
+        ? // The reproducible claim is "this commit introduced that content". The
+          // full first probed content is used, not a truncation: a truncated -S
+          // argument would not reproduce the probe that established the claim.
+          `git log --format=%H -S${shellQuote(contents.get(primary.file)[0])} ${base} -- ${shellQuote(primary.file)}`
         : `git blame --porcelain ${lineFlags} ${base} -- ${shellQuote(primary.file)}`;
 
     facts.push(

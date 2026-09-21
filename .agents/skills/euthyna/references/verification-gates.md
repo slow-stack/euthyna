@@ -136,7 +136,17 @@
 BUG #3 FALSE POSITIVE — packet_handler.c:142 的整数下溢
   门禁 5（数学边界）FAIL：第 98 行校验保证 packet_size >= 16，
   故 (packet_size - header_size) >= 8。下溢在数学上不可能。
+
+BUG #4 TRUE POSITIVE — 命令注入
+  门禁全部通过。证据：src/archive.js:42 (abc1234)
+  复现：node tools/poc.js
+  可利用性：EASY
+  影响：以服务账号执行任意命令
 ```
+
+**格式由机器强制**：写完后用 `euthyna gate <报告文件>` 校验（见 SKILL.md「门禁的
+程序化校验」一节）。TRUE POSITIVE 缺证据、缺复现、或带了 FAIL 门禁，会被校验器
+**降级为「观察」**并以退出码 10 报出——纪律不依赖裁定者的自觉。
 
 ---
 

@@ -15,9 +15,11 @@
  */
 import process from 'node:process';
 import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { collectHistoryFacts } from './facts/history.js';
 import { collectCoverageFacts } from './facts/coverage.js';
 import { collectDependencyFacts } from './facts/deps.js';
+import { parseGateReport, validateFindings, verifyFinding, renderGateReport } from './gate.js';
 import { makeReport, renderReport, safeTextLines, KIND } from './contract.js';
 import { repoToplevel, revParse } from './git.js';
 
@@ -53,6 +55,7 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
   euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--json]
   euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--json]
   euthyna deps     [--repo <dir>] [--lockfile <file>] --dep <name> [--dep <name>] [--json]
+  euthyna gate     <报告文件> [--verify] [--cwd <dir>] [--json]
 
 命令:
   history    本次变更删掉了哪些代码、它们分别由哪个提交引入、该提交是不是安全修复
@@ -68,12 +71,19 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
              --lockfile  可选，显式指定清单文件（支持 package-lock.json / Cargo.lock / go.mod）
              --dep       要查询的依赖名，可重复
              注：只报版本事实，不判「是否含漏洞」——版本到 CVE 的映射归判定层
+  gate       检查一份审计报告是否符合 6 门禁契约（不测量，只核对报告的自我声明）
+             <报告文件>   报告的 markdown 文件，裁定格式见技能 SKILL.md
+             --verify     重跑每条 TRUE POSITIVE 的复现命令（按 argv 执行，不经过 shell）
+                          默认只执行 git 命令；⚠ 执行结果以你的权限生效，只对你信任的报告用
+             --allow-exec 允许 --verify 执行解释器命令（node/npm/python）——
+                          它们能跑报告里的任意代码，加了它就等于你为该报告背书
+             --cwd <dir>  --verify 的工作目录（默认当前目录）
 
 退出码:
-  0   已测量，没有安全相关的发现
-  10  已测量，且存在被分类为 security 的事实
+  0   已测量，没有安全相关的发现；或 gate 报告全部通过门禁契约
+  10  已测量，且存在被分类为 security 的事实；或 gate 报告有 finding 被降级
   1   用法错误
-  2   完全无法测量（此时**不得**当作干净）
+  2   完全无法测量（此时**不得**当作干净）；或 gate 报告无法读取/没有可校验的 finding
 
 注意: 缺数据不等于干净。无法测量的判据会列在输出的「未评估的判据」一节。
 `;
@@ -236,6 +246,96 @@ async function runDeps(flags) {
 
   return { exit: measured ? EXIT.CLEAN : EXIT.UNMEASURED, report };
 }
+async function runGate(flags, positional) {
+  const file = positional[1];
+  if (!file) {
+    return { exit: EXIT.USAGE, error: 'gate 需要 <报告文件>（markdown，裁定格式见技能 SKILL.md）' };
+  }
+
+  let text;
+  try {
+    text = await readFile(path.resolve(file), 'utf8');
+  } catch (error) {
+    // An unreadable report is not a clean pass: there is nothing to check, and
+    // "nothing was checked" must not read as "everything passed".
+    return { exit: EXIT.UNMEASURED, error: `无法读取报告 ${file}: ${error.message}` };
+  }
+
+  const { findings, unparseable } = parseGateReport(text);
+  if (findings.length === 0 && unparseable.length === 0) {
+    return { exit: EXIT.UNMEASURED, error: `报告 ${file} 中没有可校验的 finding（需要 BUG #N <VERDICT> — 说明 形式）` };
+  }
+
+  const validated = validateFindings(findings);
+  for (const line of unparseable) {
+    validated.push({ unparseableLine: line, violations: ['无法解析的 BUG 行'], downgraded: true });
+  }
+
+  if (flags.verify) {
+    const cwd = path.resolve(flags.cwd ? String(flags.cwd) : process.cwd());
+    const allowInterpreters = flags['allow-exec'] === true;
+    for (const entry of validated) {
+      if (entry.unparseableLine) continue;
+      entry.verification = await verifyFinding(entry.finding, { cwd, allowInterpreters });
+      const v = entry.verification;
+      // Every status other than "verified" means the reproduction claim was
+      // not actually checked, which is a downgrade: a refused tool, an
+      // interpreter awaiting consent, an unparseable command and a failed run
+      // are different failures, but none of them is a verified reproduction.
+      if (v.status === 'failed') {
+        entry.violations.push(`复现命令未通过（exit ${v.exitCode ?? '?'}${v.detail ? `: ${v.detail}` : ''}）`);
+        entry.downgraded = true;
+      } else if (v.status === 'refused') {
+        entry.violations.push(`复现命令被拒绝（${v.tool} 不在白名单）——复现未验证`);
+        entry.downgraded = true;
+      } else if (v.status === 'needs-consent') {
+        entry.violations.push(`复现命令是解释器命令（${v.tool}），未执行——复现未验证；信任该报告时加 --allow-exec`);
+        entry.downgraded = true;
+      } else if (v.status === 'unparseable') {
+        entry.violations.push('复现命令无法拆分为 argv——复现未验证');
+        entry.downgraded = true;
+      }
+      // no-command is already a structural violation (a TRUE POSITIVE without a
+      // reproduce line), so --verify does not double-report it.
+    }
+  }
+
+  const downgraded = validated.filter(e => e.downgraded).length;
+  const result = { file, findings: validated, unparseable, downgraded, verify: flags.verify === true };
+
+  if (flags.json) {
+    return {
+      exit: downgraded > 0 ? EXIT.FLAGGED : EXIT.CLEAN,
+      json: JSON.stringify(
+        {
+          command: 'gate',
+          file,
+          findings: validated.map(e => ({
+            ...(e.unparseableLine
+              ? { unparseable: e.unparseableLine }
+              : {
+                  number: e.finding.number,
+                  verdict: e.finding.verdict,
+                  claim: e.finding.claim,
+                  evidence: e.finding.evidence,
+                  reproduce: e.finding.reproduce,
+                  impact: e.finding.impact,
+                  gates: e.finding.gates
+                }),
+            violations: e.violations,
+            downgraded: e.downgraded
+          })),
+          downgraded
+        },
+        null,
+        2
+      )
+    };
+  }
+
+  renderGateReport(result);
+  return { exit: downgraded > 0 ? EXIT.FLAGGED : EXIT.CLEAN, report: null };
+}
 
 /** Entry point. Returns the process exit code. */
 export async function main(argv = process.argv.slice(2)) {
@@ -254,6 +354,8 @@ export async function main(argv = process.argv.slice(2)) {
     result = await runCoverage(flags);
   } else if (command === 'deps') {
     result = await runDeps(flags);
+  } else if (command === 'gate') {
+    result = await runGate(flags, positional);
   } else {
     // stderr boundary, mirroring the render boundary in contract.js: text that
     // reaches the error channel may carry user or repo-controlled bytes (an
@@ -269,9 +371,14 @@ export async function main(argv = process.argv.slice(2)) {
     return result.exit;
   }
 
+  if (result.json) {
+    process.stdout.write(`${result.json}\n`);
+    return result.exit;
+  }
+
   if (flags.json) {
     process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
-  } else {
+  } else if (result.report) {
     renderReport(result.report);
   }
 

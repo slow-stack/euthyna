@@ -14,6 +14,13 @@
 # skipped with that reason rather than failing, because the ground truth is
 # not defined for GNU tar (see test/bench.test.js).
 
+# bench-loop closes the adjudication loop on every push/PR: it runs a golden
+# round (deterministic, no model, no tokens), which verifies that the blind
+# tree -> per-case reports -> machine validation -> scoring pipeline works and
+# that score.js stays green on the ground truth. A real adjudication round
+# with a model is a local/manual step (bench/README.md): it is nondeterministic
+# by nature and needs model credentials, so it does not belong in CI.
+
 name: CI
 
 on:
@@ -38,6 +45,17 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Test suite
         run: npm test
+
+  bench-loop:
+    name: bench adjudication pipeline (golden, deterministic)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Golden adjudication round (plumbing self-check)
+        run: node bench/adjudicate.js --round 0 --runs 3 --adjudicator golden --out .scratch/verdicts-ci-round0.json
 
   license:
     name: licence text vs upstream

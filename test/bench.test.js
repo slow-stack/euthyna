@@ -11,7 +11,8 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -144,5 +145,62 @@ describe('benchmark ground truth', () => {
     for (const id of ids) {
       assert.match(id, /^case-\d{2}$/, `blind id "${id}" reveals something`);
     }
+  });
+
+  test('the adjudication pipeline closes the loop deterministically (golden)', async () => {
+    // Issue #7 scenario A: the loop must be one command, and CI must be able to
+    // run it without a model. The golden "adjudicator" writes the ground truth
+    // into the reports (it is explicitly not blind, and must never be quoted as
+    // an adjudication result), so this test verifies the plumbing: blind tree →
+    // per-case reports → machine validation → scoring, end to end.
+    const out = path.join(ROOT, '.scratch', `verdicts-ci-${process.pid}.json`);
+    const { stdout } = await execFileAsync(
+      'node',
+      ['bench/adjudicate.js', '--round', '0', '--runs', '1', '--adjudicator', 'golden', '--out', out],
+      { cwd: ROOT, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }
+    );
+    assert.match(stdout, /score green/, 'the loop must end on a green score');
+    assert.match(stdout, /wrote .*verdicts/, 'verdicts must be collected and written');
+
+    // Score the same file: exit 0 only when every verdict parses and matches.
+    await execFileAsync('node', ['bench/score.js', out], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024
+    });
+  });
+
+  test('score.js goes red on a wrong verdict, so a broken discipline is CI-detectable', async () => {
+    // The entire reason the loop must be CI-runnable: if the discipline is
+    // weakened, an adjudication round comes back wrong, and score.js has to
+    // fail loudly. Feed it a verdict file where every verdict is wrong.
+    const ids = (await readdir(CASES, { withFileTypes: true }))
+      .filter(e => e.isDirectory())
+      .map(e => e.name);
+    const wrong = {};
+    for (const id of ids) {
+      const meta = JSON.parse(await readFile(path.join(CASES, id, 'meta.json'), 'utf8'));
+      wrong[id] = [meta.groundTruth === 'true_positive' ? 'FALSE POSITIVE' : 'TRUE POSITIVE'];
+    }
+    const file = path.join(ROOT, '.scratch', `verdicts-wrong-${process.pid}.json`);
+    await writeFile(file, JSON.stringify(wrong, null, 2), 'utf8');
+
+    await assert.rejects(
+      execFileAsync('node', ['bench/score.js', file], { cwd: ROOT, encoding: 'utf8' }),
+      error => error.code === 1,
+      'an all-wrong verdict file must make score.js exit non-zero'
+    );
+  });
+
+  test('the p6 skip set tracks the tar flavor', async () => {
+    // Issue #7 scenario B: on a GNU tar platform p6's ground truth is undefined
+    // (not false), so the harness must skip it with a reason — and only it. The
+    // skip logic is exported so the assertion does not depend on the platform
+    // this suite happens to run on.
+    const { buildSkips } = createRequire(import.meta.url)('../bench/exploits.js');
+    assert.equal(buildSkips('bsdtar 3.8.8').size, 0, 'on bsdtar every exploit is scorable');
+    const gnu = buildSkips('tar (GNU tar) 1.34');
+    assert.deepEqual([...gnu.keys()], ['p6-member-read-traversal'], 'only p6 is bsdtar-defined');
+    assert.match(gnu.get('p6-member-read-traversal'), /bsdtar/, 'the skip reason names the semantics');
   });
 });

@@ -64,6 +64,9 @@ for (const id of ids) {
   const rawRuns = Array.isArray(submitted[id]) ? submitted[id] : [submitted[id]];
   const runs = [];
   for (const raw of rawRuns) {
+    // A null slot is a missing run (e.g. a one-run round), not a parse failure;
+    // it simply does not count toward any cell.
+    if (raw === null || raw === undefined) continue;
     const verdict = normalise(raw);
     if (!verdict) unparsed.push(`${id}: could not parse ${JSON.stringify(raw)}`);
     else runs.push(verdict);

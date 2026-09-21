@@ -43,8 +43,10 @@ const flag = name => {
 };
 
 const ROUND = Number(flag('--round') ?? 4);
-if (!Number.isInteger(ROUND) || ROUND < 1) {
-  console.error('--round must be a positive integer');
+// Round 0 is reserved for the deterministic CI plumbing round (bench/adjudicate.js
+// --adjudicator golden); it must never be quoted as an adjudication result.
+if (!Number.isInteger(ROUND) || ROUND < 0) {
+  console.error('--round must be a non-negative integer');
   process.exit(1);
 }
 
@@ -144,16 +146,18 @@ for (const run of requestedRuns) {
 
 const verdicts = {};
 for (const id of ids) {
-  const runs = [];
-  for (let run = 1; run <= RUNS; run++) runs.push(perRun[run - 1][id]);
+  const runs = requestedRuns.map(run => perRun[run - 1][id]);
   if (runs.some(v => v)) verdicts[id] = runs;
   else problems.push(`${id}: no verdicts in any run`);
 }
 
+// Only runs that were actually requested can be expected. A one-run round
+// (--runs 1, e.g. the CI plumbing round) must not fail on runs 2 and 3.
 for (const id of ids) {
-  (verdicts[id] ?? []).forEach((v, i) => {
-    if (!v) problems.push(`${id}: run ${i + 1} missing`);
-  });
+  if (!verdicts[id]) continue;
+  for (const run of requestedRuns) {
+    if (!perRun[run - 1][id]) problems.push(`${id}: run ${run} missing`);
+  }
 }
 
 const headerParts = [

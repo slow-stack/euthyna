@@ -1,0 +1,76 @@
+# Publishes euthyna to npm.
+#
+# Two ways to run:
+#
+#   push of a v* tag   — the real release. The tag must match package.json's
+#                        version exactly; a mismatch fails before anything ships.
+#   workflow_dispatch  — a rehearsal by default: the full chain runs and
+#                        `npm publish --dry-run` validates the token and the
+#                        tarball without uploading. Tick "publish" to release
+#                        manually.
+#
+# NPM_TOKEN is a Granular Access Token scoped to the euthyna package. It exists
+# so a release does not need the account owner's browser for the 2FA approval
+# (an interactive `npm publish` does; see AGENTS.md).
+#
+# --provenance publishes a public "built by GitHub Actions" attestation on the
+# package page. For a fact producer an auditor is meant to trust, the provenance
+# claim is checkable rather than asserted — the same standard as everything
+# else here.
+
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Really publish (unchecked = dry-run rehearsal)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: The tag must name the version being shipped
+        if: github.event_name == 'push'
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          if [ "$PKG" != "$TAG" ]; then
+            echo "tag v$TAG does not match package.json $PKG"
+            exit 1
+          fi
+          echo "releasing $PKG"
+
+      - name: Test suite
+        run: npm test
+
+      - name: The token must act as the maintainer
+        run: npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish (rehearsal, nothing is uploaded)
+        if: github.event_name == 'workflow_dispatch' && inputs.publish != true
+        run: npm publish --dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -150,6 +150,7 @@ node <euthyna 仓库>/bin/euthyna.js coverage --coverage <覆盖率文件绝对�
 ```
 BUG #N TRUE POSITIVE — [一句话描述]
   门禁全部通过。证据：path:L123 (commit abc1234)
+  复现：<可重跑的命令或 PoC 位置>
   可利用性：EASY / MEDIUM / HARD
   影响：具体到资金量 / 被提升的权限 / 被暴露的数据
 
@@ -166,6 +167,31 @@ BUG #N INCONCLUSIVE — [无法判定的原因]
 Trail of Bits 的原始 fp-check 只有两态，因为它靠 Stop hook 无限强制继续直到补完；
 **DSH 上做不到**（Stop hook 必须自带限流，见 `docs/dsh-stop-gate-zh.md`）。
 所以必须有这个诚实出口——不许把「没查完」写成 `FALSE POSITIVE`。
+
+---
+
+## 门禁的程序化校验（euthyna gate）
+
+上面的格式不是摆设：`euthyna gate <报告文件>` 会机械地逐条核对——
+
+- **TRUE POSITIVE**：证据必须到 `path:L123`、必须有复现命令、必须说明影响、六门禁必须全过；
+- **FALSE POSITIVE**：至少一条门禁 FAIL 且带具体证据；
+- **INCONCLUSIVE**：至少一条门禁未评估，且没有任何 FAIL。
+
+缺证据、缺复现、或门禁与裁定互相矛盾（如 TRUE POSITIVE 却带 FAIL 门禁）的 finding，
+会被**降级为「观察」**并以退出码 `10` 报出——不需要裁定者自觉，校验器替你卡住。
+
+```powershell
+node <euthyna 仓库>/bin/euthyna.js gate <报告文件>
+# 重跑每条复现命令核验（白名单工具、按 argv 执行不走 shell）：
+node <euthyna 仓库>/bin/euthyna.js gate <报告文件> --verify --cwd <被审计仓库>
+```
+
+- 退出码 `0` = 全部通过；`10` = 有 finding 被降级；`2` = 报告无法读取 / 没有可校验的 finding。
+- `--verify` 下复现命令跑不通同样构成降级——「说能复现」不算数，跑通才算。
+
+**报告交出去之前，先过一遍 `euthyna gate`。** 它校验的是报告自己的自我声明，
+不测量目标仓库——因此它不能代替裁定，只能保证「拿不出证据的结论不会以已确证的面貌出去」。
 
 ---
 
@@ -188,6 +214,7 @@ Trail of Bits 的原始 fp-check 只有两态，因为它靠 Stop hook 无限强
 - [ ] 覆盖表写清了**哪些判据没评估、为什么**
 - [ ] 恶魔代言人 13 问逐条答过（含防假阴性的第 12、13 问）
 - [ ] 报告文件已落盘
+- [ ] 报告已通过 `euthyna gate` 校验（退出码 `0`；有降级要读降级原因）
 - [ ] 没有把「缺数据」写成「干净」
 
 ---

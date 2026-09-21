@@ -93,7 +93,7 @@ the project is deliberately zero-dependency.
 
 | Host | The skill (audit discipline) | The CLI (fact producers) |
 |---|---|---|
-| **DSH** | Copy `.agents/skills/euthyna/` into `~/.agents/skills/` (user-wide) or `<project>/.agents/skills/`. Markdown hot-reloads; no restart needed. | `npm install -g euthyna` — runs in any terminal |
+| **DSH** | `dsh plugin --profile web add euthyna` — the npm package mounts its own skill; or copy `.agents/skills/euthyna/` into `~/.agents/skills/` (user-wide) or `<project>/.agents/skills/`. Markdown hot-reloads; no restart needed. | `npm install -g euthyna` — runs in any terminal |
 | **Claude Code** | Copy the same folder into `~/.claude/skills/` | Same |
 | **Codex** | The same Markdown layer works; packaging goes through Codex's plugin/marketplace format | Same |
 | **Hermes** | Copy the same folder into `~/.hermes/skills/` under a category folder (Hermes reads the open skill standard; or install from a repo with `hermes skills install`) | Same |

@@ -52,7 +52,7 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
 它不是扫描器。它只回答两个模型算不准的问题，并把答案写成带证据的事实。
 
 用法:
-  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--json]
+  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--origins] [--json]
   euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--json]
   euthyna deps     [--repo <dir>] [--lockfile <file>] --dep <name> [--dep <name>] [--json]
   euthyna gate     <报告文件> [--verify] [--cwd <dir>] [--json]
@@ -62,6 +62,8 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
              --base    必填，比较的基线版本（如 main、HEAD~5、某个 commit）
              --head    可选，默认 HEAD
              --pickaxe 额外检查「曾被移除又加回来」的新增行（有探针上限）
+             --origins 用 git log -S 把删除行归属到「最初引入」该内容的提交，
+                       而非 blame 的「最后修改者」（有探针上限，比默认慢）
   coverage   某个符号在测试运行中到底有没有被调用过
              --coverage  覆盖率数据文件，c8 的 coverage-final.json
              --symbol    要查询的符号名，可重复
@@ -168,7 +170,8 @@ async function runHistory(flags) {
     cwd: toplevel,
     base,
     head,
-    pickaxe: flags.pickaxe === true
+    pickaxe: flags.pickaxe === true,
+    origins: flags.origins === true
   });
 
   const report = makeReport({

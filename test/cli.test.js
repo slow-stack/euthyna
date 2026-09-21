@@ -69,6 +69,27 @@ describe('exit code contract', () => {
     assert.equal(code, EXIT.CLEAN);
   });
 
+  test('history --origins accepts the flag and still flags the security origin', async () => {
+    const { main } = await import('../src/cli.js');
+    const repo = await makeRepo();
+    await commitFiles(repo, 'fix: prevent an authorization bypass', {
+      'src/svc.js': ['export function svc(x) {', '  if (!isAuthorized(user)) return null;', '  return x;', '}', ''].join('\n')
+    });
+    await commitFiles(repo, 'chore: reuse the guard in a second route', {
+      'src/svc.js': [
+        'export function svc(x) {', '  if (!isAuthorized(user)) return null;', '  return x;', '}',
+        'export function svc2(y) {', '  if (!isAuthorized(user)) return null;', '  return y;', '}', ''
+      ].join('\n')
+    });
+    const base = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+    await commitFiles(repo, 'refactor: drop the duplicate route', {
+      'src/svc.js': ['export function svc(x) {', '  if (!isAuthorized(user)) return null;', '  return x;', '}', ''].join('\n')
+    });
+
+    const code = await main(['history', '--repo', repo, '--base', base, '--origins', '--json']);
+    assert.equal(code, EXIT.FLAGGED);
+  });
+
   test('a missing --base is a usage error', async () => {
     const { main } = await import('../src/cli.js');
     assert.equal(await main(['history', '--json']), EXIT.USAGE);

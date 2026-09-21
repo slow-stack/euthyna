@@ -304,6 +304,40 @@ describe('gate CLI', () => {
     assert.match(badRun.output, /复现命令未通过/);
   });
 
+  test('--verify downgrades a refused or unparseable reproduce command too', async () => {
+    // Sourcery finding: only a "failed" run was downgraded, so a TRUE POSITIVE
+    // whose reproduce command was refused (tool outside the allowlist) or could
+    // not be split into argv exited cleanly even though its reproduction was
+    // never verified. Every status other than "verified" is a downgrade.
+    const dir = await mkdtemp(path.join(tmpdir(), 'euthyna-gate-'));
+    const repo = await makeRepo();
+    await commitFiles(repo, 'feat: init', { 'src/a.js': 'export const a = 1;\n' });
+
+    const refused = TP.replace('node bench/exploits.js p3', 'rm -rf .');
+    const refusedFile = path.join(dir, 'refused.md');
+    await writeFile(refusedFile, refused, 'utf8');
+    const refusedRun = await runGateCli(['gate', refusedFile, '--verify', '--cwd', repo]);
+    assert.equal(refusedRun.code, EXIT.FLAGGED, 'a refused tool must downgrade');
+    assert.match(refusedRun.output, /复现命令被拒绝/);
+    assert.match(refusedRun.output, /rm 不在白名单/);
+
+    const unparseable = TP.replace('node bench/exploits.js p3', "git show 'x");
+    const unparseableFile = path.join(dir, 'unparseable.md');
+    await writeFile(unparseableFile, unparseable, 'utf8');
+    const unparseableRun = await runGateCli(['gate', unparseableFile, '--verify', '--cwd', repo]);
+    assert.equal(unparseableRun.code, EXIT.FLAGGED, 'an unparseable command must downgrade');
+    assert.match(unparseableRun.output, /无法拆分为 argv/);
+  });
+
+  test('--verify prints the trust warning instead of pretending to be a sandbox', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'euthyna-gate-'));
+    const file = path.join(dir, 'report.md');
+    await writeFile(file, VALID_REPORT, 'utf8');
+    const { output } = await runGateCli(['gate', file, '--verify']);
+    assert.match(output, /以当前用户权限执行报告中的复现命令/, 'the boundary is stated, not hidden');
+    assert.match(output, /只对你自己信任的报告使用/);
+  });
+
   test('a missing report path is a usage error', async () => {
     const { code } = await runGateCli(['gate']);
     assert.equal(code, EXIT.USAGE);

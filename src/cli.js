@@ -73,7 +73,8 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
              注：只报版本事实，不判「是否含漏洞」——版本到 CVE 的映射归判定层
   gate       检查一份审计报告是否符合 6 门禁契约（不测量，只核对报告的自我声明）
              <报告文件>   报告的 markdown 文件，裁定格式见技能 SKILL.md
-             --verify     重跑每条 TRUE POSITIVE 的复现命令（白名单内工具）
+             --verify     重跑每条 TRUE POSITIVE 的复现命令（工具白名单、按 argv 执行不走 shell）
+                          ⚠ --verify 会以你的权限执行报告里的命令，只对你自己信任的报告使用
              --cwd <dir>  --verify 的工作目录（默认当前目录）
 
 退出码:
@@ -273,16 +274,28 @@ async function runGate(flags, positional) {
     for (const entry of validated) {
       if (entry.unparseableLine) continue;
       entry.verification = await verifyFinding(entry.finding, { cwd });
-      if (entry.verification.status === 'failed') {
-        const v = entry.verification;
+      const v = entry.verification;
+      // Every status other than "verified" means the reproduction claim was
+      // not actually checked, which is a downgrade: a refused tool, an
+      // unparseable command and a failed run are different failures, but none
+      // of them is a verified reproduction.
+      if (v.status === 'failed') {
         entry.violations.push(`复现命令未通过（exit ${v.exitCode ?? '?'}${v.detail ? `: ${v.detail}` : ''}）`);
         entry.downgraded = true;
+      } else if (v.status === 'refused') {
+        entry.violations.push(`复现命令被拒绝（${v.tool} 不在白名单）——复现未验证`);
+        entry.downgraded = true;
+      } else if (v.status === 'unparseable') {
+        entry.violations.push('复现命令无法拆分为 argv——复现未验证');
+        entry.downgraded = true;
       }
+      // no-command is already a structural violation (a TRUE POSITIVE without a
+      // reproduce line), so --verify does not double-report it.
     }
   }
 
   const downgraded = validated.filter(e => e.downgraded).length;
-  const result = { file, findings: validated, unparseable, downgraded };
+  const result = { file, findings: validated, unparseable, downgraded, verify: flags.verify === true };
 
   if (flags.json) {
     return {

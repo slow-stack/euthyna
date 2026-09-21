@@ -298,11 +298,15 @@ export async function verifyFinding(finding, { cwd = process.cwd(), timeoutMs = 
  */
 export function renderGateReport(result, { write: rawWrite = console.log } = {}) {
   const write = (line) => rawWrite(safeTextLines(line));
-  const { file, findings, unparseable, downgraded } = result;
+  const { file, findings, unparseable, downgraded, verify } = result;
 
   write('');
   write('euthyna gate — 6 门禁契约校验（不测量，只核对报告的自我声明）');
   write(`报告: ${file}`);
+  if (verify) {
+    write('⚠ --verify 会以当前用户权限执行报告中的复现命令（工具白名单，按 argv 执行不走 shell）。');
+    write('  它不是一个安全沙箱：只对你自己信任的报告使用。');
+  }
   write('');
 
   for (const entry of findings) {

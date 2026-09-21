@@ -68,11 +68,10 @@ Not inferred. Do not re-research these.
   green (suite + `npm whoami` passed; the upload was skipped as
   already-published), GitHub release cut by hand.
 - 🧪 Releases run through `.github/workflows/publish.yml`: pushing a `v*` tag
-  (the tag must match `package.json`) runs the suite, proves the token with
-  `npm whoami`, and publishes with `--provenance`; a version already on the
-  registry is skipped by the gate instead of failing the run. The token is a
-  Granular Access Token scoped to the euthyna package, stored in the
-  `NPM_TOKEN` repository secret.
+  (the tag must match `package.json`) runs the suite and publishes with
+  `--provenance` through trusted publishing (OIDC); a version already on the
+  registry is skipped by the gate instead of failing the run. There is no npm
+  token anymore: the repository's `NPM_TOKEN` secret was deleted 2026-09-21.
 - ⚠️ **`EOTP` — the token cannot publish. A conclusion this project got wrong.**
   An earlier claim here was that the token exists so a release does not need the
   account owner's browser for the 2FA approval. Measured 2026-09-21 on `v0.1.1`:
@@ -93,6 +92,19 @@ Not inferred. Do not re-research these.
   npmjs.com → the package → Settings → Publishing access → add a GitHub Actions
   publisher for `publish.yml`. A configuration created after 2026-09-03 allows
   only `npm stage publish` unless direct `npm publish` is selected explicitly.
+- 🧪 **OIDC diagnosis, measured 2026-09-21.** `actions/setup-node@v4` with
+  `registry-url` set reads the repository's `NPM_TOKEN` secret, writes it into a
+  temp `.npmrc` and exports it as `NODE_AUTH_TOKEN`: the token reappeared in
+  every step's environment even after the workflow stopped referencing it, and
+  disappeared only after the secret was deleted. npm's OIDC exchange
+  (`POST /-/npm/v1/oidc/token/exchange/package/<name>`, `lib/utils/oidc.js:120`)
+  fails with `OIDC token exchange error - package not found` when no trusted
+  publisher is configured, and only reports the reason at `--loglevel=verbose`
+  (`oidc.js:126`) — the visible failure is then a misleading `E404` on the PUT
+  (token present), `ENEEDAUTH` (no token, no `registry-url`), or `E404` again
+  (no token, `registry-url` set). The fix is entirely on npmjs.com: the
+  package's Settings → Publishing access must list this workflow (`publish.yml`)
+  as a GitHub Actions publisher, with direct `npm publish` allowed.
 - 🧪 The workflow cuts the GitHub release from a versioned template
   (`.github/release-notes-template.md`, a `{{version}}` placeholder is
   substituted at publish time): every release carries one fixed format, and
@@ -116,9 +128,12 @@ Not inferred. Do not re-research these.
 - 🧪 The working manual publish path on this machine: run `npm publish` in the
   sidebar's embedded terminal with the proxy env above. It packs, prints
   `Authenticate your account at: https://www.npmjs.com/auth/cli/<id>`, and
-  completes once the owner approves in the browser (from a non-interactive shell
-  the same command fails `EOTP` with a masked URL). This is how `0.1.0` and
-  `0.1.1` were published; the release is then cut with `gh release create`.
+  completes once the owner approves in the browser. The masked-URL `EOTP`
+  variant appears when stdout is not a TTY: npm's `otplease` checks
+  `process.stdin.isTTY && process.stdout.isTTY` (`lib/utils/auth.js:10`) and
+  otherwise throws with the URL redacted — so pipe the output only after the
+  interactive step has finished. This is how `0.1.0` and `0.1.1` were
+  published; the release is then cut with `gh release create`.
 
 ### Skill contract
 
@@ -342,7 +357,7 @@ Full analysis: `docs/dsh-stop-gate.md`.
 | Path | What it is |
 |---|---|
 | `bin/` + `src/` | **Fact producers** (zero-dependency Node CLI). `src/contract.js` is the contract in code; `src/facts/history.js`, `src/facts/coverage.js` and `src/facts/deps.js` are the three measurements (`history` has `--origins` to chase the first introducer and classifies by message + deleted-line + diff; `coverage.js` reads **both** c8/V8 JSON and coverage.py JSON (format 3); `deps.js` reads package-lock.json / Cargo.lock / go.mod). `src/gate.js` is the six-gate report validator behind `euthyna gate <报告> [--verify] [--allow-exec]` — it parses the skill's 裁定格式, downgrades findings that lack evidence/reproduce or contradict their verdict, and executes nothing but `git` unless the caller consents to interpreters |
-| `test/` | 167 tests via `node --test`, no third-party framework. **The history tests build real git repositories rather than mocking**; the coverage tests carry fixtures shaped like both c8 and coverage.py output; the deps tests carry fixture lockfiles (npm v1/v2/v3, Cargo.lock, go.mod); the contract tests carry the shell-quoting and render-boundary regressions from PR #1; `git.test.js` carries the error-path quoting and stderr-sanitization regressions from issue #2; `gate.test.js` pins the six-gate validator (including that `--verify` does not run an interpreter command without `--allow-exec`); `skill.test.js` pins the written discipline (the six gates, the three verdicts, the `euthyna gate` reference) so weakening the skill turns CI red |
+| `test/` | 178 tests via `node --test`, no third-party framework. **The history tests build real git repositories rather than mocking**; the coverage tests carry fixtures shaped like both c8 and coverage.py output; the deps tests carry fixture lockfiles (npm v1/v2/v3, Cargo.lock, go.mod); the contract tests carry the shell-quoting and render-boundary regressions from PR #1; `git.test.js` carries the error-path quoting and stderr-sanitization regressions from issue #2; `gate.test.js` pins the six-gate validator (including that `--verify` does not run an interpreter command without `--allow-exec`); `skill.test.js` pins the written discipline (the six gates, the three verdicts, the `euthyna gate` reference) so weakening the skill turns CI red; `plugin.test.js` pins the dsh bundle manifest, patch and entry |
 | `.agents/skills/euthyna/` | **The skill.** Doubles as source and as a project skill root (rank 200), so it is live in this workspace without a restart |
 | `bench/` | **The recall benchmark.** `exploits.js` establishes ground truth by execution (18 cases, 8 near-neighbour pairs); `prepare-blind.js` produces answer-free copies with per-round shuffled ids; `adjudicate.js` closes the loop end to end (blind tree → one adjudicator process per case → `collect-verdicts.js` machine validation → `score.js`), with a deterministic `golden` mode (ground truth written into reports — plumbing self-check only, never a real round) for CI; `collect-verdicts.js` machine-validates reports and extracts verdicts without the orchestrator reading report bodies; `score.js` computes the confusion matrix and the pair view; `perf.js` is the `history` scaling baseline. The verified-platform matrix (bsdtar vs GNU tar, p6 skip) lives in `bench/README.md`. Results: `bench/RESULTS.md` (round 1), `bench/RESULTS-round2.md` (round 2: three independent runs per case, zero flips), `bench/RESULTS-round3.md` (round 3: 18 cases, 54 adjudications, two fixture defects caught by adjudicators), `bench/RESULTS-round4.md` (round 4: 54/54, p6b v3 confirmed by first blind adjudication, cross-model run executed — zero flips across two model families); protocols in `bench/README.md`, design pre-registrations in `bench/DESIGN-round3.md` and `bench/DESIGN-round4.md` |
 | `docs/positioning.md` + `-zh` | Competitive analysis across the DSH catalog, including three claims that were tested and refuted |

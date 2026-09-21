@@ -28,8 +28,9 @@ When an AI coding agent touches security, it fails in two specific ways:
    JavaScript one and a Python one — the pattern-matched "vulnerabilities" were mostly
    false: **5 out of 5** refuted at the gates on the first run; **2 out of 3** refuted,
    the third unresolved (INCONCLUSIVE, supply-chain-dependent) on the second. See the
-   [case studies](docs/case-study-crewai.md) ([Python/crewAI](docs/case-study-crewai.md),
-   [JavaScript/axe-core](docs/case-study-axe-core.md)).
+   [case studies](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md)
+   ([Python/crewAI](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md),
+   [JavaScript/axe-core](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-axe-core.md)).
 2. **Its reassurances cannot be checked.** "I'm done." "The tests cover this." "It's
    safe now." These are assertions. You cannot tell a done-claim from a done-deal.
 
@@ -56,11 +57,11 @@ Two fact producers — a zero-dependency Node CLI:
   specific call site (unknown). **It never reports "executed"** — V8 coverage marks
   unreachable code as covered, and "line covered → call ran" is wrong in exactly the
   direction an audit cannot afford. The reasoning is in
-  [`docs/fact-contract.md`](docs/fact-contract.md) §6.2.
+  [`docs/fact-contract.md`](https://github.com/slow-stack/euthyna/blob/main/docs/fact-contract.md) §6.2.
 
 ### 2. It gates what the agent claims
 
-The [skill](.agents/skills/euthyna/) is the audit discipline itself, as loadable
+The [skill](https://github.com/slow-stack/euthyna/tree/main/.agents/skills/euthyna/) is the audit discipline itself, as loadable
 Markdown. Every security claim must pass six gates — reachability, trust boundary, real
 impact, and their counterparts. A claim that cannot produce evidence is **downgraded to
 an observation**, not reported as a finding. "I'm done" becomes a package: claims,
@@ -75,17 +76,18 @@ the project is deliberately zero-dependency.
 
 | Host | The skill (audit discipline) | The CLI (fact producers) |
 |---|---|---|
-| **DSH** | Copy `.agents/skills/euthyna/` into `~/.agents/skills/` (user-wide) or `<project>/.agents/skills/`. Markdown hot-reloads; no restart needed. | Runs in any terminal, from this repository |
+| **DSH** | Copy `.agents/skills/euthyna/` into `~/.agents/skills/` (user-wide) or `<project>/.agents/skills/`. Markdown hot-reloads; no restart needed. | `npm install -g euthyna` — runs in any terminal |
 | **Claude Code** | Copy the same folder into `~/.claude/skills/` | Same |
 | **Codex** | The same Markdown layer works; packaging goes through Codex's plugin/marketplace format | Same |
-| **Any terminal** | — | `git clone`, then `node bin/euthyna.js …` |
+| **Any terminal** | — | `npm install -g euthyna`, then `euthyna …` |
 
 Two honest notes:
 
 - **The skill is the instructions; the CLI is the measurement.** The skill directory
-  does **not** contain the CLI. Keep this repository checked out; on a host without it,
-  the skill requires the unmeasurable criteria to be recorded as *not evaluated* rather
-  than guessed at — that fallback is the design, not a gap.
+  does **not** contain the CLI. Install the CLI from npm (`npm install -g euthyna`) or
+  keep this repository checked out; on a host without the CLI, the skill requires the
+  unmeasurable criteria to be recorded as *not evaluated* rather than guessed at — that
+  fallback is the design, not a gap.
 - **The skill text and the CLI's reports are currently written in Chinese.** The
   discipline is host-agnostic Markdown, but an English reader should expect Chinese
   output from the tool itself.
@@ -95,11 +97,19 @@ Two honest notes:
 ## 🚀 Quick start
 
 ```sh
+npm install -g euthyna
+euthyna history --repo <path> --base main --head HEAD
+euthyna coverage --coverage coverage/coverage-final.json --symbol <name>
+```
+
+Or without a global install: `npx euthyna history --repo <path> --base main`.
+
+From a checkout instead (development):
+
+```sh
 git clone https://github.com/slow-stack/euthyna
-cd euthyna
-npm test                                              # 61 tests; no install step exists
+cd euthyna && npm test                                 # 92 tests; no install step exists
 node bin/euthyna.js history --repo <path> --base main --head HEAD
-node bin/euthyna.js coverage --coverage coverage/coverage-final.json --symbol <name>
 ```
 
 What `history` reports looks like this:
@@ -170,11 +180,12 @@ This project tries to be explicit about the difference. Current state:
   the twice-defeated guard — rebuilt as a bare-name allow-list — facing its first blind
   adjudication: **54/54 correct**, all 8 pairs separated, and a third run on a second model
   family agreed with the first two on every case.
-  See [`bench/RESULTS.md`](bench/RESULTS.md), [`bench/RESULTS-round2.md`](bench/RESULTS-round2.md),
-  [`bench/RESULTS-round3.md`](bench/RESULTS-round3.md),
-  and [`bench/RESULTS-round4.md`](bench/RESULTS-round4.md).
+  See [`bench/RESULTS.md`](https://github.com/slow-stack/euthyna/blob/main/bench/RESULTS.md),
+  [`bench/RESULTS-round2.md`](https://github.com/slow-stack/euthyna/blob/main/bench/RESULTS-round2.md),
+  [`bench/RESULTS-round3.md`](https://github.com/slow-stack/euthyna/blob/main/bench/RESULTS-round3.md),
+  and [`bench/RESULTS-round4.md`](https://github.com/slow-stack/euthyna/blob/main/bench/RESULTS-round4.md).
 - **The delivery-gate mechanism**, by running the real host plugin: blocking works, and the two
-  documented ways of getting it wrong do not. See [`docs/dsh-stop-gate.md`](docs/dsh-stop-gate.md).
+  documented ways of getting it wrong do not. See [`docs/dsh-stop-gate.md`](https://github.com/slow-stack/euthyna/blob/main/docs/dsh-stop-gate.md).
 
 ### Not verified
 
@@ -188,8 +199,8 @@ This project tries to be explicit about the difference. Current state:
 - **Source maps, bundlers, monorepos** for the coverage producer. Untested.
 - **Anything about the case-study targets' security** — the runs found nothing to endorse or
   condemn; that is not a statement about either project. See
-  [`docs/case-study-crewai.md`](docs/case-study-crewai.md) and
-  [`docs/case-study-axe-core.md`](docs/case-study-axe-core.md).
+  [`docs/case-study-crewai.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md) and
+  [`docs/case-study-axe-core.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-axe-core.md).
 
 ---
 

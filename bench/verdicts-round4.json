@@ -1,0 +1,93 @@
+{
+  "//": "Round-4 verdicts. Each case maps to 3 independent runs; every run reshuffled the blind ids under its own seed. Seeds per run: 280672008, 913463742, 1009334954. Model per run: deepseek-v4-flash-ga-260731 -> deepseek-v4-flash-ga-260731 -> glm-5.3-flash. Run-1 case-08's adjudicator claimed DONE without persisting a report (caught by machine validation); re-adjudicated as run1-b against the same seed's blind tree. Run-3 case-02 and case-04 originals were killed by provider quota after analysis but before persisting reports; re-adjudicated as run3-b. Several adjudicators violated the one-line DONE rule by leaking verdict words in delivery messages; per protocol those runs stayed valid (reports authoritative) and every leak entry was swept and archived between batches. Reports were machine-validated by bench/collect-verdicts.js (existence, single VERDICT line, closing blocks, no verdict words in the body); the orchestrator never read report bodies during the round.",
+  "c1-comment-only": [
+    "FALSE POSITIVE",
+    "FALSE POSITIVE",
+    "FALSE POSITIVE"
+  ],
+  "c2-test-fixture": [
+    "FALSE POSITIVE",
+    "FALSE POSITIVE",
+    "FALSE POSITIVE"
+  ],
+  "p1-prototype-pollution": [
+    "TRUE POSITIVE",
+    "TRUE POSITIVE",
+    "TRUE POSITIVE"
+  ],
+  "p1b-prototype-pollution-guarded": [
+    "FALSE POSITIVE",
+    "FALSE POSITIVE",
+    "FALSE POSITIVE"
+  ],
+  "p2-path-traversal": [
+    "TRUE POSITIVE",
+    "TRUE POSITIVE",
+    "TRUE POSITIVE"
+  ],
+  "p2b-path-traversal-guarded": [
+    "FALSE POSITIVE",
+    "FALSE POSITIVE",
+    "FALSE POSITIVE"
+  ],
+  "p3-command-injection": [
+    "TRUE POSITIVE",
+    "TRUE POSITIVE",
+    "TRUE POSITIVE"
+  ],
+  "p3b-execfile": [
+    "FALSE POSITIVE",
+    "FALSE POSITIVE",
+    "FALSE POSITIVE"
+  ],
+  "p4-code-injection": [
+    "TRUE POSITIVE",
+    "TRUE POSITIVE",
+    "TRUE POSITIVE"
+  ],
+  "p4b-unreachable-eval": [
+    "FALSE POSITIVE",
+    "FALSE POSITIVE",
+    "FALSE POSITIVE"
+  ],
+  "p5-output-path-traversal": [
+    "TRUE POSITIVE",
+    "TRUE POSITIVE",
+    "TRUE POSITIVE"
+  ],
+  "p5b-output-path-contained": [
+    "FALSE POSITIVE",
+    "FALSE POSITIVE",
+    "FALSE POSITIVE"
+  ],
+  "p6-member-read-traversal": [
+    "TRUE POSITIVE",
+    "TRUE POSITIVE",
+    "TRUE POSITIVE"
+  ],
+  "p6b-member-read-validated": [
+    "FALSE POSITIVE",
+    "FALSE POSITIVE",
+    "FALSE POSITIVE"
+  ],
+  "p7-open-redirect": [
+    "TRUE POSITIVE",
+    "TRUE POSITIVE",
+    "TRUE POSITIVE"
+  ],
+  "p7b-redirect-allowlist": [
+    "FALSE POSITIVE",
+    "FALSE POSITIVE",
+    "FALSE POSITIVE"
+  ],
+  "p9-ssrf": [
+    "TRUE POSITIVE",
+    "TRUE POSITIVE",
+    "TRUE POSITIVE"
+  ],
+  "p9b-ssrf-allowlist": [
+    "FALSE POSITIVE",
+    "FALSE POSITIVE",
+    "FALSE POSITIVE"
+  ]
+}

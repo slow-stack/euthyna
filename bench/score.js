@@ -195,7 +195,7 @@ if (unparsed.length) {
 
 console.log(
   '\nnote: this measures whether the discipline reaches the right verdict on a claim.\n' +
-    'It does not measure whether the claims would be found in the first place, and ten\n' +
+    'It does not measure whether the claims would be found in the first place, and eighteen\n' +
     'cases are few enough that the numbers are a directional signal, not a rate.\n'
 );
 

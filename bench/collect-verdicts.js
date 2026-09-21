@@ -55,6 +55,16 @@ const OUT = path.resolve(process.cwd(), flag('--out') ?? path.join(__dirname, `v
 const seeds = (flag('--seeds') ?? '').split(',').map(s => s.trim()).filter(Boolean);
 const models = (flag('--models') ?? '').split(',').map(s => s.trim()).filter(Boolean);
 const note = flag('--note');
+// --runs lets a mid-round invocation validate one run's reports while later
+// runs have no mapping files yet; the final collection uses the default all.
+const requestedRuns = (flag('--runs') ?? Array.from({ length: RUNS }, (_, i) => i + 1).join(','))
+  .split(',')
+  .map(s => Number(s.trim()))
+  .filter(n => Number.isInteger(n) && n >= 1 && n <= RUNS);
+if (requestedRuns.length === 0) {
+  console.error(`--runs must list run numbers within 1..${RUNS}`);
+  process.exit(1);
+}
 
 const VERDICTS = ['TRUE POSITIVE', 'FALSE POSITIVE', 'INCONCLUSIVE'];
 const CLOSING_BLOCKS = ['GATES', 'REASONING', 'CONTEXT DECLARATION'];
@@ -74,7 +84,7 @@ const perRun = Array.from({ length: RUNS }, () => ({}));
 const runFiles = Array.from({ length: RUNS }, () => ({}));
 const problems = [];
 
-for (let run = 1; run <= RUNS; run++) {
+for (const run of requestedRuns) {
   const mappingFile = path.join(SCRATCH, `blind-mapping-round${ROUND}-run${run}.json`);
   let mapping;
   try {

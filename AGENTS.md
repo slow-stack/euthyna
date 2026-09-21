@@ -67,6 +67,15 @@ Not inferred. Do not re-research these.
   registry is skipped by the gate instead of failing the run. The token is a
   Granular Access Token scoped to the euthyna package, stored in the
   `NPM_TOKEN` repository secret.
+- 🧪 The workflow cuts the GitHub release from a versioned template
+  (`.github/release-notes-template.md`, a `{{version}}` placeholder is
+  substituted at publish time): every release carries one fixed format, and
+  format changes are reviewed like any other file. The manual `workflow_dispatch`
+  rehearsal renders the notes for inspection without uploading or releasing —
+  run `35577551209` (commit `1e65d0a`) rendered the template with `0.1.0`
+  substituted; the release itself is created only on a `v*` tag push, titled
+  `euthyna <version>`. `v0.1.0`'s release predates the template and keeps its
+  hand-written notes.
 - 🧪 Set the secret through the GitHub web UI. `gh secret set` with its hidden
   paste prompt stored an **empty** value twice on this machine's embedded
   terminal (the browser field works); the workflow's `npm whoami` step is what

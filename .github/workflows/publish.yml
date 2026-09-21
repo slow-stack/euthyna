@@ -100,7 +100,7 @@ jobs:
           (github.event_name == 'push' ||
            (github.event_name == 'workflow_dispatch' && inputs.publish == true)) &&
           steps.gate.outputs.already-published != 'true'
-        run: npm publish --provenance
+        run: npm publish --provenance --loglevel=verbose
 
       - name: Create the GitHub release
         if: >-

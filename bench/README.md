@@ -58,7 +58,8 @@ bench/
 │   ├── src/           ← 被审代码
 │   └── meta.json      ← ground truth，裁定者看不到
 ├── exploits.js        ← 证明「真」案例真的可利用
-└── score.js           ← 拿裁定结果算混淆矩阵
+├── score.js           ← 拿裁定结果算混淆矩阵
+└── perf.js            ← `history` 产出器的扩展性基准（固定文件大小、递增删除区间数）
 ```
 
 ## 怎么跑
@@ -67,6 +68,7 @@ bench/
 node bench/exploits.js              # 跑通全部 PoC —— 不通过就说明「真」集合不可信
 node bench/prepare-blind.js         # 生成不透明编号的盲副本到 .scratch/blind/
 node bench/score.js verdicts.json   # 用裁定结果算混淆矩阵
+node bench/perf.js                  # history 顺序 blame 的缩放曲线（--total/--min/--max 可调）
 ```
 
 **平台契约**：exploit 的 ground truth 定义在 **bsdtar** 的操作数语义上

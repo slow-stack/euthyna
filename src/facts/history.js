@@ -112,6 +112,61 @@ export function compressRanges(lineNumbers) {
   return ranges;
 }
 
+/**
+ * Parse `git diff --unified=0` into the deleted lines with their old line
+ * numbers: [{ line, content }]. With --unified=0 every hunk is exactly the
+ * changed lines, so the old line numbers walk from the hunk's old start across
+ * the deleted lines.
+ */
+export function parseDeletedLines(diffText) {
+  const out = [];
+  let oldLine = null;
+  for (const raw of diffText.split('\n')) {
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+    if (hunk) {
+      oldLine = Number(hunk[1]);
+      continue;
+    }
+    if (raw.startsWith('-') && !raw.startsWith('---')) {
+      if (oldLine !== null) out.push({ line: oldLine++, content: raw.slice(1) });
+      continue;
+    }
+    if (raw.startsWith('+') && !raw.startsWith('+++')) continue;
+    if (raw.startsWith(' ')) {
+      if (oldLine !== null) oldLine++;
+      continue;
+    }
+  }
+  return out;
+}
+
+/** True when any of the given line contents is itself security vocabulary. */
+export function securityRelevantLines(lines, { securityPattern = SECURITY_PATTERN } = {}) {
+  return lines.some(line => securityPattern.test(line));
+}
+
+/**
+ * Classify a commit the way an adjudicator would read it: the message first,
+ * and when the message is neutral, whether the commit's own diff touched lines
+ * that are themselves security vocabulary — removing or changing a sanitizer,
+ * an authorization check, a credential guard. The message stays the primary
+ * signal; the diff is the fallback for "update utils" commits whose subject
+ * says nothing but whose changed lines are unambiguously security.
+ */
+export async function classifyCommit(
+  cwd,
+  hash,
+  subject,
+  { securityPattern = SECURITY_PATTERN, fixPattern = FIX_PATTERN } = {}
+) {
+  const byMessage = classifySubject(subject, { securityPattern, fixPattern });
+  if (byMessage !== 'none') return byMessage;
+  const out = await git(['show', '--format=', '--unified=0', hash], { cwd, allowFailure: true });
+  if (!out) return 'none';
+  const changed = out.split('\n').filter(line => /^[+-]/.test(line) && !/^(\+\+\+|---)/.test(line));
+  return changed.some(line => securityPattern.test(line.slice(1))) ? 'security' : 'none';
+}
+
 /** Classify a commit subject. Returns 'security', 'fix', or 'none'. */
 export function classifySubject(subject, { securityPattern = SECURITY_PATTERN, fixPattern = FIX_PATTERN } = {}) {
   if (!subject) return 'none';
@@ -123,12 +178,29 @@ export function classifySubject(subject, { securityPattern = SECURITY_PATTERN, f
 /**
  * Collect history facts for a revision range.
  *
+ * Attribution semantics, stated explicitly because they are the point of this
+ * function and easy to over-claim:
+ *
+ *   - blame (the default) answers "who last touched the line" — a security-fix
+ *     line that a later formatting/refactor commit moved is attributed to the
+ *     formatter, not the fix. `--origins` answers "who FIRST introduced the
+ *     line's content" by probing `git log -S` and re-attributes the line when
+ *     the introducing commit differs and classifies security or fix.
+ *   - classification looks at the commit message first, then at whether the
+ *     commit's own diff touched security-vocabulary lines, then at whether the
+ *     deleted line content itself is security vocabulary. All three err broad
+ *     on purpose: under-classifying hides exactly the deleted-code-origin case
+ *     this tool exists to surface.
+ *
  * @param {object} options
  * @param {string} options.cwd
  * @param {string} options.base
  * @param {string} options.head
  * @param {boolean} [options.pickaxe]  also look for reintroduced lines
  * @param {number} [options.maxPickaxe] cap on pickaxe probes (reported when hit)
+ * @param {boolean} [options.origins]  re-attribute deleted lines to the commit
+ *                                     that first introduced their content
+ * @param {number} [options.maxOrigins] cap on origin probes (reported when hit)
  */
 export async function collectHistoryFacts({
   cwd,
@@ -136,6 +208,8 @@ export async function collectHistoryFacts({
   head = 'HEAD',
   pickaxe = false,
   maxPickaxe = 40,
+  origins = false,
+  maxOrigins = 40,
   securityPattern = SECURITY_PATTERN,
   fixPattern = FIX_PATTERN
 } = {}) {
@@ -159,6 +233,7 @@ export async function collectHistoryFacts({
   // attributable to an earlier commit, so it is reported rather than dropped.
   const blameByCommit = new Map();
   const linesByFile = new Map();
+  const deletedLinesByFile = new Map();
 
   for (const file of files) {
     const diff = await git(['diff', '--unified=0', `${base}..${head}`, '--', file], { cwd });
@@ -167,6 +242,7 @@ export async function collectHistoryFacts({
 
     const deletedLines = ranges.reduce((sum, r) => sum + r.count, 0);
     linesByFile.set(file, { ranges, deletedLines });
+    deletedLinesByFile.set(file, parseDeletedLines(diff));
 
     const byCommit = await blameRanges({ cwd, rev: base, file, ranges });
     for (const [hash, lineNumbers] of byCommit) {
@@ -197,17 +273,192 @@ export async function collectHistoryFacts({
   }
 
   const summaries = await commitSummaries(cwd, [...blameByCommit.keys()]);
+  // classifyCommit is cached: the same commit can be a blame owner and an
+  // origin, and each costs a `git show`.
+  const classifyCache = new Map();
+  const classify = async (hash, subject) => {
+    if (classifyCache.has(hash)) return classifyCache.get(hash);
+    const result = await classifyCommit(cwd, hash, subject, { securityPattern, fixPattern });
+    classifyCache.set(hash, result);
+    return result;
+  };
+
+  // Origin refinement (--origins): a deleted line whose blame owner is not
+  // message-classified as security is probed with `git log -S` to find the
+  // commit that FIRST introduced its content. If that commit classifies
+  // security or fix and differs from the blame owner, the line is
+  // re-attributed to it — the format commit that moved a security line stops
+  // masquerading as its origin.
+  const originGroups = new Map(); // blameHash -> Map<originHash, group>
+  if (origins) {
+    let probed = 0;
+    let capped = false;
+    let shortSkipped = 0;
+    for (const [hash, entry] of blameByCommit) {
+      if (capped) break;
+      const summary = summaries.get(hash);
+      if (classifySubject(summary?.subject, { securityPattern, fixPattern }) === 'security') continue;
+      for (const [file, lineNumbers] of entry.byFile) {
+        if (capped) break;
+        const deleted = deletedLinesByFile.get(file) ?? [];
+        const contentByLine = new Map(deleted.map(d => [d.line, d.content]));
+        const contents = [
+          ...new Set(
+            lineNumbers
+              .map(n => contentByLine.get(n))
+              .filter(c => typeof c === 'string' && c.length > 0)
+          )
+        ];
+        for (const content of contents) {
+          // Generic short lines (a closing brace, `return x;`) occur in almost
+          // every commit, so their "-S" answer is the first commit of the whole
+          // history, not an origin. Only contents long enough to be specific
+          // are probed; the rest keep the blame attribution.
+          if (content.length < MIN_PICKAXE_LINE_LENGTH) {
+            shortSkipped++;
+            continue;
+          }
+          if (probed >= maxOrigins) {
+            capped = true;
+            break;
+          }
+          probed++;
+          const log = await git(['log', '--format=%H', `-S${content}`, base, '--', file], {
+            cwd,
+            allowFailure: true
+          });
+          const hashes = log.split('\n').map(s => s.trim()).filter(Boolean);
+          if (hashes.length === 0) continue;
+          // git log lists newest first; the last entry is the oldest, i.e. the
+          // commit where the content's occurrence count first rose — the one
+          // that introduced it.
+          const origin = hashes[hashes.length - 1];
+          if (origin === hash) continue;
+          const originSummary = (await commitSummaries(cwd, [origin])).get(origin);
+          const originClassification = await classify(origin, originSummary?.subject ?? null);
+          if (originClassification === 'none') continue;
+
+          const lines = lineNumbers.filter(n => contentByLine.get(n) === content);
+          let byOrigin = originGroups.get(hash)?.get(origin);
+          if (!byOrigin) {
+            byOrigin = {
+              classification: originClassification,
+              summary: originSummary ?? null,
+              byFile: new Map(),
+              contents: new Map()
+            };
+            if (!originGroups.has(hash)) originGroups.set(hash, new Map());
+            originGroups.get(hash).set(origin, byOrigin);
+          }
+          const existing = byOrigin.byFile.get(file) ?? [];
+          byOrigin.byFile.set(file, [...existing, ...lines]);
+          byOrigin.contents.set(file, content);
+        }
+      }
+    }
+    if (capped) {
+      notEvaluated.push(
+        notEvaluatedEntry(
+          'history-origins',
+          `git log -S 来源探针上限 ${maxOrigins} 已用尽，其余删除行保留 blame 归属`
+        )
+      );
+    }
+    if (shortSkipped > 0) {
+      notEvaluated.push(
+        notEvaluatedEntry(
+          'history-origins',
+          `${shortSkipped} 行内容过短（< ${MIN_PICKAXE_LINE_LENGTH} 字符），` +
+            '未做来源追溯（太通用时 -S 会指向整个历史的第一个提交而非真实来源），保留 blame 归属'
+        )
+      );
+    }
+  } else if (linesByFile.size > 0) {
+    notEvaluated.push(
+      notEvaluatedEntry(
+        'history-origins',
+        '未启用 --origins，删除行的归属基于 git blame 的「最后修改」语义；' +
+          '被删行本身或提交 diff 含安全关键词时仍会标为 security'
+      )
+    );
+  }
+
+  // Split every blame group into its remainder (blame attribution) and its
+  // refined subsets (one fact per origin commit). Each becomes a fact.
+  const pending = [];
+  for (const [hash, entry] of blameByCommit) {
+    const summary = summaries.get(hash) ?? { subject: '(提交信息不可读)', author: null, date: null };
+    const groups = originGroups.get(hash);
+    if (!groups) {
+      pending.push({ hash, entry, summary, originMethod: 'blame' });
+      continue;
+    }
+    const refined = new Set([...groups.values()].flatMap(g => [...g.byFile.values()]).flat());
+    const remainderByFile = new Map();
+    for (const [file, lineNumbers] of entry.byFile) {
+      const rest = lineNumbers.filter(n => !refined.has(n));
+      if (rest.length) remainderByFile.set(file, rest);
+    }
+    if (remainderByFile.size) {
+      pending.push({
+        hash,
+        entry: {
+          lines: [...remainderByFile.values()].reduce((sum, a) => sum + a.length, 0),
+          byFile: remainderByFile
+        },
+        summary,
+        originMethod: 'blame'
+      });
+    }
+    for (const [originHash, group] of groups) {
+      pending.push({
+        hash: originHash,
+        entry: {
+          lines: [...group.byFile.values()].reduce((sum, a) => sum + a.length, 0),
+          byFile: group.byFile
+        },
+        summary: group.summary ?? { subject: '(提交信息不可读)', author: null, date: null },
+        originMethod: 'pickaxe',
+        blameCommit: hash,
+        contents: group.contents
+      });
+    }
+  }
+
+  // Classify each pending fact. Order of signals, from most to least direct:
+  // the origin commit's message, then the deleted line content itself (the
+  // deleted code is security code even when the commit that owns it says
+  // nothing), then the origin commit's own diff (changed security-vocabulary
+  // lines in an otherwise neutral commit). The basis is recorded so
+  // "分类：security" is never read as stronger than the evidence behind it.
+  const ranked = [];
+  for (const item of pending) {
+    const byMessage = classifySubject(item.summary.subject, { securityPattern, fixPattern });
+    let basis = byMessage !== 'none' ? 'message' : 'none';
+    let classification = byMessage;
+    if (classification === 'none') {
+      const contents = [...item.entry.byFile.entries()].flatMap(([file, lineNumbers]) => {
+        const deleted = deletedLinesByFile.get(file) ?? [];
+        const byLine = new Map(deleted.map(d => [d.line, d.content]));
+        return lineNumbers.map(n => byLine.get(n)).filter(c => typeof c === 'string');
+      });
+      if (securityRelevantLines(contents, { securityPattern })) {
+        classification = 'security';
+        basis = 'deleted-line';
+      }
+    }
+    if (classification === 'none') {
+      classification = await classify(item.hash, item.summary.subject);
+      if (classification === 'security') basis = 'diff';
+    }
+    ranked.push({ ...item, classification, basis });
+  }
 
   // Report the security-relevant origins first: they are what an adjudicator
   // must look at, and the ordering is stable so two runs produce the same report.
-  const ranked = [...blameByCommit.entries()]
-    .map(([hash, entry]) => {
-      const summary = summaries.get(hash) ?? { subject: '(提交信息不可读)', author: null, date: null };
-      return { hash, entry, summary, classification: classifySubject(summary.subject, { securityPattern, fixPattern }) };
-    })
-    .sort((a, b) => rank(a.classification) - rank(b.classification) || b.entry.lines - a.entry.lines);
+  ranked.sort((a, b) => rank(a.classification) - rank(b.classification) || b.entry.lines - a.entry.lines);
 
-  for (const { hash, entry, summary, classification } of ranked) {
+  for (const { hash, entry, summary, classification, basis, originMethod, blameCommit, contents } of ranked) {
     const byFile = [...entry.byFile.entries()]
       .map(([file, lineNumbers]) => ({
         file,
@@ -217,17 +468,52 @@ export async function collectHistoryFacts({
       .sort((a, b) => b.lines - a.lines || a.file.localeCompare(b.file));
 
     const fileCount = byFile.length;
+    const primary = byFile[0];
     // Say how many files the lines are spread over. Reporting a total against a
     // single file path reads as "all of these are here", which sends a reader to
     // the wrong place and makes an accurate attribution look wrong.
+    const originPhrase =
+      originMethod === 'pickaxe'
+        ? `本次变更删除了 ${entry.lines} 行代码，其内容最初由提交 ${hash.slice(0, 10)} 引入` +
+          `（git blame 的最后修改者是 ${blameCommit.slice(0, 10)}）`
+        : `本次变更删除了 ${entry.lines} 行来自提交 ${hash.slice(0, 10)} 的代码`;
     const statement =
-      `本次变更删除了 ${entry.lines} 行来自提交 ${hash.slice(0, 10)} 的代码` +
+      originPhrase +
       (fileCount > 1 ? `，分布在 ${fileCount} 个文件` : `（文件：${byFile[0].file}）`) +
       `。提交信息：${JSON.stringify(summary.subject)}，分类：${classification}`;
 
+    const detail = {
+      classification,
+      classificationBasis: basis,
+      originMethod,
+      commitSubject: summary.subject,
+      commitAuthor: summary.author,
+      commitDate: summary.date,
+      blamedLines: entry.lines,
+      byFile,
+      // Stated explicitly so a reader is not left thinking the command above
+      // covers lines in the other files too.
+      reproductionNote:
+        fileCount > 1
+          ? `上面的命令只复现「${primary.file}」中的归属；其余 ${fileCount - 1} 个文件的行区间见 byFile`
+          : '上面的命令复现本事实涉及的全部行'
+    };
+
+    if (originMethod === 'pickaxe') {
+      detail.blameCommit = blameCommit;
+      detail.originCommit = hash;
+      detail.contents = Object.fromEntries(
+        [...contents.entries()].map(([file, content]) => [file, content.slice(0, 400)])
+      );
+    }
+
     // Multiple -L flags reproduce every attributed line in the primary file.
-    const primary = byFile[0];
     const lineFlags = primary.ranges.map(r => `-L ${r.start},${r.end}`).join(' ');
+    const command =
+      originMethod === 'pickaxe'
+        ? // The reproducible claim is "this commit introduced that content".
+          `git log --format=%H -S${shellQuote(contents.get(primary.file).slice(0, 200))} ${base} -- ${shellQuote(primary.file)}`
+        : `git blame --porcelain ${lineFlags} ${base} -- ${shellQuote(primary.file)}`;
 
     facts.push(
       makeFact({
@@ -237,21 +523,8 @@ export async function collectHistoryFacts({
         status: STATUS.ESTABLISHED,
         evidence: { file: primary.file, commit: hash, files: byFile.map(f => f.file) },
         method: 'command',
-        command: `git blame --porcelain ${lineFlags} ${base} -- ${shellQuote(primary.file)}`,
-        detail: {
-          classification,
-          commitSubject: summary.subject,
-          commitAuthor: summary.author,
-          commitDate: summary.date,
-          blamedLines: entry.lines,
-          byFile,
-          // Stated explicitly so a reader is not left thinking the command above
-          // covers lines in the other files too.
-          reproductionNote:
-            fileCount > 1
-              ? `上面的命令只复现「${primary.file}」中的归属；其余 ${fileCount - 1} 个文件的行区间见 byFile`
-              : '上面的命令复现本事实涉及的全部行'
-        }
+        command,
+        detail
       })
     );
   }

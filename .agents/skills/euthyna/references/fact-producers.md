@@ -62,10 +62,30 @@ node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --repo <被�
 
 # 加测「曾被移除又加回来」的行（有探针上限，比基础版慢）
 node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --pickaxe --repo <被审计的仓库>
+
+# 把删除行归属到「最初引入」该内容的提交（而非 blame 的「最后修改者」，有探针上限）
+node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --origins --repo <被审计的仓库>
 ```
 
 `--base` 是**改前版本**（PR 的分叉点），`--head` 默认 `HEAD`。
 分叉点不确定时用 `git merge-base <目标分支> HEAD` 的结果。
+
+### 归属语义（两个固有近似，已确证≠精确）
+
+`history` 的归属和分类各有一个**写死的近似**，读输出前先知道它们：
+
+1. **归属：blame 是「最后修改」，不是「最初引入」。** 一条安全修复行如果之后被
+   格式化/重构碰过（移动、复制），blame 会把来源归到最后碰它的那个提交。
+   `--origins` 用 `git log -S <行内容>` 定位**最初引入**该内容的提交；两者不一致时
+   事实会同时写出两个提交（`detail.blameCommit` = 最后修改、`evidence.commit` =
+   最初引入），并说明「最初引入」。
+   `--origins` 只对长度 ≥ 12 字符的行做追溯（太通用的行，-S 会指向整个历史的
+   第一个提交，那不是来源）；未启用时输出会在「未评估的判据」里写明这一点。
+2. **分类：先看提交信息，再看提交 diff，再看被删行本身。** 消息含糊
+   （"update utils"）但 diff 动了危险 API、或被删行本身就是安全代码（如
+   `if (!authorized) return`）时，都会标 `security`——依据写在
+   `detail.classificationBasis`（`message` / `diff` / `deleted-line`）。
+   分类偏向宽是有意的：漏掉安全提交比多报更危险。
 
 ### 输出长什么样（真实捕获）
 
@@ -223,6 +243,8 @@ euthyna euthyna-coverage — 符号调用计数（只能证伪）
 
 - `history` 的分类器**偏向宽**：漏掉安全提交比多报更危险，所以它宁可把 `fix` 也报出来。
   分类结果是**线索**，提交信息要自己读。
+- `history` 的归属默认是 blame 的「最后修改」语义；要「最初引入」用 `--origins`
+  （有探针上限，且只对 ≥ 12 字符的行做追溯）。两个近似都写在本文件「归属语义」一节。
 - `history` 只覆盖**被删除的行**。新增的代码它不管（`--pickaxe` 除外）。
 - `coverage` **只能证伪**。见上文。
 - `coverage` 依赖调用计数，**不处理动态派发、反射、字符串调用**。

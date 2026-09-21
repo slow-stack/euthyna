@@ -9,7 +9,14 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { makeRepo, commitFiles, git } from './helpers.js';
-import { parseDeletedRanges, classifySubject, collectHistoryFacts } from '../src/facts/history.js';
+import {
+  parseDeletedRanges,
+  parseDeletedLines,
+  securityRelevantLines,
+  classifySubject,
+  classifyCommit,
+  collectHistoryFacts
+} from '../src/facts/history.js';
 import { STATUS, KIND } from '../src/contract.js';
 
 /**
@@ -115,6 +122,60 @@ describe('classifySubject', () => {
 
   test('security wins over fix when both match', () => {
     assert.equal(classifySubject('fix: prevent authentication bypass'), 'security');
+  });
+});
+
+describe('parseDeletedLines', () => {
+  test('walks old line numbers across zero-context hunks', () => {
+    const diff = [
+      'diff --git a/x.js b/x.js',
+      '--- a/x.js',
+      '+++ b/x.js',
+      '@@ -10,3 +10,2 @@',
+      '-alpha',
+      '-beta',
+      '-gamma',
+      '+zeta'
+    ].join('\n');
+    assert.deepEqual(parseDeletedLines(diff), [
+      { line: 10, content: 'alpha' },
+      { line: 11, content: 'beta' },
+      { line: 12, content: 'gamma' }
+    ]);
+  });
+
+  test('multiple hunks each start their own walk', () => {
+    const diff = ['@@ -1,1 +1,0 @@', '-a', '@@ -40,2 +39,0 @@', '-b', '-c'].join('\n');
+    assert.deepEqual(parseDeletedLines(diff), [
+      { line: 1, content: 'a' },
+      { line: 40, content: 'b' },
+      { line: 41, content: 'c' }
+    ]);
+  });
+});
+
+describe('securityRelevantLines', () => {
+  test('a security check line is recognized, an ordinary line is not', () => {
+    assert.equal(securityRelevantLines(['  if (!authorized) return null;']), true);
+    assert.equal(securityRelevantLines(['export const double = (x) => x * 2;']), false);
+  });
+});
+
+describe('classifyCommit', () => {
+  test('a neutral message whose diff added a sanitizer classifies security', async () => {
+    const repo = await makeRepo();
+    const hash = await commitFiles(repo, 'tweaks', {
+      'src/a.js': 'export function render(input) {\n  const safe = sanitize(input);\n  return safe;\n}\n'
+    });
+    assert.equal(await classifyCommit(repo, hash, 'tweaks'), 'security');
+  });
+
+  test('a genuinely neutral commit stays none', async () => {
+    const repo = await makeRepo();
+    const hash = await commitFiles(repo, 'chore: add a util', {
+      'src/a.js': 'export const double = (x) => x * 2;\n'
+    });
+    assert.equal(await classifyCommit(repo, hash, 'chore: add a util'), 'none');
   });
 });
 
@@ -236,6 +297,133 @@ describe('collectHistoryFacts against a real repository', () => {
     assert.equal(facts[0].evidence.file, 'src/a.js');
     assert.equal(facts[1].detail.classification, 'none');
     assert.equal(facts[1].evidence.file, 'src/b.js');
+  });
+
+  test('a deleted security check is flagged even when its owning commit message is neutral', async () => {
+    // Issue #5 scenario: the classification must not depend on the commit
+    // message alone. A commit that introduced a security check under an
+    // innocent subject ("feat: add the widget") still leaves security code on
+    // the delete list, and that has to be surfaced.
+    const repo = await makeRepo();
+    await commitFiles(repo, 'feat: add the widget', {
+      'src/w.js': ['export function render() {', '  if (!authorized) return;', '  doRender();', '}', ''].join('\n')
+    });
+    const base = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+    await commitFiles(repo, 'refactor: trust the caller', {
+      'src/w.js': ['export function render() {', '  doRender();', '}', ''].join('\n')
+    });
+
+    const { facts, notEvaluated } = await collectHistoryFacts({ cwd: repo, base, head: 'HEAD' });
+    const fact = facts.find(f => f.detail?.classification === 'security');
+    assert.ok(fact, 'deleting a security check must be flagged with a neutral message');
+    assert.equal(fact.detail.classificationBasis, 'deleted-line');
+    assert.equal(fact.detail.originMethod, 'blame');
+    assert.ok(
+      notEvaluated.some(n => n.kind === 'history-origins' && /最后修改/.test(n.reason)),
+      'the blame semantics must be stated when --origins is off'
+    );
+  });
+
+  test('a neutral message whose diff added a sanitizer classifies security by the diff', async () => {
+    // Issue #5 scenario B: "update utils"-style messages whose changed lines
+    // are themselves security vocabulary must not classify as none.
+    const repo = await makeRepo();
+    await commitFiles(repo, 'tweaks', {
+      'src/a.js': 'export function render(input) {\n  const safe = sanitize(input);\n  return safe;\n}\n'
+    });
+    const base = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+    // The deleted line carries no security vocabulary; the signal has to come
+    // from the owning commit's diff, which added the sanitizer.
+    await commitFiles(repo, 'refactor: drop the helper', {
+      'src/a.js': 'export function render(input) {\n  const safe = sanitize(input);\n  return input;\n}\n'
+    });
+
+    const { facts } = await collectHistoryFacts({ cwd: repo, base, head: 'HEAD' });
+    assert.equal(facts.length, 1);
+    assert.equal(facts[0].detail.classification, 'security');
+    assert.equal(facts[0].detail.classificationBasis, 'diff');
+  });
+
+  test('--origins re-attributes a duplicated guard to the commit that first introduced it', async () => {
+    // Issue #5 scenario A: blame answers "who last touched the line" (here: the
+    // chore commit that duplicated the guard); --origins answers "who first
+    // introduced the content" (the security fix). The fact must carry both and
+    // stand on the introducing commit.
+    const repo = await makeRepo();
+    const fix = await commitFiles(repo, 'fix: prevent an authorization bypass', {
+      'src/svc.js': [
+        'export function svc(x) {',
+        '  if (!authorized) return null;',
+        '  return x;',
+        '}',
+        ''
+      ].join('\n')
+    });
+    const chore = await commitFiles(repo, 'chore: reuse the same guard in a second route', {
+      'src/svc.js': [
+        'export function svc(x) {',
+        '  if (!authorized) return null;',
+        '  return x;',
+        '}',
+        'export function svc2(y) {',
+        '  if (!authorized) return null;',
+        '  return y;',
+        '}',
+        ''
+      ].join('\n')
+    });
+    const base = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+    // The change under audit deletes the second copy of the guard.
+    await commitFiles(repo, 'refactor: drop the duplicate route', {
+      'src/svc.js': [
+        'export function svc(x) {',
+        '  if (!authorized) return null;',
+        '  return x;',
+        '}',
+        ''
+      ].join('\n')
+    });
+
+    // Without --origins the deleted guard is still flagged (security code was
+    // deleted), but the attribution is blame's: the chore commit.
+    const plain = await collectHistoryFacts({ cwd: repo, base, head: 'HEAD' });
+    const plainSecurity = plain.facts.find(f => f.detail?.classification === 'security');
+    assert.ok(plainSecurity, 'the deleted guard must be flagged without --origins too');
+    assert.equal(plainSecurity.detail.originMethod, 'blame');
+    assert.equal(plainSecurity.evidence.commit, chore);
+
+    // With --origins the deleted guard is re-attributed to the security fix.
+    const withOrigins = await collectHistoryFacts({ cwd: repo, base, head: 'HEAD', origins: true });
+    const refined = withOrigins.facts.filter(f => f.detail?.originMethod === 'pickaxe');
+    assert.ok(refined.length >= 1, '--origins must split out the refined origin fact');
+    const origin = refined[0];
+    assert.equal(origin.evidence.commit, fix, 'the deleted copy traces back to the introducing security fix');
+    assert.equal(origin.detail.originCommit, fix);
+    assert.equal(origin.detail.blameCommit, chore, 'blame attribution is kept as context');
+    assert.equal(origin.detail.classification, 'security');
+    assert.match(origin.statement, /最初由提交/, 'the statement says 最初引入');
+    assert.match(origin.statement, /最后修改者/, 'and names the blame owner');
+    assert.match(origin.command, /git log --format=%H -S/, 'the reproduction command is the origin probe');
+  });
+
+  test('hitting the --origins cap is recorded rather than silently truncating', async () => {
+    const repo = await makeRepo();
+    const lines = Array.from({ length: 8 }, (_, i) => `export const a${i} = ${i};`);
+    await commitFiles(repo, 'feat: many constants', { 'src/m.js': `${lines.join('\n')}\n` });
+    const base = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+    await commitFiles(repo, 'refactor: drop them all', { 'src/m.js': 'export const keep = 1;\n' });
+
+    const { notEvaluated } = await collectHistoryFacts({
+      cwd: repo,
+      base,
+      head: 'HEAD',
+      origins: true,
+      maxOrigins: 3
+    });
+    assert.ok(
+      notEvaluated.some(n => /来源探针上限 3 已用尽/.test(n.reason)),
+      'a cap that changed the answer must appear in the coverage report'
+    );
   });
 });
 

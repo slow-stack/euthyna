@@ -48,3 +48,21 @@ describe('the discipline stays mechanically enforceable', () => {
     assert.match(text, /降级为「观察」/, 'the downgrade-to-observation rule must stay');
   });
 });
+
+describe('the invocation policy uses the keys the harness reads', () => {
+  // Measured against @deepseek-ai/dsh-skill-filesystem 0.1.5-rc.2: the policy
+  // comes from two TOP-LEVEL frontmatter keys, `disable-model-invocation` and
+  // `user-invocable` (lib/index.js:841-851). A nested `invocation:` mapping —
+  // the shape this file used to carry — is not read at all: it parses, no
+  // warning is logged, and the skill silently becomes model-invocable, which is
+  // the opposite of what it says. The legacy top-level spellings are rejected
+  // outright.
+  test('the policy is declared top-level, and no ignored mapping survives', async () => {
+    const text = await readFile(skill('SKILL.md'), 'utf8');
+    const frontmatter = text.split('---')[1] ?? '';
+    assert.match(frontmatter, /^disable-model-invocation: true$/m, 'the harness reads a top-level disable-model-invocation');
+    assert.match(frontmatter, /^user-invocable: true$/m, 'the harness reads a top-level user-invocable');
+    assert.doesNotMatch(frontmatter, /^\s*invocation:/m, 'a nested invocation mapping is ignored, so it states policy while doing nothing');
+    assert.doesNotMatch(frontmatter, /^\s*modelInvocable:/m, 'modelInvocable is a rejected legacy key');
+  });
+});

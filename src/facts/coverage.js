@@ -119,9 +119,16 @@ export function detectCoverageFormat(coverage) {
   const entries = Object.entries(coverage).filter(([, v]) => v && typeof v === 'object');
   if (entries.length === 0) return null;
 
+  // A real c8/istanbul entry carries both `fnMap` (function metadata) and `f`
+  // (per-index invocation counts). Requiring both stops a partial shape — a
+  // file with `fnMap` but no `f`, say — from being classified as coverage and
+  // then emitting "never invoked" for a count a missing `f` defaults to zero.
+  // coverage.py's per-file `functions` is only valid inside a `meta.files`
+  // report, which isCoveragePyReport already handled above; a bare `functions`
+  // object is not a JS report and must not be accepted here.
   const jsShaped = entries.some(
     ([, e]) =>
-      (e.fnMap && typeof e.fnMap === 'object') || (e.functions && typeof e.functions === 'object')
+      e.fnMap && typeof e.fnMap === 'object' && e.f && typeof e.f === 'object'
   );
   if (!jsShaped) return null;
 

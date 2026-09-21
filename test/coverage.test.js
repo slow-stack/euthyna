@@ -397,6 +397,30 @@ describe('coverage facts — classic istanbul (jest / nyc) and format detection'
     assert.match(notEvaluated[0].reason, /不是可识别的报告形状/);
   });
 
+  test('a partial shape with fnMap but no f is not evaluated, never "never invoked"', async () => {
+    // A file carrying fnMap without the f invocation counters is not a coverage
+    // report — accepting it would default every count to zero and fabricate an
+    // "established: never invoked" fact from arbitrary JSON.
+    const file = await writeCoverage('partial.json', {
+      '/proj/src/guard.js': {
+        path: '/proj/src/guard.js',
+        fnMap: { 0: { name: 'checkPermission', decl: { start: { line: 12 } }, loc: { start: { line: 12 } }, line: 12 } },
+        statementMap: {},
+        s: {}
+      }
+    });
+
+    const { facts, notEvaluated, measured } = await collectCoverageFacts({
+      coverageFile: file,
+      targets: [{ symbol: 'checkPermission' }]
+    });
+
+    assert.equal(facts.length, 0);
+    assert.equal(measured, false);
+    assert.equal(notEvaluated.length, 1);
+    assert.match(notEvaluated[0].reason, /不是可识别的报告形状/);
+  });
+
   test('a renamed symbol is unknown, never "established as never invoked"', async () => {
     const file = await writeCoverage('renamed.json', Object.fromEntries([
       entry('/proj/src/guard.js', [{ name: 'oldName', line: 12, count: 0 }])

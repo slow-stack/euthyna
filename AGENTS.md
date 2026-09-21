@@ -57,16 +57,42 @@ Not inferred. Do not re-research these.
 ### npm publication
 
 - `euthyna@0.1.0` published 2026-09-21, unscoped name (`npm install -g euthyna`).
-  Publish-prep commit `783a494`; CI `35568417444` green; registry shasum
+  Publish-prep commit `783a494`; CI `35568417444` green — that run is the `CI`
+  workflow for the publish-prep commit, **not** a publish run; registry shasum
   `95d2573a08…` byte-identical to the locally smoke-tested tarball. Tag `v0.1.0`
   and its [release](https://github.com/slow-stack/euthyna/releases/tag/v0.1.0)
-  followed the same day.
+  followed the same day. The upload itself was manual, approved with an
+  interactive 2FA challenge — see the `EOTP` entry below.
+- `euthyna@0.1.1` published 2026-09-21 the same way: manual upload (tarball
+  shasum `5f568d0321f37df10e938beea04ef7c99531b270`), tag run `35621228533`
+  green (suite + `npm whoami` passed; the upload was skipped as
+  already-published), GitHub release cut by hand.
 - 🧪 Releases run through `.github/workflows/publish.yml`: pushing a `v*` tag
   (the tag must match `package.json`) runs the suite, proves the token with
   `npm whoami`, and publishes with `--provenance`; a version already on the
   registry is skipped by the gate instead of failing the run. The token is a
   Granular Access Token scoped to the euthyna package, stored in the
   `NPM_TOKEN` repository secret.
+- ⚠️ **`EOTP` — the token cannot publish. A conclusion this project got wrong.**
+  An earlier claim here was that the token exists so a release does not need the
+  account owner's browser for the 2FA approval. Measured 2026-09-21 on `v0.1.1`:
+  the workflow reaches the registry and then fails with `EOTP` —
+  *"npm tokens that bypass 2FA are being restricted for account changes and
+  direct publishing"*. npm's
+  [2026-07-31 changelog](https://github.blog/changelog/2026-07-31-restricting-npm-bypass-2fa-granular-access-tokens/)
+  restricts bypass-2FA tokens for account/org/package management and targets
+  January 2027 for removing token-based direct publishing; the follow-up
+  [2026-09-18 stage-only tokens](https://github.blog/changelog/2026-09-18-stage-only-npm-tokens-for-safer-automation)
+  are opt-in and do not change existing tokens. Two consequences to know before
+  touching a release: a manual upload carries **no provenance attestation**
+  (`https://registry.npmjs.org/-/npm/v1/attestations/euthyna@0.1.1` → 404), and
+  because the release step is gated on `already-published != true`, **the
+  workflow skips the GitHub release too** — after a manual publish, cut it with
+  `gh release create`. Migration path: trusted publishing (OIDC), which this
+  workflow is already shaped for (`id-token: write`, GitHub-hosted runner);
+  npmjs.com → the package → Settings → Publishing access → add a GitHub Actions
+  publisher for `publish.yml`. A configuration created after 2026-09-03 allows
+  only `npm stage publish` unless direct `npm publish` is selected explicitly.
 - 🧪 The workflow cuts the GitHub release from a versioned template
   (`.github/release-notes-template.md`, a `{{version}}` placeholder is
   substituted at publish time): every release carries one fixed format, and
@@ -75,15 +101,24 @@ Not inferred. Do not re-research these.
   run `35577551209` (commit `1e65d0a`) rendered the template with `0.1.0`
   substituted; the release itself is created only on a `v*` tag push, titled
   `euthyna <version>`. `v0.1.0`'s release predates the template and keeps its
-  hand-written notes.
+  hand-written notes; `v0.1.1`'s was created with `gh release create` from a
+  template render whose publish bullet was corrected by hand, because the
+  workflow skipped the release (see the `EOTP` entry above).
 - 🧪 Set the secret through the GitHub web UI. `gh secret set` with its hidden
   paste prompt stored an **empty** value twice on this machine's embedded
   terminal (the browser field works); the workflow's `npm whoami` step is what
   catches an empty or invalid token before anything ships.
-- 🧪 Local npm still needs the proxy env (`HTTPS_PROXY`/`HTTP_PROXY` =
-  `127.0.0.1:7897`), and a manual `npm publish` from a non-interactive shell
-  gets `EOTP` with a masked URL — the interactive-terminal browser approval is
-  the manual fallback when a tag push is not an option.
+- 🧪 Local npm still needs the proxy env, **with the scheme**: `HTTPS_PROXY` /
+  `HTTP_PROXY` = `http://127.0.0.1:7897`. The bare `127.0.0.1:7897` form makes
+  `npm publish` die with `ERR_INVALID_URL` inside `@npmcli/agent`'s
+  `new URL(proxy)` (`lib/proxy.js:81`) — measured 2026-09-21; `npm view`
+  tolerates the bare form, `npm publish` does not.
+- 🧪 The working manual publish path on this machine: run `npm publish` in the
+  sidebar's embedded terminal with the proxy env above. It packs, prints
+  `Authenticate your account at: https://www.npmjs.com/auth/cli/<id>`, and
+  completes once the owner approves in the browser (from a non-interactive shell
+  the same command fails `EOTP` with a masked URL). This is how `0.1.0` and
+  `0.1.1` were published; the release is then cut with `gh release create`.
 
 ### Skill contract
 
@@ -203,6 +238,7 @@ Full analysis: `docs/dsh-stop-gate.md`.
 |---|---|
 | `web_search` / `web_fetch` fail with "Every engine failed" or "resolves to a non-public IP" | DNS is fake-ip (198.18.x.x). Use the Node scripts in `tools/`, which go through a local proxy CONNECT tunnel on `127.0.0.1:7897` |
 | Direct connections to `registry.npmjs.org` etc. fail | Same proxy tunnel |
+| **A bare `host:port` in `HTTPS_PROXY`/`HTTP_PROXY` breaks `npm publish` with `ERR_INVALID_URL`** | 🧪 Measured 2026-09-21: `@npmcli/agent` builds the proxy URL with `new URL(proxy)` (`lib/proxy.js:81`), which rejects `127.0.0.1:7897`. Use `http://127.0.0.1:7897`. `npm view` tolerates the bare form; `npm publish` does not |
 | `curl` reports `schannel: SEC_E_NO_CREDENTIALS` | The sandbox cannot acquire certificate credentials; use Node, which has its own TLS stack |
 | `node -e "..."` breaks under PowerShell quoting | Write the script to a `.js` file and run that |
 | **`gh search code` mangles a phrase containing `-S`** (it treats it as a flag) | Use `gh api "search/code?q=<url-encoded>"` instead |

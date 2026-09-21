@@ -165,8 +165,10 @@ This project tries to be explicit about the difference. Current state:
   [crewAI](https://github.com/crewAIInc/crewAI) (Python); deleted lines attributed to the
   commits that introduced them, then checked **by hand** against `git blame`. The checks
   developed for that comparison now run as regression tests in the suite.
-- **`coverage` on real output in two formats** — c8/V8 JSON and coverage.py JSON (format 3) —
-  distinguishing all three states correctly.
+- **`coverage` on real output in three formats** — c8/V8 JSON, classic istanbul (jest/nyc, same
+  fnMap/f shape) and coverage.py JSON (format 3) — distinguishing all three states correctly, and
+  refusing anything that is not a recognizable coverage report instead of answering "symbol not
+  located" against it.
 - **Adjudication recall and specificity**, measured blind: **10/10 cases**, 4 real
   vulnerabilities all caught, 6 non-vulnerabilities all correctly cleared, no abstentions.
   Round 2 repeated every case three times — **30 adjudications, zero flips**, four of them

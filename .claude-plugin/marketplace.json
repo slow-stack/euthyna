@@ -1,0 +1,11 @@
+{
+  "name": "euthyna",
+  "owner": { "name": "modusensus", "url": "https://github.com/slow-stack" },
+  "metadata": {
+    "description": "euthyna — the adjudication discipline and delivery gate for code security audits, as a portable skill for AI coding agents.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    { "name": "euthyna", "source": "." }
+  ]
+}

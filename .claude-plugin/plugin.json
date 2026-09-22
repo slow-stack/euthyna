@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/claude-plugin.json",
+  "name": "euthyna",
+  "description": "The adjudication discipline and delivery gate for code security audits. Supplies deterministic facts an agent cannot compute (deleted-code provenance, symbol invocations, coverage), judges every claim against six gates, and downgrades what cannot produce evidence to an observation.",
+  "version": "0.2.0",
+  "author": { "name": "modusensus", "url": "https://github.com/slow-stack" },
+  "skills": ["./.agents/skills/euthyna", "./.agents/skills/euthyna-en"],
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/slow-stack/euthyna",
+  "repository": "https://github.com/slow-stack/euthyna",
+  "keywords": ["security", "audit", "code-review", "vulnerability", "claude-code", "claude"]
+}

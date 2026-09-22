@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/slow-stack/euthyna/actions/workflows/ci.yml"><img src="https://github.com/slow-stack/euthyna/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.skills.sh/slow-stack/euthyna"><img src="https://skills.sh/b/slow-stack/euthyna.svg" alt="Agent skills installs"></a>
 </p>
 
 **euthyna is a code security audit framework for AI coding agents.** It is not another
@@ -94,7 +95,7 @@ the project is deliberately zero-dependency.
 | Host | The skill (audit discipline) | The CLI (fact producers) |
 |---|---|---|
 | **DSH** | `dsh plugin --profile web add euthyna` — the npm package mounts its own skill; or copy `.agents/skills/euthyna/` into `~/.agents/skills/` (user-wide) or `<project>/.agents/skills/`. Markdown hot-reloads; no restart needed. | `npm install -g euthyna` — runs in any terminal |
-| **Claude Code** | Copy the same folder into `~/.claude/skills/` | Same |
+| **Claude Code** | `/plugin marketplace add slow-stack/euthyna` then `/plugin install euthyna@euthyna`, or copy `.agents/skills/euthyna/` into `~/.claude/skills/` | Same |
 | **Codex** | The same Markdown layer works; packaging goes through Codex's plugin/marketplace format | Same |
 | **Hermes** | Copy the same folder into `~/.hermes/skills/` under a category folder, or install from a repo with `hermes skills install` — and for the slash command, install the repo as a plugin (see below) | Same |
 | **OpenCode** | Copy the same folder into `~/.agents/skills/` or `~/.config/opencode/skills/` (OpenCode loads both; unknown frontmatter fields are ignored) | Same |

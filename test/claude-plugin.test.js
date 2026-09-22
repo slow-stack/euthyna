@@ -23,7 +23,10 @@ describe('the package is installable as a Claude Code plugin', () => {
       await access(path.join(ROOT, skill, 'SKILL.md'));
       const front = await readFile(path.join(ROOT, skill, 'SKILL.md'), 'utf8');
       assert.match(front, /^name: /m, `${skill} declares a stable invocation name`);
-      assert.match(front, /^description: '/m, `${skill} description is quoted (bare ": " breaks YAML)`);
+      const desc = front.match(/^description: (.*)$/m)?.[1] ?? '';
+      if (!desc.startsWith("'") && !desc.startsWith('"')) {
+        assert.ok(!desc.includes(': '), `${skill} description has a bare ": " — quote it or YAML parsers reject the file`);
+      }
     }
   });
 

@@ -1,0 +1,8 @@
+name: euthyna
+version: 0.2.0
+description: euthyna audit discipline — slash commands that drive the euthyna fact-producing CLI (history / coverage / deps / gate)
+license: Apache-2.0
+homepage: https://github.com/slow-stack/euthyna
+tags:
+  - security
+  - audit

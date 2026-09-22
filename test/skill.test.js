@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const skill = (rel) => path.join(ROOT, '.agents', 'skills', 'euthyna', rel);
+const skillEn = (rel) => path.join(ROOT, '.agents', 'skills', 'euthyna-en', rel);
 
 describe('the skill still declares the six gates', () => {
   test('all six gate names are present in verification-gates.md', async () => {
@@ -64,5 +65,43 @@ describe('the invocation policy uses the keys the harness reads', () => {
     assert.match(frontmatter, /^user-invocable: true$/m, 'the harness reads a top-level user-invocable');
     assert.doesNotMatch(frontmatter, /^\s*invocation:/m, 'a nested invocation mapping is ignored, so it states policy while doing nothing');
     assert.doesNotMatch(frontmatter, /^\s*modelInvocable:/m, 'modelInvocable is a rejected legacy key');
+  });
+});
+
+describe('the English skill mirrors the discipline', () => {
+  test('all six gate names are present in English in verification-gates.md', async () => {
+    const text = await readFile(skillEn('references/verification-gates.md'), 'utf8');
+    for (const gate of ['Process', 'Reachability', 'Real Impact', 'PoC Verification', 'Mathematical Boundary', 'Environment']) {
+      assert.match(text, new RegExp(gate), `the English "${gate}" gate must stay in the skill`);
+    }
+  });
+
+  test('the English verdict rules are written down', async () => {
+    const text = await readFile(skillEn('references/verification-gates.md'), 'utf8');
+    assert.match(text, /All gates passed/i, 'all gates pass -> TRUE POSITIVE');
+    assert.match(text, /FAIL/i, 'any gate fail -> FALSE POSITIVE');
+    // The report marker is `NOT EVALUATED` (with a space); the rule table may
+    // also spell the state `not_evaluated` (snake_case, as in the source). Both
+    // are the same not-evaluated -> INCONCLUSIVE rule, so both are accepted.
+    assert.match(text, /not[_ ]evaluated/i, 'a not-evaluated gate -> INCONCLUSIVE');
+  });
+
+  test('the English SKILL.md carries the verdicts, the enforcer and the downgrade rule', async () => {
+    const text = await readFile(skillEn('SKILL.md'), 'utf8');
+    for (const verdict of ['TRUE POSITIVE', 'FALSE POSITIVE', 'INCONCLUSIVE']) {
+      assert.match(text, new RegExp(verdict), `the ${verdict} verdict must stay`);
+    }
+    assert.match(text, /path:L\d+/, 'evidence must be file:line, not a bare file name');
+    assert.match(text, /euthyna gate/, 'the skill must point at the programmatic gate');
+    assert.match(text, /downgraded to "observation"/, 'the downgrade-to-observation rule must stay in English');
+    assert.match(text, /All gates passed\. Evidence:/, 'the English adjudication markers must be the ones the gate parser reads');
+  });
+
+  test('the English invocation policy is declared top-level', async () => {
+    const text = await readFile(skillEn('SKILL.md'), 'utf8');
+    const frontmatter = text.split('---')[1] ?? '';
+    assert.match(frontmatter, /^name: euthyna-en$/m, 'the English skill is a distinct loadable skill');
+    assert.match(frontmatter, /^disable-model-invocation: true$/m, 'the harness reads a top-level disable-model-invocation');
+    assert.match(frontmatter, /^user-invocable: true$/m, 'the harness reads a top-level user-invocable');
   });
 });

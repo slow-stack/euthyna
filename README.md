@@ -96,9 +96,14 @@ the project is deliberately zero-dependency.
 | **DSH** | `dsh plugin --profile web add euthyna` — the npm package mounts its own skill; or copy `.agents/skills/euthyna/` into `~/.agents/skills/` (user-wide) or `<project>/.agents/skills/`. Markdown hot-reloads; no restart needed. | `npm install -g euthyna` — runs in any terminal |
 | **Claude Code** | Copy the same folder into `~/.claude/skills/` | Same |
 | **Codex** | The same Markdown layer works; packaging goes through Codex's plugin/marketplace format | Same |
-| **Hermes** | Copy the same folder into `~/.hermes/skills/` under a category folder (Hermes reads the open skill standard; or install from a repo with `hermes skills install`) | Same |
+| **Hermes** | Copy the same folder into `~/.hermes/skills/` under a category folder, or install from a repo with `hermes skills install` — and for the slash command, install the repo as a plugin (see below) | Same |
 | **OpenCode** | Copy the same folder into `~/.agents/skills/` or `~/.config/opencode/skills/` (OpenCode loads both; unknown frontmatter fields are ignored) | Same |
 | **Any terminal** | — | `npm install -g euthyna`, then `euthyna …` |
+
+The skill ships in two languages. The directory above is the Chinese original (`euthyna`);
+an English mirror lives at `.agents/skills/euthyna-en/` (skill name `euthyna-en`) — install
+that one for an English-speaking agent, or translate the folder yourself. Both define the
+same discipline, and `euthyna gate` accepts report markers in either language.
 
 Two honest notes:
 
@@ -107,9 +112,10 @@ Two honest notes:
   keep this repository checked out; on a host without the CLI, the skill requires the
   unmeasurable criteria to be recorded as *not evaluated* rather than guessed at — that
   fallback is the design, not a gap.
-- **The skill text and the CLI's reports are currently written in Chinese.** The
-  discipline is host-agnostic Markdown, but an English reader should expect Chinese
-  output from the tool itself.
+- **The CLI speaks Chinese by default, English on request.** Output is Chinese unless you
+  pass `--lang en` (any command) or set `EUTHYNA_LANG=en`; the default never changes for
+  existing users. The skill text and the CLI's reports exist in both languages — the
+  English reader should expect Chinese only from a run that did not ask for English.
 
 ---
 
@@ -139,7 +145,7 @@ replying in chat.
 | Claude Code | `/euthyna <path>` | copy `.claude/commands/euthyna.md` from the package into `~/.claude/commands/` (user-wide) or `.claude/commands/` (project) |
 | Codex | — | Codex's custom-prompt slash commands (`~/.codex/prompts/`) are deprecated upstream; the same Markdown can still be placed there manually |
 | DSH | `/euthyna` | installed with the plugin; after a restart the command prints the usage manual (DSH slash commands run without reaching the model) |
-| Hermes | — | follow Hermes' own command mechanism; the skill folder installs as documented above |
+| Hermes | `/euthyna <subcommand> <args…>` | install this repository as a Hermes plugin: `hermes plugins install slow-stack/euthyna` then `hermes plugins enable euthyna` (needs Node >= 20 on PATH; the repo root carries `plugin.yaml` + `__init__.py`). The command forwards to the CLI and prints its output without reaching the model. The skill itself can still be installed separately with `hermes skills install slow-stack/euthyna/.agents/skills/euthyna` |
 
 ### How to tell it was euthyna that audited
 
@@ -295,6 +301,7 @@ This project tries to be explicit about the difference. Current state:
 euthyna/
 ├── bin/  src/  test/        Fact producers (zero dependencies, Node >= 20)
 ├── .agents/skills/euthyna/  The audit discipline, as a portable skill
+├── plugin.yaml  __init__.py  Hermes plugin: the /euthyna slash command
 ├── bench/                   Blind recall benchmark + results
 ├── docs/                    Design notes and case studies (English and Chinese)
 ├── tools/                   Research and verification scripts

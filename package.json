@@ -11,8 +11,11 @@
     "bin/",
     "src/",
     "plugin/",
+    "plugin.yaml",
+    "__init__.py",
     "cordis.patch.yml",
     ".agents/skills/euthyna/",
+    ".agents/skills/euthyna-en/",
     ".claude/commands/",
     "assets/euthyna.png",
     "NOTICE.md"

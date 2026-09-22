@@ -20,6 +20,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { makeFact, notEvaluated as notEvaluatedEntry, KIND, STATUS, shellQuote } from '../contract.js';
+import { T, DEFAULT_LANG } from '../lang.js';
 
 /** c8's default exclusions. A production file matching one of these vanishes from the report. */
 const C8_DEFAULT_EXCLUDES = [
@@ -210,7 +211,8 @@ function locateSymbolInEntry(entry, symbol) {
  * @param {string} options.coverageFile
  * @param {Array<{file?: string, symbol: string}>} options.targets
  */
-export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) {
+export async function collectCoverageFacts({ coverageFile, targets = [], lang = DEFAULT_LANG } = {}) {
+  const t = T(lang);
   const facts = [];
   const evaluated = [];
   const notEvaluated = [];
@@ -223,8 +225,12 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
     notEvaluated.push(
       notEvaluatedEntry(
         KIND.TEST_COVERAGE,
-        `无法读取覆盖率数据 ${coverageFile}: ${error.code ?? error.message}。` +
-          '未运行测试或测试未产出覆盖率时，这属于「未评估」，不是「未被覆盖」'
+        t(
+          `无法读取覆盖率数据 ${coverageFile}: ${error.code ?? error.message}。` +
+            '未运行测试或测试未产出覆盖率时，这属于「未评估」，不是「未被覆盖」',
+          `cannot read coverage data ${coverageFile}: ${error.code ?? error.message}. ` +
+            'When no tests ran or none produced coverage, this is "not evaluated", not "not covered"'
+        )
       )
     );
     return { facts, evaluated, notEvaluated, measured: false };
@@ -245,8 +251,13 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
     notEvaluated.push(
       notEvaluatedEntry(
         KIND.TEST_COVERAGE,
-        '覆盖率数据为空对象。这通常意味着测试运行没有加载到被测代码（常见于缺少 --all 或 --source），' +
-          '因此任何「未在数据中」的文件都必须按未覆盖处理，而这里连文件清单都没有'
+        t(
+          '覆盖率数据为空对象。这通常意味着测试运行没有加载到被测代码（常见于缺少 --all 或 --source），' +
+            '因此任何「未在数据中」的文件都必须按未覆盖处理，而这里连文件清单都没有',
+          'Coverage data is an empty object. This usually means the test run never loaded the code under test ' +
+            '(commonly a missing --all or --source), so any file "not in the data" must be treated as uncovered — ' +
+            'and here there is not even a file list'
+        )
       )
     );
     return { facts, evaluated, notEvaluated, measured: false };
@@ -260,15 +271,24 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
     notEvaluated.push(
       notEvaluatedEntry(
         KIND.TEST_COVERAGE,
-        '覆盖率数据不是可识别的报告形状（既无 c8/istanbul 的 fnMap/f，也无 coverage.py 的 functions）——' +
-          '它可能根本不是覆盖率文件，任何「符号未定位/未覆盖」的结论在此都不可信'
+        t(
+          '覆盖率数据不是可识别的报告形状（既无 c8/istanbul 的 fnMap/f，也无 coverage.py 的 functions）——' +
+            '它可能根本不是覆盖率文件，任何「符号未定位/未覆盖」的结论在此都不可信',
+          'Coverage data is not a recognizable report shape (neither c8/istanbul\'s fnMap/f nor coverage.py\'s functions) — ' +
+            'it may not be a coverage file at all, and any "symbol not located / not covered" conclusion is untrustworthy here'
+        )
       )
     );
     return { facts, evaluated, notEvaluated, measured: false };
   }
 
   if (targets.length === 0) {
-    notEvaluated.push(notEvaluatedEntry(KIND.TEST_COVERAGE, '没有指定要查询的符号（--symbol）'));
+    notEvaluated.push(
+      notEvaluatedEntry(
+        KIND.TEST_COVERAGE,
+        t('没有指定要查询的符号（--symbol）', 'no symbol requested for query (--symbol)')
+      )
+    );
     return { facts, evaluated, notEvaluated, measured: false };
   }
 
@@ -277,8 +297,12 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
       notEvaluated.push(
         notEvaluatedEntry(
           KIND.TEST_COVERAGE,
-          `${target.file} 命中默认排除规则（c8 排除 test/ 等目录），很可能根本不在覆盖率数据里。` +
-            '需要显式 --all（c8）或 --source（coverage.py）或调整 exclude 才能测到它'
+          t(
+            `${target.file} 命中默认排除规则（c8 排除 test/ 等目录），很可能根本不在覆盖率数据里。` +
+              '需要显式 --all（c8）或 --source（coverage.py）或调整 exclude 才能测到它',
+            `${target.file} matches a default exclusion rule (c8 excludes test/ etc.), so it is likely absent from the coverage data entirely. ` +
+              'Explicit --all (c8) or --source (coverage.py), or adjusting exclude, is required to measure it'
+          )
         )
       );
     }
@@ -293,8 +317,12 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
           id: `coverage-${++counter}`,
           kind: KIND.TEST_COVERAGE,
           statement:
-            `${target.file} 完全没有出现在覆盖率数据中 —— 测试运行期间该文件未被加载，` +
-            `因此其中的符号 ${target.symbol} 未曾被执行`,
+            t(
+              `${target.file} 完全没有出现在覆盖率数据中 —— 测试运行期间该文件未被加载，` +
+                `因此其中的符号 ${target.symbol} 未曾被执行`,
+              `${target.file} does not appear in the coverage data at all — the file was never loaded during the test run, ` +
+                `so the symbol ${target.symbol} inside it was never executed`
+            ),
           status: STATUS.ESTABLISHED,
           evidence: { file: target.file },
           method: 'command',
@@ -322,8 +350,12 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
               id: `coverage-${++counter}`,
               kind: KIND.TEST_COVERAGE,
               statement:
-                `符号 ${target.symbol} 在本次测试运行中一次都没有被调用（调用计数为 0）—— ` +
-                `任何依赖它的行为都没有被执行验证`,
+                t(
+                  `符号 ${target.symbol} 在本次测试运行中一次都没有被调用（调用计数为 0）—— ` +
+                    `任何依赖它的行为都没有被执行验证`,
+                  `Symbol ${target.symbol} was never invoked in this test run (invocation count 0) — ` +
+                    `any behavior depending on it was never exercised`
+                ),
               status: STATUS.ESTABLISHED,
               evidence: { file: entryPath, line },
               method: 'command',
@@ -341,10 +373,18 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
               kind: KIND.TEST_COVERAGE,
               statement:
                 isPy
-                  ? `符号 ${target.symbol} 至少被调用过一次，但被调用**不能**证明任何特定调用点执行过 —— ` +
-                    `本事实只能证伪，不能证实`
-                  : `符号 ${target.symbol} 被调用了 ${count} 次，但调用计数非零**不能**证明任何特定调用点执行过 —— ` +
-                    `本事实只能证伪，不能证实`,
+                  ? t(
+                      `符号 ${target.symbol} 至少被调用过一次，但被调用**不能**证明任何特定调用点执行过 —— ` +
+                        `本事实只能证伪，不能证实`,
+                      `Symbol ${target.symbol} was invoked at least once, but being invoked **cannot** prove any specific call site ran — ` +
+                        `this fact can only falsify, never confirm`
+                    )
+                  : t(
+                      `符号 ${target.symbol} 被调用了 ${count} 次，但调用计数非零**不能**证明任何特定调用点执行过 —— ` +
+                        `本事实只能证伪，不能证实`,
+                      `Symbol ${target.symbol} was invoked ${count} time(s), but a non-zero invocation count **cannot** prove any specific call site ran — ` +
+                        `this fact can only falsify, never confirm`
+                    ),
               status: STATUS.UNKNOWN,
               evidence: { file: entryPath, line },
               method: 'command',
@@ -366,13 +406,19 @@ export async function collectCoverageFacts({ coverageFile, targets = [] } = {}) 
           id: `coverage-${++counter}`,
           kind: KIND.TEST_COVERAGE,
           statement:
-            `未能在覆盖率数据中定位符号 ${target.symbol}` +
-            (target.file ? `（限定文件 ${target.file}）` : '') +
+            t(
+              `未能在覆盖率数据中定位符号 ${target.symbol}`,
+              `Could not locate symbol ${target.symbol} in the coverage data`
+            ) +
+            (target.file ? t(`（限定文件 ${target.file}）`, ` (restricted to file ${target.file})`) : '') +
             (isPy
-              ? ' —— 可能是被重命名、被内联，或它只在模块顶层出现'
-              : ' —— 可能是被重命名、被内联，或它只在模块顶层出现（c8 把这类调用点放在 branchMap 而非 fnMap）'),
+              ? t(' —— 可能是被重命名、被内联，或它只在模块顶层出现', ' — it may have been renamed, inlined, or it only appears at module top level')
+              : t(
+                  ' —— 可能是被重命名、被内联，或它只在模块顶层出现（c8 把这类调用点放在 branchMap 而非 fnMap）',
+                  ' — it may have been renamed, inlined, or it only appears at module top level (c8 places such call sites in branchMap, not fnMap)'
+                )),
           status: STATUS.UNKNOWN,
-          evidence: { file: target.file ?? '(未限定文件)' },
+          evidence: { file: target.file ?? t('(未限定文件)', '(unrestricted file)') },
           method: 'static',
           detail: { symbol: target.symbol, reason: 'symbol_not_located_in_fnmap' }
         })

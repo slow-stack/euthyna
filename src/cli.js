@@ -22,6 +22,7 @@ import { collectDependencyFacts } from './facts/deps.js';
 import { parseGateReport, validateFindings, verifyFinding, renderGateReport } from './gate.js';
 import { makeReport, renderReport, safeTextLines, KIND } from './contract.js';
 import { repoToplevel, revParse } from './git.js';
+import { resolveLang, T, isLang, DEFAULT_LANG } from './lang.js';
 
 export const EXIT = Object.freeze({
   CLEAN: 0,
@@ -33,20 +34,32 @@ export const EXIT = Object.freeze({
 const HISTORY_PRODUCER = {
   name: 'euthyna-history',
   version: '0.1.0',
-  purpose: '被删除代码的来源归属与安全分类'
+  purpose: '被删除代码的来源归属与安全分类',
+  purposeEn: 'attribution and security classification of deleted code'
 };
 const COVERAGE_PRODUCER = {
   name: 'euthyna-coverage',
   version: '0.1.0',
-  purpose: '符号调用计数（只能证伪）'
+  purpose: '符号调用计数（只能证伪）',
+  purposeEn: 'symbol invocation counts (can only falsify)'
 };
 const DEPS_PRODUCER = {
   name: 'euthyna-deps',
   version: '0.1.0',
-  purpose: '依赖锁定版本（读取 lockfile，不含漏洞判定）'
+  purpose: '依赖锁定版本（读取 lockfile，不含漏洞判定）',
+  purposeEn: 'dependency pinned versions (reads lockfiles, no vulnerability verdict)'
 };
 
-const HELP = `
+/** The producer object that goes into a report, with its purpose in the active language. */
+function producerFor(producer, lang) {
+  return {
+    name: producer.name,
+    version: producer.version,
+    purpose: lang === 'en' ? producer.purposeEn : producer.purpose
+  };
+}
+
+const HELP_ZH = `
 euthyna —— 给 AI 编码 agent 用的确定性事实产出器
 
 它不是扫描器。它只回答两个模型算不准的问题，并把答案写成带证据的事实。
@@ -56,6 +69,8 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
   euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--json]
   euthyna deps     [--repo <dir>] [--lockfile <file>] --dep <name> [--dep <name>] [--json]
   euthyna gate     <报告文件> [--verify] [--cwd <dir>] [--json]
+
+语言: 默认中文。加 --lang en 或设环境变量 EUTHYNA_LANG=en 切换英文输出。
 
 命令:
   history    本次变更删掉了哪些代码、它们分别由哪个提交引入、该提交是不是安全修复
@@ -89,6 +104,64 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
 
 注意: 缺数据不等于干净。无法测量的判据会列在输出的「未评估的判据」一节。
 `;
+
+const HELP_EN = `
+euthyna — deterministic fact producer for AI coding agents
+
+It is not a scanner. It answers only the two questions a model cannot compute
+reliably, and writes the answers as facts with evidence.
+
+Usage:
+  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--origins] [--json]
+  euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--json]
+  euthyna deps     [--repo <dir>] [--lockfile <file>] --dep <name> [--dep <name>] [--json]
+  euthyna gate     <report file> [--verify] [--cwd <dir>] [--json]
+
+Language: Chinese by default. Pass --lang en or set the environment variable
+EUTHYNA_LANG=en for English output.
+
+Commands:
+  history    Which lines did this change delete, which commit introduced them,
+             and was that commit a security fix?
+             --base    required, the baseline revision to compare against (main, HEAD~5, a commit)
+             --head    optional, defaults to HEAD
+             --pickaxe additionally check added lines that were once removed and now return (probe-capped)
+             --origins attribute deleted lines to the commit that FIRST introduced
+                       their content with git log -S, instead of blame's last modifier
+                       (probe-capped, slower than the default)
+  coverage   Was this symbol ever actually invoked by a test run?
+             --coverage  the coverage data file, c8's coverage-final.json
+             --symbol    symbol name(s) to query, repeatable
+             --file      optional, restrict to one file
+  deps       What version does the lockfile pin or declare for a dependency? (the basis for supply-chain claims)
+             --repo      optional, directory containing the manifest (default cwd, auto-detected)
+             --lockfile  optional, explicit manifest path (package-lock.json / Cargo.lock / go.mod)
+             --dep       dependency name(s) to query, repeatable
+             Note: reports version facts only, never "is vulnerable" — version-to-CVE mapping
+             belongs to the adjudication layer
+  gate       Check an audit report against the six-gate contract (no measurement; only the report's self-declared claims)
+             <report file>   the report's markdown file; the adjudication format is defined in the skill SKILL.md
+             --verify      re-run each TRUE POSITIVE's reproduce command (as argv, no shell);
+                           only git commands run by default; ⚠ runs with your privileges,
+                           use it only on reports you trust
+             --allow-exec  allow --verify to run interpreter commands (node/npm/python) —
+                           they can execute arbitrary code from the report; passing it
+                           is you endorsing that report
+             --cwd <dir>   working directory for --verify (default cwd)
+
+Exit codes:
+  0   measured, nothing security-classified found; or a gate report fully passes the contract
+  10  measured, at least one security-classified fact; or a gate report has findings downgraded
+  1   usage error
+  2   could not measure at all (must NOT be read as clean); or a gate report is unreadable or has no checkable finding
+
+Note: missing data is not clean. Criteria that could not be measured are listed in the
+"not evaluated" section of the output.
+`;
+
+function helpText(lang) {
+  return lang === 'en' ? HELP_EN : HELP_ZH;
+}
 
 /**
  * Minimal argv parser: `--key value`, `--flag`, and repeated `--key` flags.
@@ -134,7 +207,8 @@ function asArray(value) {
   return Array.isArray(value) ? value : [value];
 }
 
-async function runHistory(flags) {
+async function runHistory(flags, lang) {
+  const t = T(lang);
   const cwd = path.resolve(flags.repo ? String(flags.repo) : process.cwd());
 
   const toplevel = await repoToplevel(cwd);
@@ -142,28 +216,40 @@ async function runHistory(flags) {
     return {
       exit: EXIT.UNMEASURED,
       report: makeReport({
-        producer: HISTORY_PRODUCER,
+        producer: producerFor(HISTORY_PRODUCER, lang),
         subject: { repo: cwd },
         facts: [],
         notEvaluated: [
-          { kind: KIND.HISTORY, reason: `${cwd} 不在任何 git 仓库内，无法测量历史` }
+          {
+            kind: KIND.HISTORY,
+            reason: t(
+              `${cwd} 不在任何 git 仓库内，无法测量历史`,
+              `${cwd} is not inside any git repository; history cannot be measured`
+            )
+          }
         ]
       })
     };
   }
 
   if (!flags.base) {
-    return { exit: EXIT.USAGE, error: 'history 需要 --base <rev>' };
+    return { exit: EXIT.USAGE, error: t('history 需要 --base <rev>', 'history requires --base <rev>') };
   }
 
   const base = await revParse(toplevel, String(flags.base));
   if (!base) {
-    return { exit: EXIT.USAGE, error: `无法解析 --base "${flags.base}" 为一个提交` };
+    return {
+      exit: EXIT.USAGE,
+      error: t(`无法解析 --base "${flags.base}" 为一个提交`, `cannot resolve --base "${flags.base}" to a commit`)
+    };
   }
 
   const head = await revParse(toplevel, String(flags.head ?? 'HEAD'));
   if (!head) {
-    return { exit: EXIT.USAGE, error: `无法解析 --head "${flags.head ?? 'HEAD'}" 为一个提交` };
+    return {
+      exit: EXIT.USAGE,
+      error: t(`无法解析 --head "${flags.head ?? 'HEAD'}" 为一个提交`, `cannot resolve --head "${flags.head ?? 'HEAD'}" to a commit`)
+    };
   }
 
   const { facts, evaluated, notEvaluated, measured } = await collectHistoryFacts({
@@ -171,11 +257,12 @@ async function runHistory(flags) {
     base,
     head,
     pickaxe: flags.pickaxe === true,
-    origins: flags.origins === true
+    origins: flags.origins === true,
+    lang
   });
 
   const report = makeReport({
-    producer: HISTORY_PRODUCER,
+    producer: producerFor(HISTORY_PRODUCER, lang),
     subject: { repo: toplevel, base, head },
     facts,
     evaluated,
@@ -194,7 +281,8 @@ async function runHistory(flags) {
   };
 }
 
-async function runCoverage(flags) {
+async function runCoverage(flags, lang) {
+  const t = T(lang);
   const coverageFile = path.resolve(
     String(flags.coverage ?? 'coverage/coverage-final.json')
   );
@@ -203,17 +291,21 @@ async function runCoverage(flags) {
 
   // Asking for nothing is a caller mistake, not a measurement failure.
   if (symbols.length === 0) {
-    return { exit: EXIT.USAGE, error: 'coverage 需要至少一个 --symbol <name>' };
+    return {
+      exit: EXIT.USAGE,
+      error: t('coverage 需要至少一个 --symbol <name>', 'coverage requires at least one --symbol <name>')
+    };
   }
 
   const targets = symbols.map(symbol => ({ symbol, ...(file ? { file } : {}) }));
   const { facts, evaluated, notEvaluated, measured } = await collectCoverageFacts({
     coverageFile,
-    targets
+    targets,
+    lang
   });
 
   const report = makeReport({
-    producer: COVERAGE_PRODUCER,
+    producer: producerFor(COVERAGE_PRODUCER, lang),
     subject: { coverageFile, symbols, file },
     facts,
     evaluated,
@@ -223,25 +315,27 @@ async function runCoverage(flags) {
   return { exit: measured ? EXIT.CLEAN : EXIT.UNMEASURED, report };
 }
 
-async function runDeps(flags) {
+async function runDeps(flags, lang) {
+  const t = T(lang);
   const cwd = path.resolve(flags.repo ? String(flags.repo) : process.cwd());
   const deps = asArray(flags.dep).map(String);
   const lockfile = flags.lockfile ? String(flags.lockfile) : undefined;
 
   // Asking for nothing is a caller mistake, not a measurement failure.
   if (deps.length === 0) {
-    return { exit: EXIT.USAGE, error: 'deps 需要至少一个 --dep <name>' };
+    return { exit: EXIT.USAGE, error: t('deps 需要至少一个 --dep <name>', 'deps requires at least one --dep <name>') };
   }
 
   const { facts, evaluated, notEvaluated, measured } = await collectDependencyFacts({
     cwd,
     lockfile,
-    deps
+    deps,
+    lang
   });
 
   const report = makeReport({
-    producer: DEPS_PRODUCER,
-    subject: { repo: cwd, lockfile: lockfile ?? '(自动检测)', deps },
+    producer: producerFor(DEPS_PRODUCER, lang),
+    subject: { repo: cwd, lockfile: lockfile ?? t('(自动检测)', '(auto-detect)'), deps },
     facts,
     evaluated,
     notEvaluated
@@ -249,10 +343,17 @@ async function runDeps(flags) {
 
   return { exit: measured ? EXIT.CLEAN : EXIT.UNMEASURED, report };
 }
-async function runGate(flags, positional) {
+async function runGate(flags, positional, lang) {
+  const t = T(lang);
   const file = positional[1];
   if (!file) {
-    return { exit: EXIT.USAGE, error: 'gate 需要 <报告文件>（markdown，裁定格式见技能 SKILL.md）' };
+    return {
+      exit: EXIT.USAGE,
+      error: t(
+        'gate 需要 <报告文件>（markdown，裁定格式见技能 SKILL.md）',
+        'gate requires <report file> (markdown; the adjudication format is defined in the skill SKILL.md)'
+      )
+    };
   }
 
   let text;
@@ -261,17 +362,27 @@ async function runGate(flags, positional) {
   } catch (error) {
     // An unreadable report is not a clean pass: there is nothing to check, and
     // "nothing was checked" must not read as "everything passed".
-    return { exit: EXIT.UNMEASURED, error: `无法读取报告 ${file}: ${error.message}` };
+    return { exit: EXIT.UNMEASURED, error: t(`无法读取报告 ${file}: ${error.message}`, `cannot read report ${file}: ${error.message}`) };
   }
 
   const { findings, unparseable } = parseGateReport(text);
   if (findings.length === 0 && unparseable.length === 0) {
-    return { exit: EXIT.UNMEASURED, error: `报告 ${file} 中没有可校验的 finding（需要 BUG #N <VERDICT> — 说明 形式）` };
+    return {
+      exit: EXIT.UNMEASURED,
+      error: t(
+        `报告 ${file} 中没有可校验的 finding（需要 BUG #N <VERDICT> — 说明 形式）`,
+        `report ${file} contains no checkable finding (needs "BUG #N <VERDICT> — claim" lines)`
+      )
+    };
   }
 
-  const validated = validateFindings(findings);
+  const validated = validateFindings(findings, { lang });
   for (const line of unparseable) {
-    validated.push({ unparseableLine: line, violations: ['无法解析的 BUG 行'], downgraded: true });
+    validated.push({
+      unparseableLine: line,
+      violations: [t('无法解析的 BUG 行', 'unparseable BUG line')],
+      downgraded: true
+    });
   }
 
   if (flags.verify) {
@@ -286,16 +397,33 @@ async function runGate(flags, positional) {
       // interpreter awaiting consent, an unparseable command and a failed run
       // are different failures, but none of them is a verified reproduction.
       if (v.status === 'failed') {
-        entry.violations.push(`复现命令未通过（exit ${v.exitCode ?? '?'}${v.detail ? `: ${v.detail}` : ''}）`);
+        entry.violations.push(
+          t(
+            `复现命令未通过（exit ${v.exitCode ?? '?'}${v.detail ? `: ${v.detail}` : ''}）`,
+            `reproduce command failed (exit ${v.exitCode ?? '?'}${v.detail ? `: ${v.detail}` : ''})`
+          )
+        );
         entry.downgraded = true;
       } else if (v.status === 'refused') {
-        entry.violations.push(`复现命令被拒绝（${v.tool} 不在白名单）——复现未验证`);
+        entry.violations.push(
+          t(
+            `复现命令被拒绝（${v.tool} 不在白名单）——复现未验证`,
+            `reproduce command refused (${v.tool} is not on the allowlist) — reproduction not verified`
+          )
+        );
         entry.downgraded = true;
       } else if (v.status === 'needs-consent') {
-        entry.violations.push(`复现命令是解释器命令（${v.tool}），未执行——复现未验证；信任该报告时加 --allow-exec`);
+        entry.violations.push(
+          t(
+            `复现命令是解释器命令（${v.tool}），未执行——复现未验证；信任该报告时加 --allow-exec`,
+            `reproduce command is an interpreter command (${v.tool}), not run — reproduction not verified; add --allow-exec if you trust the report`
+          )
+        );
         entry.downgraded = true;
       } else if (v.status === 'unparseable') {
-        entry.violations.push('复现命令无法拆分为 argv——复现未验证');
+        entry.violations.push(
+          t('复现命令无法拆分为 argv——复现未验证', 'reproduce command could not be split into argv — reproduction not verified')
+        );
         entry.downgraded = true;
       }
       // no-command is already a structural violation (a TRUE POSITIVE without a
@@ -336,7 +464,7 @@ async function runGate(flags, positional) {
     };
   }
 
-  renderGateReport(result);
+  renderGateReport(result, { lang });
   return { exit: downgraded > 0 ? EXIT.FLAGGED : EXIT.CLEAN, report: null };
 }
 
@@ -345,27 +473,47 @@ export async function main(argv = process.argv.slice(2)) {
   const { positional, flags } = parseArgs(argv);
   const command = positional[0];
 
+  // A --lang that is present but not a known language is a usage error: a
+  // typo must not silently fall back to the default and produce a different
+  // language than the caller asked for.
+  const flagLang = flags.lang === undefined ? undefined : String(flags.lang);
+  if (flags.lang !== undefined && !isLang(flagLang)) {
+    const lang = resolveLang({ env: process.env });
+    process.stderr.write(
+      safeTextLines(
+        T(lang)(
+          `无法识别的语言 "${flagLang}"（可用：zh / en）`,
+          `unrecognized language "${flagLang}" (available: zh / en)`
+        ) + '\n'
+      )
+    );
+    return EXIT.USAGE;
+  }
+
+  const lang = resolveLang({ flag: flagLang });
+  const t = T(lang);
+
   if (!command || command === 'help' || flags.help) {
-    process.stdout.write(HELP);
+    process.stdout.write(helpText(lang));
     return EXIT.CLEAN;
   }
 
   let result;
   if (command === 'history') {
-    result = await runHistory(flags);
+    result = await runHistory(flags, lang);
   } else if (command === 'coverage') {
-    result = await runCoverage(flags);
+    result = await runCoverage(flags, lang);
   } else if (command === 'deps') {
-    result = await runDeps(flags);
+    result = await runDeps(flags, lang);
   } else if (command === 'gate') {
-    result = await runGate(flags, positional);
+    result = await runGate(flags, positional, lang);
   } else {
     // stderr boundary, mirroring the render boundary in contract.js: text that
     // reaches the error channel may carry user or repo-controlled bytes (an
     // unknown command echoes argv; a usage error embeds flag values), so it is
-    // made terminal-safe once, here. HELP is multi-line and static; safeTextLines
-    // preserves its line structure and is a no-op on its plain text.
-    process.stderr.write(safeTextLines(`未知命令: ${command}\n${HELP}`));
+    // made terminal-safe once, here. helpText is multi-line and static;
+    // safeTextLines preserves its line structure and is a no-op on its text.
+    process.stderr.write(safeTextLines(`${t('未知命令: ', 'Unknown command: ')}${command}\n${helpText(lang)}`));
     return EXIT.USAGE;
   }
 
@@ -382,7 +530,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (flags.json) {
     process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
   } else if (result.report) {
-    renderReport(result.report);
+    renderReport(result.report, { lang });
   }
 
   return result.exit;

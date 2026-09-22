@@ -24,6 +24,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { makeFact, notEvaluated as notEvaluatedEntry, KIND, STATUS, shellQuote } from '../contract.js';
+import { T, DEFAULT_LANG } from '../lang.js';
 
 /** Formats this producer can parse, and the filenames that select them. */
 const SUPPORTED = [
@@ -149,7 +150,8 @@ function resolveGo(text, dep) {
  * that cannot be read. The throw happens once, up front, so a malformed file
  * becomes one notEvaluated reason instead of one failed fact per dependency.
  */
-function makeResolver(type, text) {
+function makeResolver(type, text, lang = DEFAULT_LANG) {
+  const t = T(lang);
   if (type === 'npm') {
     const root = JSON.parse(text); // throws on malformed JSON
     // A syntactically valid but structurally empty file (e.g. `{}`) is not a
@@ -160,23 +162,38 @@ function makeResolver(type, text) {
       typeof root !== 'object' ||
       (root.packages === undefined && root.dependencies === undefined && root.lockfileVersion === undefined)
     ) {
-      throw new Error('package-lock.json 结构不完整（缺 lockfileVersion/packages/dependencies），不像真实的 npm 锁文件');
+      throw new Error(
+        t(
+          'package-lock.json 结构不完整（缺 lockfileVersion/packages/dependencies），不像真实的 npm 锁文件',
+          'package-lock.json is structurally incomplete (missing lockfileVersion/packages/dependencies); it does not look like a real npm lockfile'
+        )
+      );
     }
     return (dep) => resolveNpm(root, dep, text);
   }
   if (type === 'cargo') {
     if (!/\[\[package\]\]|^version\s*=/m.test(text)) {
-      throw new Error('Cargo.lock 结构不完整（无 [[package]] 块或 version 头），不像真实的 Cargo 锁文件');
+      throw new Error(
+        t(
+          'Cargo.lock 结构不完整（无 [[package]] 块或 version 头），不像真实的 Cargo 锁文件',
+          'Cargo.lock is structurally incomplete (no [[package]] blocks or version header); it does not look like a real Cargo lockfile'
+        )
+      );
     }
     return (dep) => resolveCargo(text, dep);
   }
   if (type === 'go') {
     if (!/^module\s+\S+/m.test(text)) {
-      throw new Error('go.mod 结构不完整（无 module 行），不像真实的 go.mod');
+      throw new Error(
+        t(
+          'go.mod 结构不完整（无 module 行），不像真实的 go.mod',
+          'go.mod is structurally incomplete (no module line); it does not look like a real go.mod'
+        )
+      );
     }
     return (dep) => resolveGo(text, dep);
   }
-  throw new Error(`不受支持的依赖清单格式: ${type}`);
+  throw new Error(t(`不受支持的依赖清单格式: ${type}`, `unsupported dependency manifest format: ${type}`));
 }
 
 function typeForFile(name) {
@@ -222,14 +239,20 @@ async function unsupportedIn(cwd) {
  * @param {string} [options.lockfile]  explicit manifest path (overrides detection)
  * @param {string[]} options.deps  dependency names to query (repeatable)
  */
-export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, deps = [] } = {}) {
+export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, deps = [], lang = DEFAULT_LANG } = {}) {
+  const t = T(lang);
   const facts = [];
   const evaluated = [];
   const notEvaluated = [];
   let counter = 0;
 
   if (deps.length === 0) {
-    notEvaluated.push(notEvaluatedEntry(KIND.DEPENDENCY, '没有指定要查询的依赖（--dep）'));
+    notEvaluated.push(
+      notEvaluatedEntry(
+        KIND.DEPENDENCY,
+        t('没有指定要查询的依赖（--dep）', 'no dependency requested for query (--dep)')
+      )
+    );
     return { facts, evaluated, notEvaluated, measured: false };
   }
 
@@ -241,7 +264,10 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
       await stat(filePath);
     } catch {
       notEvaluated.push(
-        notEvaluatedEntry(KIND.DEPENDENCY, `无法读取依赖清单 ${filePath}: ENOENT`)
+        notEvaluatedEntry(
+          KIND.DEPENDENCY,
+          t(`无法读取依赖清单 ${filePath}: ENOENT`, `cannot read dependency manifest ${filePath}: ENOENT`)
+        )
       );
       return { facts, evaluated, notEvaluated, measured: false };
     }
@@ -249,7 +275,10 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
       notEvaluated.push(
         notEvaluatedEntry(
           KIND.DEPENDENCY,
-          `${path.basename(filePath)} 不是受支持的依赖清单格式；本产出器支持 package-lock.json / Cargo.lock / go.mod`
+          t(
+            `${path.basename(filePath)} 不是受支持的依赖清单格式；本产出器支持 package-lock.json / Cargo.lock / go.mod`,
+            `${path.basename(filePath)} is not a supported dependency manifest format; this producer supports package-lock.json / Cargo.lock / go.mod`
+          )
         )
       );
       return { facts, evaluated, notEvaluated, measured: false };
@@ -260,8 +289,14 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
     if (found.length === 0) {
       const unsupported = await unsupportedIn(cwd);
       const reason = unsupported.length
-        ? `检测到 ${unsupported.join('、')}，但 Tier 0 暂不支持；本产出器支持 package-lock.json / Cargo.lock / go.mod`
-        : '未找到受支持的依赖清单（package-lock.json / Cargo.lock / go.mod），没有可测量的锁定版本';
+        ? t(
+            `检测到 ${unsupported.join('、')}，但 Tier 0 暂不支持；本产出器支持 package-lock.json / Cargo.lock / go.mod`,
+            `detected ${unsupported.join(', ')}, but Tier 0 does not support them yet; this producer supports package-lock.json / Cargo.lock / go.mod`
+          )
+        : t(
+            '未找到受支持的依赖清单（package-lock.json / Cargo.lock / go.mod），没有可测量的锁定版本',
+            'no supported dependency manifest found (package-lock.json / Cargo.lock / go.mod); no pinned versions to measure'
+          );
       notEvaluated.push(notEvaluatedEntry(KIND.DEPENDENCY, reason));
       return { facts, evaluated, notEvaluated, measured: false };
     }
@@ -275,7 +310,10 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
       notEvaluated.push(
         notEvaluatedEntry(
           KIND.DEPENDENCY,
-          `同目录还检测到 ${unsupported.join('、')}（Tier 0 暂不支持），本次只测了 ${target.file}`
+          t(
+            `同目录还检测到 ${unsupported.join('、')}（Tier 0 暂不支持），本次只测了 ${target.file}`,
+            `also detected ${unsupported.join(', ')} in the same directory (Tier 0 does not support them yet); only ${target.file} was measured this run`
+          )
         )
       );
     }
@@ -286,26 +324,36 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
     text = await readFile(target.path, 'utf8');
   } catch (error) {
     notEvaluated.push(
-      notEvaluatedEntry(KIND.DEPENDENCY, `无法读取 ${target.path}: ${error.code ?? error.message}`)
+      notEvaluatedEntry(
+        KIND.DEPENDENCY,
+        t(
+          `无法读取 ${target.path}: ${error.code ?? error.message}`,
+          `cannot read ${target.path}: ${error.code ?? error.message}`
+        )
+      )
     );
     return { facts, evaluated, notEvaluated, measured: false };
   }
 
   let resolver;
   try {
-    resolver = makeResolver(target.type, text);
+    resolver = makeResolver(target.type, text, lang);
   } catch (error) {
     notEvaluated.push(
       notEvaluatedEntry(
         KIND.DEPENDENCY,
-        `${target.path} 解析失败（${target.type}）：${error.message}`
+        t(
+          `${target.path} 解析失败（${target.type}）：${error.message}`,
+          `${target.path} failed to parse (${target.type}): ${error.message}`
+        )
       )
     );
     return { facts, evaluated, notEvaluated, measured: false };
   }
 
-  const verb = target.type === 'go' ? '声明' : '锁定';
-  const listLabel = target.type === 'go' ? 'go.mod' : 'lockfile';
+  const isGo = target.type === 'go';
+  const verb = isGo ? t('声明', 'declared') : t('锁定', 'locked');
+  const listLabel = isGo ? 'go.mod' : 'lockfile';
 
   for (const dep of deps) {
     const hits = resolver(dep);
@@ -319,10 +367,16 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
           id: `dependency-${++counter}`,
           kind: KIND.DEPENDENCY,
           statement:
-            `依赖 ${dep} 在 ${listLabel}（${target.type}）中被${verb}为版本 ${versions.join(' / ')}` +
-            (target.type === 'go'
-              ? ' —— 这是声明的需求版本，非最终解析版本（go.sum 不含版本，无法在此验证解析结果）'
-              : ''),
+            t(
+              `依赖 ${dep} 在 ${listLabel}（${target.type}）中被${verb}为版本 ${versions.join(' / ')}` +
+                (isGo
+                  ? ' —— 这是声明的需求版本，非最终解析版本（go.sum 不含版本，无法在此验证解析结果）'
+                  : ''),
+              isGo
+                ? `Dependency ${dep} is declared as version ${versions.join(' / ')} in the ${listLabel} (${target.type})` +
+                  ' — this is the declared requirement version, not the final resolved version (go.sum carries no versions, so the resolution cannot be verified here)'
+                : `Dependency ${dep} is locked to version ${versions.join(' / ')} in the ${listLabel} (${target.type})`
+            ),
           status: STATUS.ESTABLISHED,
           evidence: { file: target.path, ...(first.line ? { line: first.line } : {}) },
           method: 'command',
@@ -334,7 +388,7 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
             // go.mod declares a requirement; calling it "resolved" would let a
             // consumer mistake it for the final build version. The field name
             // must not oversell what the source can prove.
-            ...(target.type === 'go' ? { declaredVersions: versions } : { resolvedVersions: versions }),
+            ...(isGo ? { declaredVersions: versions } : { resolvedVersions: versions }),
             locations: hits.map((h) => h.location)
           }
         })
@@ -344,7 +398,10 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
         makeFact({
           id: `dependency-${++counter}`,
           kind: KIND.DEPENDENCY,
-          statement: `依赖 ${dep} 未出现在 ${listLabel}（${target.type}）的依赖树中 —— 声称它影响本应用的声明在此被证伪`,
+          statement: t(
+            `依赖 ${dep} 未出现在 ${listLabel}（${target.type}）的依赖树中 —— 声称它影响本应用的声明在此被证伪`,
+            `Dependency ${dep} does not appear in the dependency tree of the ${listLabel} (${target.type}) — the claim that it affects this application is falsified here`
+          ),
           status: STATUS.ESTABLISHED,
           evidence: { file: target.path },
           method: 'command',
@@ -352,7 +409,7 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
           detail: {
             lockfileType: target.type,
             dependency: dep,
-            ...(target.type === 'go' ? { declaredVersions: [] } : { resolvedVersions: [] }),
+            ...(isGo ? { declaredVersions: [] } : { resolvedVersions: [] }),
             reason: 'absent_from_lockfile'
           }
         })

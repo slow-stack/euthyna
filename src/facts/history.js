@@ -11,6 +11,7 @@
  */
 import { git, commitSummaries } from '../git.js';
 import { makeFact, notEvaluated as notEvaluatedEntry, KIND, STATUS, shellQuote } from '../contract.js';
+import { T, DEFAULT_LANG } from '../lang.js';
 
 /**
  * Strong signal: the commit is about security.
@@ -216,8 +217,10 @@ export async function collectHistoryFacts({
   origins = false,
   maxOrigins = 40,
   securityPattern = SECURITY_PATTERN,
-  fixPattern = FIX_PATTERN
+  fixPattern = FIX_PATTERN,
+  lang = DEFAULT_LANG
 } = {}) {
+  const t = T(lang);
   const facts = [];
   const evaluated = [];
   const notEvaluated = [];
@@ -229,7 +232,13 @@ export async function collectHistoryFacts({
 
   if (files.length === 0) {
     notEvaluated.push(
-      notEvaluatedEntry('history', `范围 ${base}..${head} 内没有文件变更，没有可归属的删除行`)
+      notEvaluatedEntry(
+        'history',
+        t(
+          `范围 ${base}..${head} 内没有文件变更，没有可归属的删除行`,
+          `No file changes in ${base}..${head}; no deleted lines to attribute`
+        )
+      )
     );
     return { facts, evaluated, notEvaluated, files, measured: true };
   }
@@ -271,8 +280,12 @@ export async function collectHistoryFacts({
     notEvaluated.push(
       notEvaluatedEntry(
         'history',
-        `范围 ${base}..${head} 内有 ${files.length} 个文件变更，但没有任何一行被删除，` +
-          '因此没有可归属的历史来源'
+        t(
+          `范围 ${base}..${head} 内有 ${files.length} 个文件变更，但没有任何一行被删除，` +
+            '因此没有可归属的历史来源',
+          `Range ${base}..${head} changes ${files.length} file(s) but deletes no lines; ` +
+            'there is no attributable history source'
+        )
       )
     );
   }
@@ -369,7 +382,10 @@ export async function collectHistoryFacts({
       notEvaluated.push(
         notEvaluatedEntry(
           'history-origins',
-          `git log -S 来源探针上限 ${maxOrigins} 已用尽，其余删除行保留 blame 归属`
+          t(
+            `git log -S 来源探针上限 ${maxOrigins} 已用尽，其余删除行保留 blame 归属`,
+            `git log -S origin probe cap (${maxOrigins}) exhausted; remaining deleted lines keep their blame attribution`
+          )
         )
       );
     }
@@ -377,8 +393,12 @@ export async function collectHistoryFacts({
       notEvaluated.push(
         notEvaluatedEntry(
           'history-origins',
-          `${shortSkipped} 行内容过短（< ${MIN_PICKAXE_LINE_LENGTH} 字符），` +
-            '未做来源追溯（太通用时 -S 会指向整个历史的第一个提交而非真实来源），保留 blame 归属'
+          t(
+            `${shortSkipped} 行内容过短（< ${MIN_PICKAXE_LINE_LENGTH} 字符），` +
+              '未做来源追溯（太通用时 -S 会指向整个历史的第一个提交而非真实来源），保留 blame 归属',
+            `${shortSkipped} line(s) too short (< ${MIN_PICKAXE_LINE_LENGTH} chars); ` +
+              'no origin tracing done (for generic content, -S points at the first commit of the whole history rather than a real origin); blame attribution kept'
+          )
         )
       );
     }
@@ -386,8 +406,12 @@ export async function collectHistoryFacts({
     notEvaluated.push(
       notEvaluatedEntry(
         'history-origins',
-        '未启用 --origins，删除行的归属基于 git blame 的「最后修改」语义；' +
-          '被删行本身或提交 diff 含安全关键词时仍会标为 security'
+        t(
+          '未启用 --origins，删除行的归属基于 git blame 的「最后修改」语义；' +
+            '被删行本身或提交 diff 含安全关键词时仍会标为 security',
+          '--origins not enabled; deleted lines are attributed by git blame\'s "last modified" semantics; ' +
+            'lines whose content or commit diff contains security vocabulary are still classified security'
+        )
       )
     );
   }
@@ -395,8 +419,9 @@ export async function collectHistoryFacts({
   // Split every blame group into its remainder (blame attribution) and its
   // refined subsets (one fact per origin commit). Each becomes a fact.
   const pending = [];
+  const unreadableSubject = () => t('(提交信息不可读)', '(unreadable commit message)');
   for (const [hash, entry] of blameByCommit) {
-    const summary = summaries.get(hash) ?? { subject: '(提交信息不可读)', author: null, date: null };
+    const summary = summaries.get(hash) ?? { subject: unreadableSubject(), author: null, date: null };
     const groups = originGroups.get(hash);
     if (!groups) {
       pending.push({ hash, entry, summary, originMethod: 'blame' });
@@ -436,7 +461,7 @@ export async function collectHistoryFacts({
           lines: [...group.byFile.values()].reduce((sum, a) => sum + a.length, 0),
           byFile: group.byFile
         },
-        summary: group.summary ?? { subject: '(提交信息不可读)', author: null, date: null },
+        summary: group.summary ?? { subject: unreadableSubject(), author: null, date: null },
         originMethod: 'pickaxe',
         blameCommit: hash,
         contents: group.contents
@@ -493,13 +518,25 @@ export async function collectHistoryFacts({
     // the wrong place and makes an accurate attribution look wrong.
     const originPhrase =
       originMethod === 'pickaxe'
-        ? `本次变更删除了 ${entry.lines} 行代码，其内容最初由提交 ${hash.slice(0, 10)} 引入` +
-          `（git blame 的最后修改者是 ${blameCommit.slice(0, 10)}）`
-        : `本次变更删除了 ${entry.lines} 行来自提交 ${hash.slice(0, 10)} 的代码`;
+        ? t(
+            `本次变更删除了 ${entry.lines} 行代码，其内容最初由提交 ${hash.slice(0, 10)} 引入` +
+              `（git blame 的最后修改者是 ${blameCommit.slice(0, 10)}）`,
+            `This change deleted ${entry.lines} lines whose content was first introduced by commit ${hash.slice(0, 10)} ` +
+              `(git blame's last modifier is ${blameCommit.slice(0, 10)})`
+          )
+        : t(
+            `本次变更删除了 ${entry.lines} 行来自提交 ${hash.slice(0, 10)} 的代码`,
+            `This change deleted ${entry.lines} lines of code from commit ${hash.slice(0, 10)}`
+          );
     const statement =
       originPhrase +
-      (fileCount > 1 ? `，分布在 ${fileCount} 个文件` : `（文件：${byFile[0].file}）`) +
-      `。提交信息：${JSON.stringify(summary.subject)}，分类：${classification}`;
+      (fileCount > 1
+        ? t(`，分布在 ${fileCount} 个文件`, `, spread across ${fileCount} files`)
+        : t(`（文件：${byFile[0].file}）`, ` (file: ${byFile[0].file})`)) +
+      t(
+        `。提交信息：${JSON.stringify(summary.subject)}，分类：${classification}`,
+        `. Commit message: ${JSON.stringify(summary.subject)}, classification: ${classification}`
+      );
 
     const detail = {
       classification,
@@ -514,8 +551,14 @@ export async function collectHistoryFacts({
       // covers lines in the other files too.
       reproductionNote:
         fileCount > 1
-          ? `上面的命令只复现「${primary.file}」中的归属；其余 ${fileCount - 1} 个文件的行区间见 byFile`
-          : '上面的命令复现本事实涉及的全部行'
+          ? t(
+              `上面的命令只复现「${primary.file}」中的归属；其余 ${fileCount - 1} 个文件的行区间见 byFile`,
+              `The command above only reproduces the attribution for "${primary.file}"; the other ${fileCount - 1} file(s) line ranges are in byFile`
+            )
+          : t(
+              '上面的命令复现本事实涉及的全部行',
+              'The command above reproduces every line this fact covers'
+            )
     };
 
     if (originMethod === 'pickaxe') {
@@ -552,7 +595,13 @@ export async function collectHistoryFacts({
 
   if (ranked.length === 0 && linesByFile.size > 0) {
     notEvaluated.push(
-      notEvaluatedEntry('history', '有删除行但 blame 未能归属到任何提交（可能是二进制文件或路径异常）')
+      notEvaluatedEntry(
+        'history',
+        t(
+          '有删除行但 blame 未能归属到任何提交（可能是二进制文件或路径异常）',
+          'Deleted lines exist but blame could not attribute them to any commit (possibly binary files or path anomalies)'
+        )
+      )
     );
   }
 
@@ -565,7 +614,8 @@ export async function collectHistoryFacts({
       maxPickaxe,
       securityPattern,
       fixPattern,
-      startCounter: counter
+      startCounter: counter,
+      lang
     });
     facts.push(...reintro.facts);
     counter = reintro.counter;
@@ -573,7 +623,10 @@ export async function collectHistoryFacts({
     notEvaluated.push(...reintro.notEvaluated);
   } else {
     notEvaluated.push(
-      notEvaluatedEntry('reintroduction', '未启用 --pickaxe，未检查「被移除又加回」的代码行')
+      notEvaluatedEntry(
+        'reintroduction',
+        t('未启用 --pickaxe，未检查「被移除又加回」的代码行', '--pickaxe not enabled; reintroduced lines were not checked')
+      )
     );
   }
 
@@ -602,8 +655,10 @@ async function collectReintroductionFacts({
   maxPickaxe,
   securityPattern,
   fixPattern,
-  startCounter
+  startCounter,
+  lang = DEFAULT_LANG
 }) {
+  const t = T(lang);
   const facts = [];
   const notEvaluated = [];
   let counter = startCounter;
@@ -654,9 +709,15 @@ async function collectReintroductionFacts({
           id: `reintroduction-${++counter}`,
           kind: KIND.REINTRODUCTION,
           statement:
-            `本次变更加回了一行在 ${base} 中不存在的代码，而该行的出现次数曾被 ${hashes.length} 个提交改变` +
+            t(
+              `本次变更加回了一行在 ${base} 中不存在的代码，而该行的出现次数曾被 ${hashes.length} 个提交改变`,
+              `This change re-adds a line that did not exist at ${base}, and whose occurrence count was changed by ${hashes.length} commit(s)`
+            ) +
             (securityOrigin
-              ? `，其中提交 ${securityOrigin.hash.slice(0, 10)} 的提交信息含安全关键词`
+              ? t(
+                  `，其中提交 ${securityOrigin.hash.slice(0, 10)} 的提交信息含安全关键词`,
+                  `, and commit ${securityOrigin.hash.slice(0, 10)} has security vocabulary in its message`
+                )
               : ''),
           status: STATUS.ESTABLISHED,
           evidence: { file, snippet: line.slice(0, 160), commit: hashes[0] },
@@ -682,7 +743,10 @@ async function collectReintroductionFacts({
     notEvaluated.push(
       notEvaluatedEntry(
         'reintroduction',
-        `pickaxe 探针上限 ${maxPickaxe} 已用尽，另有 ${candidates - probed} 行新增代码未检查`
+        t(
+          `pickaxe 探针上限 ${maxPickaxe} 已用尽，另有 ${candidates - probed} 行新增代码未检查`,
+          `pickaxe probe cap (${maxPickaxe}) exhausted; ${candidates - probed} added line(s) were not checked`
+        )
       )
     );
   }

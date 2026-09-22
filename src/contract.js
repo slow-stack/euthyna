@@ -15,6 +15,7 @@
  */
 
 import { stripVTControlCharacters } from 'node:util';
+import { T, DEFAULT_LANG } from './lang.js';
 
 export const SCHEMA_VERSION = '0.1';
 
@@ -189,10 +190,11 @@ export function notEvaluated(kind, reason) {
  * Ordering is deliberate: what was NOT measured comes last but is never
  * omitted, so a reader cannot finish the output without seeing it.
  */
-export function renderReport(report, { write: rawWrite = console.log } = {}) {
+export function renderReport(report, { write: rawWrite = console.log, lang = DEFAULT_LANG } = {}) {
   // Render boundary: every repo-controlled string below passes through safeText
   // exactly once, here, rather than at each producer. The JSON channel
   // (cli.js) needs no equivalent — JSON.stringify escapes control bytes.
+  const t = T(lang);
   const write = (line) => rawWrite(safeText(line));
   const { producer, subject, facts, coverage } = report;
 
@@ -202,9 +204,9 @@ export function renderReport(report, { write: rawWrite = console.log } = {}) {
 
   write('');
   write(`euthyna ${producer.name} — ${producer.purpose || ''}`.trim());
-  write(`目标: ${subject.repo ?? subject.coverageFile ?? '(未指定)'}`);
+  write(`${t('目标: ', 'Target: ')}${subject.repo ?? subject.coverageFile ?? t('(未指定)', '(unspecified)')}`);
   if (subject.base || subject.head) {
-    write(`范围: ${subject.base ?? '?'}..${subject.head ?? 'HEAD'}`);
+    write(`${t('范围: ', 'Range: ')}${subject.base ?? '?'}..${subject.head ?? 'HEAD'}`);
   }
   write('');
 
@@ -214,26 +216,26 @@ export function renderReport(report, { write: rawWrite = console.log } = {}) {
     for (const fact of list) {
       write(`  • ${fact.statement}`);
       const where = [fact.evidence.file, fact.evidence.line].filter(Boolean).join(':');
-      write(`      证据: ${where}${fact.evidence.commit ? ` (${fact.evidence.commit.slice(0, 10)})` : ''}`);
-      if (fact.command) write(`      复现: ${fact.command}`);
+      write(`       ${t('证据: ', 'Evidence: ')}${where}${fact.evidence.commit ? ` (${fact.evidence.commit.slice(0, 10)})` : ''}`);
+      if (fact.command) write(`       ${t('复现: ', 'Reproduce: ')}${fact.command}`);
       if (fact.confidence === 'approximate') {
-        write('      ⚠ approximate —— 不得用于门禁判定');
+        write(t('      ⚠ approximate —— 不得用于门禁判定', '      ⚠ approximate — must not be used for gate adjudication'));
       }
     }
     write('');
   };
 
-  section('已确证', established);
-  section('已证伪', refuted);
-  section('无法判定', unknown);
+  section(t('已确证', 'Established'), established);
+  section(t('已证伪', 'Refuted'), refuted);
+  section(t('无法判定', 'Unknown'), unknown);
 
   if (facts.length === 0) {
-    write('  本次运行没有产出任何事实。');
+    write(t('  本次运行没有产出任何事实。', '  This run produced no facts.'));
     write('');
   }
 
   if (coverage.notEvaluated.length > 0) {
-    write('⚠ 未评估的判据（缺数据不等于干净）：');
+    write(t('⚠ 未评估的判据（缺数据不等于干净）：', '⚠ Criteria not evaluated (missing data is not clean):'));
     for (const item of coverage.notEvaluated) {
       write(`  • ${item.kind}: ${item.reason}`);
     }
@@ -241,9 +243,14 @@ export function renderReport(report, { write: rawWrite = console.log } = {}) {
   }
 
   if (coverage.evaluated.length > 0) {
-    write('已评估的判据：');
+    write(t('已评估的判据：', 'Evaluated criteria:'));
     for (const item of coverage.evaluated) {
-      write(`  • ${item.kind}: ${item.count} 条 (${item.producer})`);
+      write(
+        t(
+          `  • ${item.kind}: ${item.count} 条 (${item.producer})`,
+          `  • ${item.kind}: ${item.count} (${item.producer})`
+        )
+      );
     }
     write('');
   }

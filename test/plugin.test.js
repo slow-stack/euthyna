@@ -38,9 +38,10 @@ describe('the package is installable as a dsh plugin', () => {
     assert.equal(manifest.main, './plugin/index.js');
     const entry = await read('plugin/index.js');
     assert.match(entry, /export const name = '/, 'a cordis plugin exports its name');
-    assert.match(entry, /export const inject = \['skills'\]/, 'the skills service must be injected');
+    assert.match(entry, /export const inject = \['skills', 'commands'\]/, 'the skills and commands services must be injected');
     assert.match(entry, /export function apply\(ctx/, 'a cordis plugin exports apply(ctx)');
     assert.match(entry, /registerProvider/, 'the entry must register the provider');
+    assert.match(entry, /ctx\.commands\.register/, 'the entry must register the /euthyna command');
   });
 
   test('the entry serves the skill bundle it expects to exist', async () => {
@@ -53,7 +54,7 @@ describe('the package is installable as a dsh plugin', () => {
 
   test('the tarball ships the entry, the patch and the skill', async () => {
     const { files } = await pkg();
-    for (const entry of ['plugin/', 'cordis.patch.yml', '.agents/skills/euthyna/']) {
+    for (const entry of ['plugin/', 'cordis.patch.yml', '.agents/skills/euthyna/', '.claude/commands/']) {
       assert.ok(files.includes(entry), `${entry} must be in the published files list`);
     }
   });

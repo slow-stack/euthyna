@@ -21,7 +21,7 @@ import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem';
 export const name = 'euthyna';
 
 /** Without the skill registry there is nothing to register onto. */
-export const inject = ['skills'];
+export const inject = ['skills', 'commands'];
 
 /** This module's directory: `<package>/plugin`, in the repo and in the tarball alike. */
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -57,4 +57,33 @@ export function apply(ctx, config = {}) {
     customSkillDirs: [root],
     watch: false,
   }));
+
+  // A DSH slash command is a UI shortcut, not a model prompt: the handler
+  // runs and returns text without reaching the model. /euthyna therefore
+  // returns the usage manual rather than trying to run an audit itself —
+  // the audit itself is triggered by naming the skill in conversation.
+  ctx.commands.register({
+    name: 'euthyna',
+    description: '查看 euthyna 代码安全审计的使用方法',
+    handler: () => ({
+      kind: 'success',
+      text: [
+        'euthyna —— 代码安全审计的判定纪律与交付门禁',
+        '',
+        '怎么触发审计（三选一）：',
+        '1. 对话里直接说「用 euthyna 审计 <路径>，审完再交付」',
+        '2. 新开会话后在技能列表点 euthyna',
+        '3. 本命令只返回说明，不执行审计',
+        '',
+        'CLI 测量工具（终端里跑）：',
+        '  euthyna history  --base <基线> --repo <仓库>   # 删除行归因到提交',
+        '  euthyna coverage --coverage <文件> --symbol <符号>',
+        '  euthyna deps     --repo <仓库> --dep <包名>',
+        '  euthyna gate     <报告.md> [--verify]           # 六门禁机械校验',
+        '',
+        '退出码：0=干净 / 10=有安全发现 / 1=用法错 / 2=无法测量',
+        '报告：<项目>_EUTHYNA_AUDIT_<日期>.md，必须落盘',
+      ].join('\n'),
+    }),
+  });
 }

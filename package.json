@@ -13,6 +13,7 @@
     "plugin/",
     "cordis.patch.yml",
     ".agents/skills/euthyna/",
+    ".claude/commands/",
     "assets/euthyna.png",
     "NOTICE.md"
   ],

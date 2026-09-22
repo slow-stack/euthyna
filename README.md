@@ -113,6 +113,43 @@ Two honest notes:
 
 ---
 
+## 🎯 First use
+
+euthyna is **user-invoked, not auto-triggering**. The skill declares
+`disable-model-invocation: true`, so the model will not load it on its own —
+you have to ask for the audit explicitly. That is also how you tell it apart
+from other security skills you may have installed: **if you did not name it,
+it did not run.**
+
+### Triggering the audit
+
+Say it plainly in conversation:
+
+> 「用 euthyna 审计一下 `D:\some-project`，审完再交付」
+
+The agent then loads the skill and runs the audit discipline: it produces the
+deterministic facts (`history` / `coverage` / `deps`) first, walks every
+suspect through the six gates, and writes a report file instead of only
+replying in chat.
+
+### Slash commands
+
+| Host | Command | Setup |
+|---|---|---|
+| Claude Code | `/euthyna <path>` | copy `.claude/commands/euthyna.md` from the package into `~/.claude/commands/` (user-wide) or `.claude/commands/` (project) |
+| Codex | — | Codex's custom-prompt slash commands (`~/.codex/prompts/`) are deprecated upstream; the same Markdown can still be placed there manually |
+| DSH | `/euthyna` | installed with the plugin; after a restart the command prints the usage manual (DSH slash commands run without reaching the model) |
+| Hermes | — | follow Hermes' own command mechanism; the skill folder installs as documented above |
+
+### How to tell it was euthyna that audited
+
+- the report filename is `<PROJECT>_EUTHYNA_AUDIT_<YYYY-MM-DD>.md`
+- verdicts use the three-state shape `BUG #N TRUE POSITIVE / FALSE POSITIVE / INCONCLUSIVE`
+- every claim cites `path:L123` evidence and a reproduce command
+- missing data is recorded as *not evaluated*, never as "clean"
+
+---
+
 ## 🚀 Quick start
 
 ```sh

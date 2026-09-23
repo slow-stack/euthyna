@@ -10,6 +10,10 @@
 
 <p align="center">
   <a href="https://github.com/slow-stack/euthyna/actions/workflows/ci.yml"><img src="https://github.com/slow-stack/euthyna/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/euthyna"><img src="https://img.shields.io/npm/v/euthyna" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/euthyna"><img src="https://img.shields.io/npm/dm/euthyna" alt="npm downloads"></a>
+  <a href="https://www.npmjs.com/package/euthyna"><img src="https://img.shields.io/npm/l/euthyna" alt="license: Apache-2.0"></a>
+  <a href="https://search.sigstore.dev/?logIndex=2915999059"><img src="https://img.shields.io/badge/npm%20provenance-verified-5627B4" alt="npm provenance verified"></a>
   <a href="https://www.skills.sh/slow-stack/euthyna"><img src="https://skills.sh/b/slow-stack/euthyna.svg" alt="Agent skills installs"></a>
   <a href="https://awesome-dsh-plugin.com/p/slow-stack/euthyna/"><img src="https://img.shields.io/badge/DSH%20plugin-listed-blue" alt="Listed in the awesome-dsh-plugin catalog"></a>
 </p>

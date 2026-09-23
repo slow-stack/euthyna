@@ -144,6 +144,18 @@ evaluable" — never fill the gap with a hand estimate.**
 
 Operations manual (commands, real output samples, failure modes): `references/fact-producers.md`.
 
+### Execution discipline (reproduce commands and PoCs)
+
+`--verify` and PoCs execute commands **on the user's machine**. Before running any
+reproduce/verification command:
+
+- **Get the user's explicit approval first**, listing the exact commands — never run
+  an unannounced command
+- Prefer a sandbox or throwaway container (e.g. Docker) whenever one can run the
+  command; when sandboxing is impossible, state the risk before running
+- A report's PoC is written for whoever receives the report; every command the agent
+  itself runs during adjudication follows this same rule
+
 ---
 
 ## The fact contract (the interface between measurement and adjudication)

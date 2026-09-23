@@ -18,7 +18,7 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { collectHistoryFacts } from './facts/history.js';
 import { collectCoverageFacts } from './facts/coverage.js';
-import { collectDependencyFacts } from './facts/deps.js';
+import { collectDependencyFacts, listDependencies, detectManifest, manifestTypeForFile } from './facts/deps.js';
 import { parseGateReport, validateFindings, verifyFinding, renderGateReport } from './gate.js';
 import { makeReport, renderReport, safeTextLines, KIND } from './contract.js';
 import { repoToplevel, revParse } from './git.js';
@@ -49,6 +49,12 @@ const DEPS_PRODUCER = {
   purpose: '依赖锁定版本（读取 lockfile，不含漏洞判定）',
   purposeEn: 'dependency pinned versions (reads lockfiles, no vulnerability verdict)'
 };
+const AUDIT_PRODUCER = {
+  name: 'euthyna-audit',
+  version: '0.1.0',
+  purpose: '变更面审计：删除代码来源 + 依赖锁定版本，一次测量',
+  purposeEn: 'change-surface audit: deleted-code provenance + dependency pins, one run'
+};
 
 /** The producer object that goes into a report, with its purpose in the active language. */
 function producerFor(producer, lang) {
@@ -65,20 +71,23 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
 它不是扫描器。它只回答两个模型算不准的问题，并把答案写成带证据的事实。
 
 用法:
-  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--origins] [--json]
+  euthyna audit    --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
+  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
   euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--json]
-  euthyna deps     [--repo <dir>] [--lockfile <file>] --dep <name> [--dep <name>] [--json]
+  euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json]
   euthyna gate     <报告文件> [--verify] [--cwd <dir>] [--json]
 
 语言: 默认中文。加 --lang en 或设环境变量 EUTHYNA_LANG=en 切换英文输出。
 
 命令:
+  audit      一次跑完变更面审计：history + deps（枚举 lockfile 全部依赖），合并报告
+             这是技能文档默认推荐入口；coverage 因需要覆盖率文件和符号名不在其中
   history    本次变更删掉了哪些代码、它们分别由哪个提交引入、该提交是不是安全修复
-             --base    必填，比较的基线版本（如 main、HEAD~5、某个 commit）
-             --head    可选，默认 HEAD
-             --pickaxe 额外检查「曾被移除又加回来」的新增行（有探针上限）
-             --origins 用 git log -S 把删除行归属到「最初引入」该内容的提交，
-                       而非 blame 的「最后修改者」（有探针上限，比默认慢）
+             --base        必填，比较的基线版本（如 main、HEAD~5、某个 commit）
+             --head        可选，默认 HEAD
+             --pickaxe     额外检查「曾被移除又加回来」的新增行（有探针上限）
+             --no-origins  关闭来源追溯；默认用 git log -S 把删除行归属到「最初引入」
+                           该内容的提交（有探针上限，比纯 blame 慢）
   coverage   某个符号在测试运行中到底有没有被调用过
              --coverage  覆盖率数据文件，c8 的 coverage-final.json
              --symbol    要查询的符号名，可重复
@@ -86,7 +95,7 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
   deps       某个依赖在 lockfile 里被锁定/声明成什么版本（供应链声明的裁决依据）
              --repo      可选，依赖清单所在目录（默认当前目录，自动检测）
              --lockfile  可选，显式指定清单文件（支持 package-lock.json / Cargo.lock / go.mod）
-             --dep       要查询的依赖名，可重复
+             --dep       要查询的依赖名，可重复；--all 查询清单里全部依赖
              注：只报版本事实，不判「是否含漏洞」——版本到 CVE 的映射归判定层
   gate       检查一份审计报告是否符合 6 门禁契约（不测量，只核对报告的自我声明）
              <报告文件>   报告的 markdown 文件，裁定格式见技能 SKILL.md
@@ -112,31 +121,36 @@ It is not a scanner. It answers only the two questions a model cannot compute
 reliably, and writes the answers as facts with evidence.
 
 Usage:
-  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--origins] [--json]
+  euthyna audit    --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
+  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
   euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--json]
-  euthyna deps     [--repo <dir>] [--lockfile <file>] --dep <name> [--dep <name>] [--json]
+  euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json]
   euthyna gate     <report file> [--verify] [--cwd <dir>] [--json]
 
 Language: Chinese by default. Pass --lang en or set the environment variable
 EUTHYNA_LANG=en for English output.
 
 Commands:
-  history    Which lines did this change delete, which commit introduced them,
+  audit      the change-surface audit in one run: history + deps (every lockfile
+             dependency enumerated), one merged report. The default entry point
+             the skill documents; coverage stays separate (needs a coverage file
+             and symbol names only the adjudicator knows)
+  history    which lines did this change delete, which commit introduced them,
              and was that commit a security fix?
-             --base    required, the baseline revision to compare against (main, HEAD~5, a commit)
-             --head    optional, defaults to HEAD
-             --pickaxe additionally check added lines that were once removed and now return (probe-capped)
-             --origins attribute deleted lines to the commit that FIRST introduced
-                       their content with git log -S, instead of blame's last modifier
-                       (probe-capped, slower than the default)
-  coverage   Was this symbol ever actually invoked by a test run?
+             --base        required, the baseline revision to compare against
+             --head        optional, defaults to HEAD
+             --pickaxe     also check added lines that were once removed and now return (probe-capped)
+             --no-origins  disable origin tracing; by default git log -S attributes deleted
+                           lines to the commit that FIRST introduced their content
+                           (probe-capped, slower than plain blame)
+  coverage   was this symbol ever actually invoked by a test run?
              --coverage  the coverage data file, c8's coverage-final.json
              --symbol    symbol name(s) to query, repeatable
              --file      optional, restrict to one file
-  deps       What version does the lockfile pin or declare for a dependency? (the basis for supply-chain claims)
+  deps       what version does the lockfile pin or declare for a dependency? (the basis for supply-chain claims)
              --repo      optional, directory containing the manifest (default cwd, auto-detected)
              --lockfile  optional, explicit manifest path (package-lock.json / Cargo.lock / go.mod)
-             --dep       dependency name(s) to query, repeatable
+             --dep       dependency name(s) to query, repeatable; --all queries every dependency in the manifest
              Note: reports version facts only, never "is vulnerable" — version-to-CVE mapping
              belongs to the adjudication layer
   gate       Check an audit report against the six-gate contract (no measurement; only the report's self-declared claims)
@@ -252,12 +266,15 @@ async function runHistory(flags, lang) {
     };
   }
 
+  // Origin tracing is the default (see runAudit); --no-origins opts out.
+  const origins = flags['no-origins'] !== true;
+
   const { facts, evaluated, notEvaluated, measured } = await collectHistoryFacts({
     cwd: toplevel,
     base,
     head,
     pickaxe: flags.pickaxe === true,
-    origins: flags.origins === true,
+    origins,
     lang
   });
 
@@ -318,12 +335,42 @@ async function runCoverage(flags, lang) {
 async function runDeps(flags, lang) {
   const t = T(lang);
   const cwd = path.resolve(flags.repo ? String(flags.repo) : process.cwd());
-  const deps = asArray(flags.dep).map(String);
-  const lockfile = flags.lockfile ? String(flags.lockfile) : undefined;
+  let lockfile = flags.lockfile ? String(flags.lockfile) : undefined;
+  let deps = asArray(flags.dep).map(String);
+
+  // --all: query every dependency the manifest mentions. Used by `euthyna
+  // audit`; also available directly. The manifest is located first so the
+  // names come from the same file the per-dep resolver will read.
+  if (flags.all === true) {
+    const target = lockfile
+      ? { path: path.resolve(lockfile), type: manifestTypeForFile(path.basename(path.resolve(lockfile))) }
+      : await detectManifest(cwd);
+    if (!target?.type) {
+      return {
+        exit: EXIT.UNMEASURED,
+        error: t(
+          '--all 找不到受支持的依赖清单（package-lock.json / Cargo.lock / go.mod）',
+          '--all found no supported dependency manifest (package-lock.json / Cargo.lock / go.mod)'
+        )
+      };
+    }
+    const text = await readFile(target.path, 'utf8');
+    deps = listDependencies(target.type, text);
+    lockfile = target.path;
+    if (deps.length === 0) {
+      return {
+        exit: EXIT.UNMEASURED,
+        error: t(
+          `${target.path} 中没有枚举出任何依赖`,
+          `${target.path} enumerates no dependencies`
+        )
+      };
+    }
+  }
 
   // Asking for nothing is a caller mistake, not a measurement failure.
   if (deps.length === 0) {
-    return { exit: EXIT.USAGE, error: t('deps 需要至少一个 --dep <name>', 'deps requires at least one --dep <name>') };
+    return { exit: EXIT.USAGE, error: t('deps 需要至少一个 --dep <name>（或 --all）', 'deps requires at least one --dep <name> (or --all)') };
   }
 
   const { facts, evaluated, notEvaluated, measured } = await collectDependencyFacts({
@@ -343,6 +390,109 @@ async function runDeps(flags, lang) {
 
   return { exit: measured ? EXIT.CLEAN : EXIT.UNMEASURED, report };
 }
+/**
+ * `euthyna audit` — the change-surface measurement in one command.
+ *
+ * history (deleted-code provenance) + deps (every lockfile dependency), one
+ * combined report, exit code = the worse of the two. This is the wiring the
+ * README called "not yet built": an agent loads the skill and runs ONE command
+ * instead of being told which producers to invoke in which order.
+ *
+ * coverage is deliberately not part of audit: it needs a coverage data file and
+ * symbol names only the adjudicator knows, so there is nothing honest to
+ * auto-measure there.
+ */
+async function runAudit(flags, lang) {
+  const t = T(lang);
+  const cwd = path.resolve(flags.repo ? String(flags.repo) : process.cwd());
+
+  if (!flags.base) {
+    return { exit: EXIT.USAGE, error: t('audit 需要 --base <rev>', 'audit requires --base <rev>') };
+  }
+
+  // --- history half (mirrors runHistory's repo/base/head resolution) ---
+  const toplevel = await repoToplevel(cwd);
+  if (!toplevel) {
+    return {
+      exit: EXIT.UNMEASURED,
+      report: makeReport({
+        producer: producerFor(AUDIT_PRODUCER, lang),
+        subject: { repo: cwd },
+        facts: [],
+        notEvaluated: [
+          {
+            kind: KIND.HISTORY,
+            reason: t(
+              `${cwd} 不在任何 git 仓库内，无法测量历史`,
+              `${cwd} is not inside any git repository; history cannot be measured`
+            )
+          }
+        ]
+      })
+    };
+  }
+
+  const base = await revParse(toplevel, String(flags.base));
+  if (!base) {
+    return {
+      exit: EXIT.USAGE,
+      error: t(`无法解析 --base "${flags.base}" 为一个提交`, `cannot resolve --base "${flags.base}" to a commit`)
+    };
+  }
+
+  const head = await revParse(toplevel, String(flags.head ?? 'HEAD'));
+  if (!head) {
+    return {
+      exit: EXIT.USAGE,
+      error: t(`无法解析 --head "${flags.head ?? 'HEAD'}" 为一个提交`, `cannot resolve --head "${flags.head ?? 'HEAD'}" to a commit`)
+    };
+  }
+
+  const origins = flags['no-origins'] !== true;
+  const history = await collectHistoryFacts({
+    cwd: toplevel,
+    base,
+    head,
+    pickaxe: flags.pickaxe === true,
+    origins,
+    lang
+  });
+
+  // --- deps half: measure EVERY dependency the manifest pins, not a hand-picked list ---
+  // runDeps reports "no manifest / manifest unreadable" through {error}; that is
+  // a not-evaluated criterion here, not something to swallow silently.
+  const depResult = await runDeps({ repo: toplevel, all: true }, lang);
+  const depFacts = depResult.report?.facts ?? [];
+  const depEvaluated = depResult.report?.coverage?.evaluated ?? [];
+  const depNotEvaluated = depResult.report?.coverage?.notEvaluated ?? [];
+  if (depResult.error) {
+    depNotEvaluated.push({ kind: KIND.DEPENDENCY, reason: depResult.error });
+  }
+
+  const facts = [...history.facts, ...depFacts];
+  const evaluated = [...history.evaluated, ...depEvaluated];
+  const notEvaluated = [...history.notEvaluated, ...depNotEvaluated];
+
+  const report = makeReport({
+    producer: producerFor(AUDIT_PRODUCER, lang),
+    subject: { repo: toplevel, base, head },
+    facts,
+    evaluated,
+    notEvaluated
+  });
+
+  // Exit = the worse of the two halves. A missing lockfile keeps its
+  // notEvaluated reason (missing data is not clean) but cannot fail a run the
+  // history half answered.
+  const flagged = facts.some(
+    f => (f.kind === KIND.HISTORY || f.kind === KIND.REINTRODUCTION) &&
+      f.detail && f.detail.classification === 'security'
+  );
+  const exit = !history.measured ? EXIT.UNMEASURED : flagged ? EXIT.FLAGGED : EXIT.CLEAN;
+
+  return { exit, report };
+}
+
 async function runGate(flags, positional, lang) {
   const t = T(lang);
   const file = positional[1];
@@ -501,6 +651,8 @@ export async function main(argv = process.argv.slice(2)) {
   let result;
   if (command === 'history') {
     result = await runHistory(flags, lang);
+  } else if (command === 'audit') {
+    result = await runAudit(flags, lang);
   } else if (command === 'coverage') {
     result = await runCoverage(flags, lang);
   } else if (command === 'deps') {

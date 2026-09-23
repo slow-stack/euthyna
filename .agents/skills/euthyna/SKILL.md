@@ -76,8 +76,9 @@ license: Apache-2.0
 │
 ├─ 一次变更（PR / diff / commit）────► 阶段 B：变更面审计
 │   （「这个 PR 安全吗」）               读 references/change-audit.md
-│                                       ★ diff 里有删除行 → 先跑 history
-│                                       ★ 要谈测试覆盖   → 先跑 coverage
+│                                       ★ 第一条命令：euthyna audit --base <分叉点>
+│                                         （history + deps 一次跑完，见下节）
+│                                       ★ 要谈测试覆盖   → 再跑 coverage
 │
 ├─ 一个仓库 / 依赖面 ────────────────► 阶段 A：依赖面审计
 │   （「依赖有没有问题」）               读 references/dependency-audit.md
@@ -100,10 +101,15 @@ license: Apache-2.0
 
 | 测量 | 回答的问题 | 什么时候**必须**跑 |
 |---|---|---|
-| `history` | 这次变更**删掉**的代码来自哪个提交？那个提交是不是安全修复？ | diff 里有删除行时（阶段 B） |
+| `audit` | 上面两个问题**一次跑完**（history 默认追溯最初引入者 + deps 枚举 lockfile 全部依赖），合并一份报告 | **每次审计的第一条命令**（阶段 B 开场） |
+| `history` | 这次变更**删掉**的代码来自哪个提交？那个提交是不是安全修复？ | 需要单独重跑 history 时（如换 `--base`） |
 | `coverage` | 某个符号在测试运行中**到底有没有被调用过**？ | 报告里要说「测过 / 没测过」时（阶段 B / C） |
 
 ```powershell
+# 唯一必需的参数是 --base（改前版本 / PR 分叉点）：
+node <euthyna 仓库>/bin/euthyna.js audit --base <改前版本> --repo <被审计的仓库>
+
+# history / coverage 按需单独跑：
 node <euthyna 仓库>/bin/euthyna.js history  --base <改前版本> --repo <被审计的仓库>
 node <euthyna 仓库>/bin/euthyna.js coverage --coverage <覆盖率文件绝对路径> --symbol <符号名>
 ```
@@ -206,7 +212,7 @@ node <euthyna 仓库>/bin/euthyna.js gate <报告文件> --verify --cwd <被审�
 ## 交付前的自检（逐条打勾，缺一条不许说「审完了」）
 
 - [ ] 每个疑似发现都走了**完整的**阶段 C，不是「看一眼觉得是假的」
-- [ ] **diff 有删除行时跑过 `history`**；删自安全修复提交的代码已按最高风险处理
+- [ ] **跑过 `audit`（或 diff 有删除行时跑过 `history`）**；删自安全修复提交的代码已按最高风险处理
 - [ ] 报告里每句「测过 / 没测过」都有 `coverage` 输出支撑，或已标为「不可评估」
 - [ ] **退出码为 `2` 的判据没有出现在「干净」一栏**
 - [ ] 每条结论都带 `file:line`

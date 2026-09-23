@@ -186,6 +186,110 @@ describe('stderr boundary', () => {
   });
 });
 
+describe('audit command (history + deps in one run)', () => {
+  test('merges history and lockfile facts into one report and exits by the worse half', async () => {
+    const { main } = await import('../src/cli.js');
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, 'fix: prevent authentication bypass (CVE-2024-1111)', {
+      'src/a.js': 'if (!ok) throw new Error("denied");\\n'
+    });
+    await commitFiles(repo, 'refactor: drop the check', { 'src/a.js': 'doIt();\\n' });
+    await writeFile(
+      path.join(repo, 'package-lock.json'),
+      JSON.stringify({
+        name: 'fixture',
+        lockfileVersion: 3,
+        packages: {
+          '': { name: 'fixture' },
+          'node_modules/left-pad': { version: '1.3.0' }
+        }
+      }),
+      'utf8'
+    );
+
+    const chunks = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = chunk => {
+      chunks.push(String(chunk));
+      return true;
+    };
+    let code;
+    try {
+      code = await main(['audit', '--repo', repo, '--base', base, '--json']);
+    } finally {
+      process.stdout.write = original;
+    }
+
+    assert.equal(code, EXIT.FLAGGED, 'the deleted security check must fail the run');
+    const report = JSON.parse(chunks.join(''));
+    assert.equal(report.producer.name, 'euthyna-audit');
+    const kinds = new Set(report.facts.map(f => f.kind));
+    assert.ok(kinds.has('history'), 'the history half must be present');
+    assert.ok(kinds.has('dependency'), 'the deps half must be present');
+    const dep = report.facts.find(f => f.kind === 'dependency');
+    assert.match(dep.statement, /left-pad/, 'the lockfile dependency was enumerated, not hand-picked');
+  });
+
+  test('a clean repo with no lockfile still measures history and exits 0', async () => {
+    const { main } = await import('../src/cli.js');
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, 'feat: add a file', { 'src/a.js': 'export const a = 1;\\n' });
+    await commitFiles(repo, 'feat: touch another', { 'src/b.js': 'export const b = 2;\\n' });
+
+    const code = await main(['audit', '--repo', repo, '--base', base, '--json']);
+    assert.equal(code, EXIT.CLEAN);
+  });
+
+  test('a missing --base is a usage error', async () => {
+    const { main } = await import('../src/cli.js');
+    assert.equal(await main(['audit', '--json']), EXIT.USAGE);
+  });
+});
+
+describe('deps --all (enumerate every manifest dependency)', () => {
+  test('reports one fact per lockfile entry without any --dep flag', async () => {
+    const { main } = await import('../src/cli.js');
+    const repo = await makeRepo();
+    await writeFile(
+      path.join(repo, 'package-lock.json'),
+      JSON.stringify({
+        name: 'fixture',
+        lockfileVersion: 3,
+        packages: {
+          '': { name: 'fixture' },
+          'node_modules/alpha': { version: '1.0.0' },
+          'node_modules/beta': { version: '2.0.0' }
+        }
+      }),
+      'utf8'
+    );
+
+    const chunks = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = chunk => {
+      chunks.push(String(chunk));
+      return true;
+    };
+    let code;
+    try {
+      code = await main(['deps', '--repo', repo, '--all', '--json']);
+    } finally {
+      process.stdout.write = original;
+    }
+
+    assert.equal(code, EXIT.CLEAN);
+    const report = JSON.parse(chunks.join(''));
+    const names = report.facts.map(f => f.detail.dependency).sort();
+    assert.deepEqual(names, ['alpha', 'beta']);
+  });
+
+  test('--all with no manifest anywhere exits 2, not clean', async () => {
+    const { main } = await import('../src/cli.js');
+    const empty = await mkdtemp(path.join(tmpdir(), 'euthyna-all-'));
+    assert.equal(await main(['deps', '--repo', empty, '--all', '--json']), EXIT.UNMEASURED);
+  });
+});
+
 describe('crash path (bin entry)', () => {
   test('an unexpected git failure exits 2 with a terminal-safe crash report', async () => {
     const repo = await makeRepo();

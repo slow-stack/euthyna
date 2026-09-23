@@ -57,10 +57,11 @@ Three fact producers — a zero-dependency Node CLI:
 - **`history`** — for every line a change deletes, it attributes the line to a commit
   and classifies that commit from its message, its own diff, and the deleted line's
   content (a deleted `if (!authorized)` is flagged even under a "tweaks" subject). By
-  default the attribution is blame's "last touched"; `--origins` digs for the commit
-  that *first introduced* the content with `git log -S`. If the deleted code came from
-  a security fix, that is flagged. This is git archaeology no model can do from
-  reading a diff.
+  default the attribution traces the commit that *first introduced* the content with
+  `git log -S` (`--no-origins` falls back to blame's "last touched", which is faster
+  but mis-attributes a security line later moved by a formatting commit). If the
+  deleted code came from a security fix, that is flagged. This is git archaeology no
+  model can do from reading a diff.
 - **`coverage`** — was this symbol *ever actually invoked* by a test? It has exactly two
   answers: never invoked (established), or entered but that proves nothing about any
   specific call site (unknown). **It never reports "executed"** — V8 coverage marks
@@ -167,20 +168,20 @@ replying in chat.
 
 ```sh
 npm install -g euthyna
-euthyna history --repo <path> --base main --head HEAD          # add --origins to chase the first introducer
+euthyna audit --repo <path> --base main --head HEAD            # history + deps in one run
 euthyna coverage --coverage coverage/coverage-final.json --symbol <name>
-euthyna deps --repo <path> --dep <name>
+euthyna deps --repo <path> --all                               # or --dep <name> for a single dep
 euthyna gate <adjudication-report.md> --verify --cwd <repo>    # mechanically check the six gates
 ```
 
-Or without a global install: `npx euthyna history --repo <path> --base main`.
+Or without a global install: `npx euthyna audit --repo <path> --base main`.
 
 From a checkout instead (development):
 
 ```sh
 git clone https://github.com/slow-stack/euthyna
-cd euthyna && npm test                                 # 178 tests; no install step exists
-node bin/euthyna.js history --repo <path> --base main --head HEAD
+cd euthyna && npm test                                 # 207 tests; no install step exists
+node bin/euthyna.js audit --repo <path> --base main --head HEAD
 ```
 
 What `history` reports looks like this:
@@ -195,9 +196,10 @@ What `history` reports looks like this:
 
 Every deleted line is blamed back to a commit, and the `复现`
 (Reproduce) command lets you re-derive the claim yourself without trusting the report.
-Add `--json` for the structured fact report, `--pickaxe` to detect lines that were
-removed and are now being added back, and `--origins` to attribute deleted lines to the
-commit that first introduced their content rather than to blame's last modifier.
+Add `--json` for the structured fact report and `--pickaxe` to detect lines that were
+removed and are now being added back. Origin tracing is on by default (deleted lines
+are attributed to the commit that first introduced their content); `--no-origins`
+falls back to blame's last-modifier attribution, which is faster.
 
 ### Exit codes are part of the contract
 
@@ -323,8 +325,9 @@ euthyna/
 
 ## 🧭 Status
 
-Early, and honest about it. Working: the two fact producers, the skill, the benchmark harness.
-Not yet built: wiring the skill to the CLI so an agent uses them without being told, and the
+Early, and honest about it. Working: the fact producers (`euthyna audit` runs history
+and the full dependency surface in one command — the skill documents it as the first
+command of every audit), the skill, the benchmark harness. Not yet built: the
 git-history / coverage work needed to close the remaining recall gap.
 
 The design notes are available in English and Chinese; the `-zh` files are the originals.

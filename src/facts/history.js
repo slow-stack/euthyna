@@ -187,11 +187,12 @@ export function classifySubject(subject, { securityPattern = SECURITY_PATTERN, f
  * Attribution semantics, stated explicitly because they are the point of this
  * function and easy to over-claim:
  *
- *   - blame (the default) answers "who last touched the line" — a security-fix
- *     line that a later formatting/refactor commit moved is attributed to the
- *     formatter, not the fix. `--origins` answers "who FIRST introduced the
- *     line's content" by probing `git log -S` and re-attributes the line when
- *     the introducing commit differs and classifies security or fix.
+ *   - origins (the default) answers "who FIRST introduced the line's content"
+ *     by probing `git log -S` and re-attributes the line when the introducing
+ *     commit differs and classifies security or fix. Pass origins=false for
+ *     plain blame semantics ("who last touched the line") — a security-fix line
+ *     that a later formatting commit moved is then attributed to the formatter,
+ *     not the fix, which is exactly the mis-attribution origins exists to catch.
  *   - classification looks at the commit message first, then at whether the
  *     deleted line content itself is security vocabulary, then at whether the
  *     commit's own diff touched security-vocabulary lines. All three err broad
@@ -204,8 +205,8 @@ export function classifySubject(subject, { securityPattern = SECURITY_PATTERN, f
  * @param {string} options.head
  * @param {boolean} [options.pickaxe]  also look for reintroduced lines
  * @param {number} [options.maxPickaxe] cap on pickaxe probes (reported when hit)
- * @param {boolean} [options.origins]  re-attribute deleted lines to the commit
- *                                     that first introduced their content
+ * @param {boolean} [options.origins=true] re-attribute deleted lines to the commit
+ *                                         that first introduced their content
  * @param {number} [options.maxOrigins] cap on origin probes (reported when hit)
  */
 export async function collectHistoryFacts({
@@ -214,7 +215,7 @@ export async function collectHistoryFacts({
   head = 'HEAD',
   pickaxe = false,
   maxPickaxe = 40,
-  origins = false,
+  origins = true,
   maxOrigins = 40,
   securityPattern = SECURITY_PATTERN,
   fixPattern = FIX_PATTERN,
@@ -407,9 +408,9 @@ export async function collectHistoryFacts({
       notEvaluatedEntry(
         'history-origins',
         t(
-          '未启用 --origins，删除行的归属基于 git blame 的「最后修改」语义；' +
+          '--no-origins 已关闭来源追溯，删除行的归属基于 git blame 的「最后修改」语义；' +
             '被删行本身或提交 diff 含安全关键词时仍会标为 security',
-          '--origins not enabled; deleted lines are attributed by git blame\'s "last modified" semantics; ' +
+          '--no-origins disabled origin tracing; deleted lines are attributed by git blame\'s "last modified" semantics; ' +
             'lines whose content or commit diff contains security vocabulary are still classified security'
         )
       )

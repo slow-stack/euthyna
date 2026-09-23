@@ -200,6 +200,61 @@ function typeForFile(name) {
   return SUPPORTED.find((s) => s.file === name)?.type ?? null;
 }
 
+/**
+ * Every dependency name a manifest mentions, deduplicated and sorted.
+ *
+ * Powers `euthyna audit`, which measures the whole dependency surface without
+ * anyone typing 200 `--dep` flags. Names only — version facts still come from
+ * the same resolver path a per-dep query uses, so audit adds no new parsing.
+ */
+export function listDependencies(type, text) {
+  const names = new Set();
+  if (type === 'npm') {
+    const root = JSON.parse(text);
+    for (const key of Object.keys(root.packages ?? {})) {
+      if (!key.includes('node_modules/')) continue;
+      const name = key.split('node_modules/').pop();
+      if (name) names.add(name);
+    }
+    const walk = (tree) => {
+      for (const [name, meta] of Object.entries(tree ?? {})) {
+        if (!meta || typeof meta !== 'object') continue;
+        if (meta.version) names.add(name);
+        if (meta.dependencies && typeof meta.dependencies === 'object') walk(meta.dependencies);
+      }
+    };
+    walk(root.dependencies);
+  } else if (type === 'cargo') {
+    for (const block of text.split('[[package]]')) {
+      const name = /^\s*name\s*=\s*"([^"]+)"/m.exec(block);
+      if (name) names.add(name[1]);
+    }
+  } else if (type === 'go') {
+    let inBlock = false;
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (line.startsWith('require (')) { inBlock = true; continue; }
+      if (line === ')') { inBlock = false; continue; }
+      let match = /^require\s+(\S+)\s+v[\w.+-]+/.exec(line);
+      if (!match && inBlock) match = /^(\S+)\s+v[\w.+-]+/.exec(line);
+      if (match) names.add(match[1]);
+    }
+  }
+  return [...names].sort();
+}
+
+export { SUPPORTED as SUPPORTED_MANIFESTS, UNSUPPORTED as UNSUPPORTED_MANIFESTS };
+
+/** First supported manifest found in cwd, or null: {path, type}. */
+export async function detectManifest(cwd) {
+  return (await detectIn(cwd))[0] ?? null;
+}
+
+/** Manifest type for a filename ('npm' | 'cargo' | 'go'), or null when unsupported. */
+export function manifestTypeForFile(name) {
+  return typeForFile(name);
+}
+
 async function detectIn(cwd) {
   const found = [];
   for (const spec of SUPPORTED) {

@@ -328,10 +328,22 @@ describe('collectHistoryFacts against a real repository', () => {
     const fact = facts.find(f => f.detail?.classification === 'security');
     assert.ok(fact, 'deleting a security check must be flagged with a neutral message');
     assert.equal(fact.detail.classificationBasis, 'deleted-line');
-    assert.equal(fact.detail.originMethod, 'blame');
+    // Origins are the default now: the guard line is short and generic enough
+    // that the probe may keep blame attribution, but the run must have TRIED
+    // origin tracing (no "origins disabled" notice may appear by default).
     assert.ok(
-      notEvaluated.some(n => n.kind === 'history-origins' && /最后修改/.test(n.reason)),
-      'the blame semantics must be stated when --origins is off'
+      !notEvaluated.some(n => n.kind === 'history-origins'),
+      'origin tracing is on by default; no blame-semantics notice may appear'
+    );
+
+    // --no-origins restores plain blame and must say so.
+    const blameRun = await collectHistoryFacts({ cwd: repo, base, head: 'HEAD', origins: false });
+    const blameFact = blameRun.facts.find(f => f.detail?.classification === 'security');
+    assert.ok(blameFact, 'the security classification must not depend on origin tracing');
+    assert.equal(blameFact.detail.originMethod, 'blame');
+    assert.ok(
+      blameRun.notEvaluated.some(n => n.kind === 'history-origins' && /最后修改/.test(n.reason)),
+      'the blame semantics must be stated when origin tracing is off'
     );
   });
 

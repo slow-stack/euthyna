@@ -14,8 +14,8 @@ The CLI is **not in the skill directory** — it is a separate program of this p
 
 | Situation | How to write it | Notes |
 |---|---|---|
-| Installed | `euthyna history …` | `euthyna` is the command name declared by the package |
-| Project checkout available | `node <euthyna repo>/bin/euthyna.js history …` | the most common form |
+| Installed | `euthyna audit …` | `euthyna` is the command name declared by the package |
+| Project checkout available | `node <euthyna repo>/bin/euthyna.js audit …` | the most common form |
 | Neither | — | **mark the criterion as "not evaluable"**; do not substitute a manual estimate |
 
 ### ⚠️ A real pitfall: relative paths only work inside the euthyna repository
@@ -54,17 +54,21 @@ Both commands were verified: run from `D:\` with `--repo` pointing at another re
 **If the diff contains deleted lines, run it first.** This is not optional: a diff that looks "very clean" because a check was deleted
 is exactly what a security regression usually looks like, and a model cannot blame hundreds of deleted lines one by one and then trace back through commit history.
 
+**Usually you do not need to run it alone** — `euthyna audit` (section 1) already runs history (with origin tracing on by default)
+and deps in one pass. Run `history` alone to compare against a different `--base`, or when you want history without deps.
+
 ### Commands
 
 ```powershell
 # basic: which commits do this change's deleted lines come from, and do those commits look like security fixes
+# (origin tracing is on by default: deleted lines are attributed to the commit that "originally introduced" the content)
 node <euthyna repo>/bin/euthyna.js history --base <pre-change revision> --repo <audited repo>
 
 # additionally check for "removed and added back" lines (has a probe cap; slower than the basic version)
 node <euthyna repo>/bin/euthyna.js history --base <pre-change revision> --pickaxe --repo <audited repo>
 
-# attribute deleted lines to the commit that "originally introduced" the content (not blame's "last modifier"; has a probe cap)
-node <euthyna repo>/bin/euthyna.js history --base <pre-change revision> --origins --repo <audited repo>
+# disable origin tracing and fall back to blame's "last modified" semantics (faster; the output states this)
+node <euthyna repo>/bin/euthyna.js history --base <pre-change revision> --no-origins --repo <audited repo>
 ```
 
 `--base` is the **pre-change revision** (the PR's fork point); `--head` defaults to `HEAD`.
@@ -74,7 +78,7 @@ When the fork point is uncertain, use the result of `git merge-base <target bran
 
 `history`'s attribution and classification each carry a **hard-coded approximation** — know them before reading the output:
 
-1. **Attribution: blame is "last modified", not "originally introduced".** If a security-fix line was later touched by formatting/refactoring (moved, copied), blame attributes the origin to the last commit that touched it. `--origins` uses `git log -S <line content>` to locate the commit that **originally introduced** the content; when the two differ, the fact writes out both commits (`detail.blameCommit` = last modified, `evidence.commit` = originally introduced) and states so. `--origins` only traces lines ≥ 12 characters long (for overly generic lines, `-S` would point at the first commit of the entire history, which is not the origin); when it is not enabled, the output states this under "criteria not evaluated".
+1. **Attribution: `git log -S` traces the "original introducer" by default; blame's "last modified" is the fallback.** If a security-fix line was later touched by formatting/refactoring (moved, copied), blame attributes the origin to the last commit that touched it — tracing the introducer exists precisely to avoid that trap. Origin tracing uses `git log -S <line content>` to locate the commit that **originally introduced** the content; when it differs from blame, the fact writes out both commits (`detail.blameCommit` = last modified, `evidence.commit` = originally introduced) and states so. Tracing applies only to lines ≥ 12 characters long (for overly generic lines, `-S` would point at the first commit of the entire history, which is not the origin); traced lines are probe-capped, and when the cap is hit the remaining lines keep their blame attribution, stated under "criteria not evaluated"; disabling it explicitly with `--no-origins` is likewise stated there.
 2. **Classification: look at the commit message first, then the commit diff, then the deleted line itself.** When the message is vague ("update utils") but the diff touches a dangerous API, or the deleted line is itself security code (e.g. `if (!authorized) return`), it is marked `security` — the basis is recorded in `detail.classificationBasis` (`message` / `diff` / `deleted-line`). The deliberately wide bias is intentional: missing a security commit is more dangerous than over-reporting.
 
 ### What the output looks like (real capture)
@@ -213,7 +217,8 @@ The difference between `2` and `0` is the essence of why this contract exists: *
 
 ```
 Stage B (change-surface audit)
-  ├─ deleted lines present ────► history            → the result decides whether risk is raised to maximum
+  ├─ first command ───────────► audit              → history + deps in one pass
+  │                                              → deleted lines present: the result decides whether risk is raised to maximum
   ├─ regression judgment ──────► history --pickaxe  → the result decides whether to treat it as a "regression"
   └─ test coverage to discuss ─► coverage           → can only falsify; a non-zero count is not evidence
 
@@ -251,7 +256,7 @@ that a conclusion without evidence is not handed over wearing the face of "estab
 ## 7. Known limits (do not use beyond them)
 
 - `history`'s classifier is **biased wide**: missing a security commit is more dangerous than over-reporting, so it would rather report `fix` too. The classification is a **lead** — read the commit message yourself.
-- `history`'s attribution defaults to blame's "last modified" semantics; use `--origins` for "originally introduced" (has a probe cap, and only traces lines ≥ 12 characters). Both approximations are documented in this file's "Attribution semantics" section.
+- `history`'s attribution **traces the "original introducer" by default** (`git log -S`, probe-capped, only lines ≥ 12 characters); to fall back to blame's "last modified" semantics use `--no-origins` (faster; the output states this). Both approximations are documented in this file's "Attribution semantics" section.
 - `history` only covers **deleted lines**. It does not handle newly added code (except with `--pickaxe`).
 - `coverage` **can only falsify**. See above.
 - `coverage` relies on invocation counts and **does not handle dynamic dispatch, reflection, or string-based calls**. Conclusions of count 0 must be discounted when such mechanisms exist.

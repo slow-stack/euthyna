@@ -14,8 +14,8 @@ CLI **不在技能目录里**，它是本项目的独立程序。按可用性从
 
 | 情况 | 怎么写 | 备注 |
 |---|---|---|
-| 已安装 | `euthyna history …` | `euthyna` 是包声明的命令名 |
-| 有本项目检出 | `node <euthyna 仓库>/bin/euthyna.js history …` | 最常用的形式 |
+| 已安装 | `euthyna audit …` | `euthyna` 是包声明的命令名 |
+| 有本项目检出 | `node <euthyna 仓库>/bin/euthyna.js audit …` | 最常用的形式 |
 | 两者都没有 | —— | **把判据标为「不可评估」**，不要手工估算顶上 |
 
 ### ⚠️ 一个真实的坑：相对路径只在 euthyna 仓库里成立
@@ -54,17 +54,21 @@ node <euthyna 仓库>/bin/euthyna.js history --base <rev> --repo <被审计的�
 **只要 diff 里有删除行，就先跑它。** 这不是可选步骤：一个校验被删掉而看着「很干净」的 diff，
 正是安全回归最常见的样子，而模型无法对几百行被删代码逐行做 blame 再回溯提交历史。
 
+**通常不必单独跑它** —— `euthyna audit`（见第一节）已经把 history（默认开来源追溯）
+和 deps 一次跑完。单独跑 `history` 的场景：换一个 `--base` 重新对比、只要 history 不要 deps。
+
 ### 命令
 
 ```powershell
 # 基础：本次变更删掉的代码来自哪些提交、那些提交像不像安全修复
+# （来源追溯默认开启：删除行归属到「最初引入」该内容的提交）
 node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --repo <被审计的仓库>
 
 # 加测「曾被移除又加回来」的行（有探针上限，比基础版慢）
 node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --pickaxe --repo <被审计的仓库>
 
-# 把删除行归属到「最初引入」该内容的提交（而非 blame 的「最后修改者」，有探针上限）
-node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --origins --repo <被审计的仓库>
+# 关闭来源追溯，退回 blame 的「最后修改」语义（更快；输出会写明这一点）
+node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --no-origins --repo <被审计的仓库>
 ```
 
 `--base` 是**改前版本**（PR 的分叉点），`--head` 默认 `HEAD`。
@@ -74,13 +78,14 @@ node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --origins --r
 
 `history` 的归属和分类各有一个**写死的近似**，读输出前先知道它们：
 
-1. **归属：blame 是「最后修改」，不是「最初引入」。** 一条安全修复行如果之后被
-   格式化/重构碰过（移动、复制），blame 会把来源归到最后碰它的那个提交。
-   `--origins` 用 `git log -S <行内容>` 定位**最初引入**该内容的提交；两者不一致时
-   事实会同时写出两个提交（`detail.blameCommit` = 最后修改、`evidence.commit` =
-   最初引入），并说明「最初引入」。
-   `--origins` 只对长度 ≥ 12 字符的行做追溯（太通用的行，-S 会指向整个历史的
-   第一个提交，那不是来源）；未启用时输出会在「未评估的判据」里写明这一点。
+1. **归属：默认用 `git log -S` 追「最初引入」；blame 的「最后修改」只是回退。** 一条安全
+   修复行如果之后被格式化/重构碰过（移动、复制），blame 会把来源归到最后碰它的那个提交
+   ——追引入者正是为了不中这个招。来源追溯用 `git log -S <行内容>` 定位**最初引入**该内容
+   的提交；与 blame 不一致时，事实会同时写出两个提交（`detail.blameCommit` = 最后修改、
+   `evidence.commit` = 最初引入），并说明「最初引入」。
+   追溯只对长度 ≥ 12 字符的行做（太通用的行，-S 会指向整个历史的第一个提交，那不是来源）；
+   被追溯的行有探针上限，触顶时剩余行保留 blame 归属并在「未评估的判据」里写明；
+   `--no-origins` 显式关闭时同样在「未评估的判据」里写明用的是 blame 语义。
 2. **分类：先看提交信息，再看提交 diff，再看被删行本身。** 消息含糊
    （"update utils"）但 diff 动了危险 API、或被删行本身就是安全代码（如
    `if (!authorized) return`）时，都会标 `security`——依据写在
@@ -226,12 +231,13 @@ euthyna euthyna-coverage — 符号调用计数（只能证伪）
 
 ```
 阶段 B（变更面审计）
-  ├─ 有删除行 ──────► history             → 结果决定风险是否拉到最高
-  ├─ 涉及回归判断 ──► history --pickaxe   → 结果决定是否按「回归」处理
-  └─ 要谈测试覆盖 ──► coverage            → 只证伪；计数非零不构成证据
+  ├─ 第一条命令 ────► audit                  → history + deps 一次跑完
+  │                                          → 有删除行：结果决定风险是否拉到最高
+  ├─ 涉及回归判断 ──► history --pickaxe      → 结果决定是否按「回归」处理
+  └─ 要谈测试覆盖 ──► coverage               → 只证伪；计数非零不构成证据
 
 阶段 C（结论面验证）
-  └─ 结论依赖「测过没有」──► coverage     → 门禁 4（演示）的真假由它约束
+  └─ 结论依赖「测过没有」──► coverage        → 门禁 4（演示）的真假由它约束
 ```
 
 **产出器给的是事实，不是裁定。** 它说「这行来自一个安全修复提交」，
@@ -265,8 +271,8 @@ node <euthyna 仓库>/bin/euthyna.js gate <报告文件> --verify --cwd <被审�
 
 - `history` 的分类器**偏向宽**：漏掉安全提交比多报更危险，所以它宁可把 `fix` 也报出来。
   分类结果是**线索**，提交信息要自己读。
-- `history` 的归属默认是 blame 的「最后修改」语义；要「最初引入」用 `--origins`
-  （有探针上限，且只对 ≥ 12 字符的行做追溯）。两个近似都写在本文件「归属语义」一节。
+- `history` 的归属**默认追「最初引入」**（`git log -S`，有探针上限，只对 ≥ 12 字符的行做追溯）；
+  要退回 blame 的「最后修改」语义用 `--no-origins`（更快，输出会写明）。两个近似都写在本文件「归属语义」一节。
 - `history` 只覆盖**被删除的行**。新增的代码它不管（`--pickaxe` 除外）。
 - `coverage` **只能证伪**。见上文。
 - `coverage` 依赖调用计数，**不处理动态派发、反射、字符串调用**。

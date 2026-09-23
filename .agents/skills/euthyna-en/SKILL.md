@@ -85,8 +85,9 @@ What did the user give?
 │
 ├─ A change (PR / diff / commit) ───────────────► Stage B: change audit
 │   ("is this PR safe")                            read references/change-audit.md
-│                                                 ★ deleted lines in the diff → run history first
-│                                                 ★ if test coverage matters   → run coverage first
+│                                                 ★ first command: euthyna audit --base <fork point>
+│                                                   (history + deps in one run, see below)
+│                                                 ★ if test coverage matters   → then run coverage
 │
 ├─ A repository / dependency surface ───────────► Stage A: dependency audit
 │   ("do the dependencies have problems")          read references/dependency-audit.md
@@ -111,10 +112,15 @@ reliably — are shipped by this skill as a zero-dependency CLI:
 
 | Measurement | Question it answers | When it is **mandatory** |
 |---|---|---|
-| `history` | Which commit does the code this change **deleted** come from? Was that commit a security fix? | when the diff has deleted lines (Stage B) |
+| `audit` | **Both questions below in one run** (history traces original introducers by default + deps enumerates every lockfile dependency), one merged report | **the first command of every audit** (opening Stage B) |
+| `history` | Which commit does the code this change **deleted** come from? Was that commit a security fix? | when re-running history alone (e.g. a different `--base`) |
 | `coverage` | Was this symbol **ever actually invoked** by a test run? | when the report claims "tested / not tested" (Stage B / C) |
 
 ```powershell
+# the only required argument is --base (pre-change revision / PR fork point):
+node <euthyna repo>/bin/euthyna.js audit --base <pre-change revision> --repo <audited repo>
+
+# history / coverage run alone when needed:
 node <euthyna repo>/bin/euthyna.js history  --base <pre-change revision> --repo <audited repo>
 node <euthyna repo>/bin/euthyna.js coverage --coverage <absolute path to coverage file> --symbol <symbol name>
 ```
@@ -229,7 +235,7 @@ adjudication, it only guarantees that a conclusion without evidence cannot leave
 ## Pre-delivery self-check (tick every item; without all of them you may not say "audit done")
 
 - [ ] Every suspected finding went through **complete** Stage C, not "looked at it and it seems false"
-- [ ] **Ran `history` when the diff has deleted lines**; code deleted from a security-fix commit handled at highest risk
+- [ ] **Ran `audit` (or `history` when the diff has deleted lines)**; code deleted from a security-fix commit handled at highest risk
 - [ ] Every "tested / not tested" sentence in the report is backed by `coverage` output, or marked "not evaluable"
 - [ ] **No criterion with exit code `2` appears in a "clean" column**
 - [ ] Every conclusion carries a `file:line`

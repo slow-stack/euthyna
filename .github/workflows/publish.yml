@@ -139,13 +139,23 @@ jobs:
           clawhub login --token "$CLAWHUB_TOKEN" --label "github-actions-publish"
           PKG="${{ steps.version.outputs.version }}"
           SHA="${{ github.sha }}"
+          # Changelog: the conventional-commit subjects since the previous tag.
+          # This repo's history IS the change summary, so it is derived here
+          # instead of being hand-maintained in two more places. First release
+          # (no previous tag) falls back to the package description.
+          PREV_TAG="$(git describe --tags --abbrev=0 "$SHA"^ 2>/dev/null || true)"
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG="$(git log --format='- %s' "$PREV_TAG..$SHA" | head -15)"
+          else
+            CHANGELOG="euthyna $PKG — $(node -p "require('./package.json').description")"
+          fi
           clawhub skill publish \
             --slug euthyna --name euthyna --version "$PKG" \
             --categories security,development \
             --topics "security-audit,code-audit,git-forensics,owasp" \
             --source-repo "${{ github.repository }}" --source-commit "$SHA" \
             --source-path .agents/skills/euthyna \
-            --changelog "euthyna $PKG" \
+            --changelog "$CHANGELOG" \
             --tags latest .agents/skills/euthyna
           clawhub skill publish \
             --slug euthyna-en --name "euthyna (English)" --version "$PKG" \
@@ -153,5 +163,5 @@ jobs:
             --topics "security-audit,code-audit,git-forensics,owasp" \
             --source-repo "${{ github.repository }}" --source-commit "$SHA" \
             --source-path .agents/skills/euthyna-en \
-            --changelog "English edition, matching zh $PKG" \
+            --changelog "English edition. Changes in $PKG: $CHANGELOG" \
             --tags latest .agents/skills/euthyna-en

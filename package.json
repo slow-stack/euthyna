@@ -17,6 +17,7 @@
     ".agents/skills/euthyna/",
     ".agents/skills/euthyna-en/",
     ".claude/commands/",
+    ".opencode/commands/",
     "assets/euthyna.png",
     "NOTICE.md"
   ],

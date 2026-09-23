@@ -99,7 +99,8 @@ the project is deliberately zero-dependency.
 | **Claude Code** | `/plugin marketplace add slow-stack/euthyna` then `/plugin install euthyna@euthyna`, or copy `.agents/skills/euthyna/` into `~/.claude/skills/` | Same |
 | **Codex** | The same Markdown layer works; packaging goes through Codex's plugin/marketplace format | Same |
 | **Hermes** | Copy the same folder into `~/.hermes/skills/` under a category folder, or install from a repo with `hermes skills install` — and for the slash command, install the repo as a plugin (see below) | Same |
-| **OpenCode** | Copy the same folder into `~/.agents/skills/` or `~/.config/opencode/skills/` (OpenCode loads both; unknown frontmatter fields are ignored) | Same |
+| **OpenCode** | Copy the same folder into `~/.agents/skills/` or `~/.config/opencode/skills/` (OpenCode loads both; unknown frontmatter fields are ignored). For a `/euthyna` slash command, copy `.opencode/commands/euthyna.md` into `~/.config/opencode/commands/` — it is a prompt template that tells the model to run the CLI | Same |
+| **OpenClaw** | Copy the same folder into `~/.agents/skills/` (or `<workspace>/.agents/skills/`) — OpenClaw exposes every `user-invocable` skill as a slash command natively, so `/euthyna` works with no extra file | Same |
 | **Any terminal** | — | `npm install -g euthyna`, then `euthyna …` |
 
 The skill ships in two languages. The directory above is the Chinese original (`euthyna`);

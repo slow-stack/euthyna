@@ -4,6 +4,7 @@ description: 代码安全审计的判定纪律与交付门禁。当用户要求�
 whenToUse: 用户要求审计代码或仓库的安全面、验证一条疑似漏洞结论真假、判定某个发现是否可利用、审查一次变更是否引入安全回归，或要求「审完再交付」时使用。只查密钥、只查依赖版本这类单一主题，直接用对应专项技能，不要触发本技能。
 disable-model-invocation: true
 user-invocable: true
+license: Apache-2.0
 ---
 
 # euthyna — 代码安全审计的判定纪律

@@ -1,6 +1,6 @@
 {
   "name": "euthyna",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Deterministic fact producers for security auditing: which deleted code came from a security fix, and which changed symbols no test ever executed.",
   "type": "module",
   "main": "./plugin/index.js",
@@ -18,6 +18,8 @@
     ".agents/skills/euthyna-en/",
     ".claude/commands/",
     ".opencode/commands/",
+    ".cursor/commands/",
+    ".github/prompts/",
     "assets/euthyna.png",
     "NOTICE.md"
   ],

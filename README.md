@@ -105,7 +105,9 @@ the project is deliberately zero-dependency.
 | **Codex** | The same Markdown layer works; packaging goes through Codex's plugin/marketplace format | Same |
 | **Hermes** | Copy the same folder into `~/.hermes/skills/` under a category folder, or install from a repo with `hermes skills install` — and for the slash command, install the repo as a plugin (see below) | Same |
 | **OpenCode** | Copy the same folder into `~/.agents/skills/` or `~/.config/opencode/skills/` (OpenCode loads both; unknown frontmatter fields are ignored). For a `/euthyna` slash command, copy `.opencode/commands/euthyna.md` into `~/.config/opencode/commands/` — it is a prompt template that tells the model to run the CLI | Same |
-| **OpenClaw** | Copy the same folder into `~/.agents/skills/` (or `<workspace>/.agents/skills/`) — OpenClaw exposes every `user-invocable` skill as a slash command natively, so `/euthyna` works with no extra file | Same |
+| **OpenClaw** | Copy the same folder into `~/.agents/skills/` (or `<workspace>/.agents/skills/`) — OpenClaw exposes every `user-invocable` skill as a slash command natively, so `/euthyna` works with no extra file. Published on ClawHub as [`@modusensus/euthyna`](https://clawhub.ai/modusensus/skills/euthyna) (zh) and [`@modusensus/euthyna-en`](https://clawhub.ai/modusensus/skills/euthyna-en) (en): `clawhub install modusensus/euthyna` | Same |
+| **GitHub Copilot** | Copy the same folder into `.github/skills/` (project), `~/.copilot/skills/` or `~/.agents/skills/` (personal) — Copilot reads all three. For a `/euthyna` prompt, copy `.github/prompts/euthyna.prompt.md` into the same-named folder of your repo or profile. `gh skill` can also install skills from this repository | Same |
+| **Cursor** | Copy the same folder into `.cursor/skills/` (project), `~/.cursor/skills/` (global) — Cursor also reads `.claude/skills/` for compatibility. For a `/euthyna` command, copy `.cursor/commands/euthyna.md` into the matching `commands/` folder (plain Markdown, no frontmatter) | Same |
 | **Any terminal** | — | `npm install -g euthyna`, then `euthyna …` |
 
 The skill ships in two languages. The directory above is the Chinese original (`euthyna`);
@@ -154,6 +156,9 @@ replying in chat.
 | Codex | — | Codex's custom-prompt slash commands (`~/.codex/prompts/`) are deprecated upstream; the same Markdown can still be placed there manually |
 | DSH | `/euthyna` | installed with the plugin; after a restart the command prints the usage manual (DSH slash commands run without reaching the model) |
 | Hermes | `/euthyna <subcommand> <args…>` | install this repository as a Hermes plugin: `hermes plugins install slow-stack/euthyna` then `hermes plugins enable euthyna` (needs Node >= 20 on PATH; the repo root carries `plugin.yaml` + `__init__.py`). The command forwards to the CLI and prints its output without reaching the model. The skill itself can still be installed separately with `hermes skills install slow-stack/euthyna/.agents/skills/euthyna` |
+| OpenCode | `/euthyna <args…>` | copy `.opencode/commands/euthyna.md` into `~/.config/opencode/commands/` or `.opencode/commands/` |
+| GitHub Copilot | `/euthyna <target>` | copy `.github/prompts/euthyna.prompt.md` into `.github/prompts/` (project) or the prompt folder of your profile; available in VS Code and Copilot CLI |
+| Cursor | `/euthyna <target>` | copy `.cursor/commands/euthyna.md` into `.cursor/commands/` (project) or `~/.cursor/commands/` (global); plain Markdown, no frontmatter |
 
 ### How to tell it was euthyna that audited
 

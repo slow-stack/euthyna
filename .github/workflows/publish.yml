@@ -113,3 +113,45 @@ jobs:
         run: |
           sed "s/{{version}}/$PKG/g" .github/release-notes-template.md > release-notes.md
           gh release create "v$PKG" --title "euthyna $PKG" --notes-file release-notes.md
+
+      # ClawHub has no pull-through: its registry only carries what a publisher
+      # pushes, so without this step the listing silently falls behind npm.
+      # The token is a secret created on clawhub.ai (account → API token);
+      # `clawhub login --token` accepts it non-interactively, and CI writes it
+      # to a throwaway config via CLAWHUB_CONFIG_PATH. Both language editions
+      # are published from the tarball's .agents/skills/ directories. A version
+      # already present is skipped by the CLI's own version gate rather than
+      # failing the run.
+      - name: Publish the skills to ClawHub (zh + en)
+        if: >-
+          (github.event_name == 'push' ||
+           (github.event_name == 'workflow_dispatch' && inputs.publish == true)) &&
+          steps.gate.outputs.already-published != 'true'
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          if [ -z "$CLAWHUB_TOKEN" ]; then
+            echo "CLAWHUB_TOKEN is not set; skipping the ClawHub publish"
+            exit 0
+          fi
+          npm install -g clawhub
+          export CLAWHUB_CONFIG_PATH="$RUNNER_TEMP/clawhub-config.json"
+          clawhub login --token "$CLAWHUB_TOKEN" --label "github-actions-publish"
+          PKG="${{ steps.version.outputs.version }}"
+          SHA="${{ github.sha }}"
+          clawhub skill publish \
+            --slug euthyna --name euthyna --version "$PKG" \
+            --categories security,development \
+            --topics "security-audit,code-audit,git-forensics,owasp" \
+            --source-repo "${{ github.repository }}" --source-commit "$SHA" \
+            --source-path .agents/skills/euthyna \
+            --changelog "euthyna $PKG" \
+            --tags latest .agents/skills/euthyna
+          clawhub skill publish \
+            --slug euthyna-en --name "euthyna (English)" --version "$PKG" \
+            --categories security,development \
+            --topics "security-audit,code-audit,git-forensics,owasp" \
+            --source-repo "${{ github.repository }}" --source-commit "$SHA" \
+            --source-path .agents/skills/euthyna-en \
+            --changelog "English edition, matching zh $PKG" \
+            --tags latest .agents/skills/euthyna-en

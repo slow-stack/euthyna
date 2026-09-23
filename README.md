@@ -11,6 +11,7 @@
 <p align="center">
   <a href="https://github.com/slow-stack/euthyna/actions/workflows/ci.yml"><img src="https://github.com/slow-stack/euthyna/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://www.skills.sh/slow-stack/euthyna"><img src="https://skills.sh/b/slow-stack/euthyna.svg" alt="Agent skills installs"></a>
+  <a href="https://awesome-dsh-plugin.com/p/slow-stack/euthyna/"><img src="https://img.shields.io/badge/DSH%20plugin-listed-blue" alt="Listed in the awesome-dsh-plugin catalog"></a>
 </p>
 
 **euthyna is a code security audit framework for AI coding agents.** It is not another

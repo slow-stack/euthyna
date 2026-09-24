@@ -306,6 +306,9 @@ This project tries to be explicit about the difference. Current state:
   condemn; that is not a statement about either project. See
   [`docs/case-study-crewai.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md) and
   [`docs/case-study-axe-core.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-axe-core.md).
+- **A CI recipe, by running it on GitHub.** The exit-code gate and the workflow wiring are
+  documented in [`docs/ci-integration.md`](https://github.com/slow-stack/euthyna/blob/main/docs/ci-integration.md);
+  the workflow snippet has not been exercised as a live Actions run.
 
 ---
 

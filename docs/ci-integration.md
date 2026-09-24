@@ -54,17 +54,34 @@ translate:
           npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD
         continue-on-error: true
         id: audit
-      - name: Enforce the contract (10 = review, anything else non-zero fails)
+      - name: Enforce the contract (0 and 10 pass — 10 is for human review; 1 and 2 fail)
         if: always()
         run: |
-          code=${{ steps.audit.outcome == 'success' && 0 || 1 }}
-          if [ "$code" -eq 0 ]; then exit 0; fi
-          echo "euthyna audit did not measure clean (or found security-classified history); see the step above." >&2
+          code=${{ steps.audit.outcome == 'success' && 0 || steps.audit.outputs.exit_code }}
+          if [ "$code" -eq 0 ] || [ "$code" -eq 10 ]; then exit 0; fi
+          echo "euthyna audit failed: exit $code (1 = usage error, fix the workflow; 2 = could not measure, never treat as clean). See the step above." >&2
           exit 1
 ```
 
-`ponytail:` the two-step form re-implements the exit code in shell to blur `10` vs `2`; the
-one-step form is the honest gate. Use the two-step form only when `10` must not block merges.
+The audit step must publish its own exit code or the enforcement step cannot tell `10`
+from `1`/`2`; `outcome` collapses all non-zero results into one "failed" boolean. The
+publishing form:
+
+```yaml
+      - name: Change-surface audit (deleted-code provenance + dependency pins)
+        run: |
+          npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+        id: audit
+```
+
+(`continue-on-error` still swallows nothing here — the step records the code first, and a
+failure outcome with `outputs.exit_code=10` is exactly the "flagged, don't block" case.)
+Note `exit 10` from a `run:` step fails the step but keeps the code readable in
+`outputs`, so nothing is lost.
+
+`ponytail:` the two-step form re-implements the exit contract in shell; the one-step form
+is the honest gate. Use the two-step form only when `10` must not block merges.
 
 ## Reading the report in the PR
 
@@ -73,6 +90,7 @@ The run prints the human-readable report to the step log. To attach it to the PR
 ```yaml
       - name: Change-surface audit
         run: |
+          set -o pipefail
           npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD \
             | tee audit-report.txt
         continue-on-error: true
@@ -83,6 +101,10 @@ The run prints the human-readable report to the step log. To attach it to the PR
           name: euthyna-audit-report
           path: audit-report.txt
 ```
+
+Without `pipefail`, the step's status is `tee`'s (always 0), so a `1`/`2`/`10` from the
+audit would turn the gate green. Actions' default shell is `bash -e`, which does **not**
+imply `pipefail`, hence the explicit `set -o pipefail` line.
 
 Add `--json` and point the artifact at the JSON file when a downstream consumer (a comment bot,
 an adjudicator agent) should read facts rather than prose.

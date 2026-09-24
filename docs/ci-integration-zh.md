@@ -52,16 +52,31 @@ GitHub 把任何非零退出当作步骤失败，所以 `0` 显示绿，`10`、`
           npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD
         continue-on-error: true
         id: audit
-      - name: 执行契约（10 = 留给人工审阅，其余非零失败）
+      - name: 执行契约（0 和 10 通过——10 留给人工审阅；1 和 2 失败）
         if: always()
         run: |
-          code=${{ steps.audit.outcome == 'success' && 0 || 1 }}
-          if [ "$code" -eq 0 ]; then exit 0; fi
-          echo "euthyna audit 未测成干净（或发现了 security 分类的历史）；见上一步。" >&2
+          code=${{ steps.audit.outcome == 'success' && 0 || steps.audit.outputs.exit_code }}
+          if [ "$code" -eq 0 ] || [ "$code" -eq 10 ]; then exit 0; fi
+          echo "euthyna audit 失败：退出码 $code（1 = 用法错误，修 workflow；2 = 无法测量，绝不当成干净）。见上一步。" >&2
           exit 1
 ```
 
-`ponytail:` 两步版用 shell 重述了一遍退出码，把 `10` 和 `2` 混在一起；一步版才是诚实的
+审计步骤必须自己公布退出码，否则执行步骤分不清 `10` 和 `1`/`2`——`outcome` 把所有
+非零结果压成一个「失败」布尔。公布形式：
+
+```yaml
+      - name: 变更面审计（删除代码来源 + 依赖锁定版本）
+        run: |
+          npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+        id: audit
+```
+
+（`continue-on-error` 在这里什么都没吞——步骤先把退出码记下来，失败 outcome 加
+`outputs.exit_code=10` 正是「有发现但不挡合并」的情形。`run:` 步骤 `exit 10` 会让步骤
+失败但退出码仍可从 `outputs` 读到，没有信息丢失。）
+
+`ponytail:` 两步版用 shell 重述了一遍退出契约；一步版才是诚实的
 门禁。只有当 `10` 不该挡合并时才用两步版。
 
 ## 把报告挂到 PR 上
@@ -71,6 +86,7 @@ GitHub 把任何非零退出当作步骤失败，所以 `0` 显示绿，`10`、`
 ```yaml
       - name: 变更面审计
         run: |
+          set -o pipefail
           npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD \
             | tee audit-report.txt
         continue-on-error: true
@@ -81,6 +97,10 @@ GitHub 把任何非零退出当作步骤失败，所以 `0` 显示绿，`10`、`
           name: euthyna-audit-report
           path: audit-report.txt
 ```
+
+没有 `pipefail` 时，步骤的状态是 `tee` 的（永远 0），audit 的 `1`/`2`/`10` 会被吞掉、
+门禁假绿。Actions 的默认 shell 是 `bash -e`，**不**隐含 `pipefail`，所以要显式写
+`set -o pipefail`。
 
 下游消费方（评论机器人、裁定 agent）要读 fact 而不是散文时，加 `--json` 并把 artifact
 指向 JSON 文件。

@@ -17,7 +17,7 @@
  * There is no code path here that emits "executed". That is the design, not an
  * omission. See docs/fact-contract-zh.md section 6.2.
  */
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { makeFact, notEvaluated as notEvaluatedEntry, KIND, STATUS, shellQuote } from '../contract.js';
 import { T, DEFAULT_LANG } from '../lang.js';
@@ -156,16 +156,70 @@ export function parseGoProfile(raw) {
 }
 
 /**
+ * The code visible on each line: comments and raw-string contents blanked out,
+ * with multi-line `/*...*​/` and `...` regions tracked across lines.
+ *
+ * Without this, a commented-out function, a `}` at column 0 inside a block
+ * comment, or a raw string with a column-0 brace would create phantom function
+ * ranges or split real ones — and coverage blocks would be assigned to the
+ * wrong function, which is a false coverage result.
+ */
+function goSignificantLines(text) {
+  const out = [];
+  let inBlock = false;
+  let inRaw = false;
+  for (const line of String(text).split(/\r?\n/)) {
+    let sig = '';
+    let i = 0;
+    while (i < line.length) {
+      const ch = line[i];
+      if (inBlock) {
+        if (ch === '*' && line[i + 1] === '/') {
+          inBlock = false;
+          i += 2;
+          continue;
+        }
+        i++;
+        continue;
+      }
+      if (inRaw) {
+        if (ch === '`') inRaw = false;
+        i++;
+        continue;
+      }
+      if (ch === '`') {
+        inRaw = true;
+        i++;
+        continue;
+      }
+      if (ch === '/' && line[i + 1] === '/') break; // rest of the line is a comment
+      if (ch === '/' && line[i + 1] === '*') {
+        inBlock = true;
+        i += 2;
+        continue;
+      }
+      sig += ch;
+      i++;
+    }
+    out.push(sig);
+  }
+  return out;
+}
+
+/**
  * Top-level function ranges of a gofmt'd Go source file.
  *
- * Only `func` at column 0 matches: nested (indented) declarations are left
- * alone, which is the point — a closure inside a function is part of that
- * function's range. A function ends at the next `}` at column 0. Methods are
- * reported under their bare method name (two types may share it; every match
- * is reported, mirroring how c8 reports every fnMap entry with a given name).
+ * Only `func` at column 0 of *significant* code matches: nested (indented)
+ * declarations are left alone, which is the point — a closure inside a
+ * function is part of that function's range. A function ends at the next `}`
+ * at column 0, or on its own declaration line when the whole function sits on
+ * that line (`func f() {}`), so a later package-level block is not absorbed.
+ * Methods are reported under their bare method name (two types may share it;
+ * every match is reported, mirroring how c8 reports every fnMap entry with a
+ * given name).
  */
 export function goFunctionRanges(text) {
-  const lines = text.split(/\r?\n/);
+  const lines = goSignificantLines(text);
   const funcs = [];
   let current = null;
   const declRe = /^func\s*(?:\([^)]*\))?\s*([A-Za-z_]\w*)/;
@@ -178,12 +232,17 @@ export function goFunctionRanges(text) {
       continue;
     }
     if (/^func\s/.test(line)) {
-      // a new decl with no closing brace in between: gofmt puts top-level
-      // functions on one line only when empty (func f() {}); close at the
-      // previous line rather than swallowing the new declaration
+      // a new decl with no closing brace in between: close the previous range
+      // at the previous line rather than swallowing the new declaration
       if (current) funcs.push({ ...current, endLine: i });
       const name = declRe.exec(line)?.[1];
       current = name ? { name, startLine: i + 1 } : null;
+      // the whole function on one line (gofmt keeps empty ones there): close
+      // it on its own line
+      if (current && /\}\s*$/.test(line)) {
+        funcs.push({ ...current, endLine: i + 1 });
+        current = null;
+      }
     }
   }
   if (current) funcs.push({ ...current, endLine: lines.length });
@@ -739,6 +798,26 @@ async function collectGoCoverageFacts({ coverage, coverageFile, targets, source,
     // needed to even read the data was missing, the notEvaluated entry above
     // is the honest record and no locating claim is made.
     if (matched === 0 && !unresolved) {
+      // With --source we can tell "not located" apart from "lives in a file the
+      // profile never saw": a symbol declared in a file absent from the profile
+      // is a refusal (its package was probably not compiled in), not an answer.
+      const elsewhere = await findGoSymbolOutsideProfile(coverage, source, module, target.symbol);
+      if (elsewhere) {
+        notEvaluated.push(
+          notEvaluatedEntry(
+            KIND.TEST_COVERAGE,
+            t(
+              `符号 ${target.symbol} 在 ${elsewhere} 中有顶层声明，但该文件没有出现在 Go coverage profile 里 —— ` +
+                '它所在的包多半没被编译进这次测试二进制（-coverpkg 或运行对应包才能测到它）。' +
+                '这是「未评估」，既不是「从未调用」也不是「无法定位」',
+              `Symbol ${target.symbol} is declared in ${elsewhere}, but that file does not appear in the Go coverage profile — ` +
+                'its package was probably not compiled into this test binary (-coverpkg or running that package is required to measure it). ' +
+                'This is "not evaluated": neither "never invoked" nor "could not locate"'
+            )
+          )
+        );
+        continue;
+      }
       facts.push(
         makeFact({
           id: `coverage-${++counter}`,
@@ -764,16 +843,75 @@ async function collectGoCoverageFacts({ coverage, coverageFile, targets, source,
     }
   }
 
-  evaluated.push({
-    kind: KIND.TEST_COVERAGE,
-    producer: 'euthyna-coverage',
-    format: 'go',
-    count: facts.length
-  });
+  // A query that produced no fact and only refusals was not answered —
+  // "measured" must not let CI read it as clean.
+  const measured = facts.length > 0;
+  if (measured) {
+    evaluated.push({
+      kind: KIND.TEST_COVERAGE,
+      producer: 'euthyna-coverage',
+      format: 'go',
+      count: facts.length
+    });
+  }
 
-  return { facts, evaluated, notEvaluated, measured: true };
+  return { facts, evaluated, notEvaluated, measured };
 }
 
 function modulePrefix(goModText) {
   return /^\s*module\s+(\S+)/m.exec(goModText)?.[1] ?? null;
+}
+
+const GO_WALK_SKIP = new Set(['vendor', 'testdata', 'node_modules', '.git']);
+
+/**
+ * Does the symbol exist in a .go file that the profile does not cover?
+ *
+ * Walks the module root (skipping vendor/testdata and hidden dirs), maps each
+ * file to its import path, and reports the first file — relative to the
+ * module root — whose top-level functions include the symbol while the file
+ * itself is absent from the profile. The whole-tree scan only runs on the
+ * rare "matched 0" path, so the common query pays nothing for it.
+ */
+async function findGoSymbolOutsideProfile(coverage, source, module, symbol) {
+  if (!source) return null;
+
+  // absolute disk paths the profile already accounts for
+  const covered = new Set();
+  for (const profilePath of coverage.files.keys()) {
+    if (path.isAbsolute(profilePath)) {
+      covered.add(path.resolve(profilePath).replace(/\\/g, '/').toLowerCase());
+    }
+  }
+
+  async function* walk(dir) {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.endsWith('.go')) yield path.join(dir, entry.name);
+      else if (entry.isDirectory() && !GO_WALK_SKIP.has(entry.name) && !entry.name.startsWith('.')) {
+        yield* walk(path.join(dir, entry.name));
+      }
+    }
+  }
+
+  for await (const file of walk(source)) {
+    const abs = path.resolve(file).replace(/\\/g, '/').toLowerCase();
+    if (covered.has(abs)) continue;
+    const rel = path.relative(source, file).replace(/\\/g, '/');
+    const importPath = module ? `${module}/${rel}` : rel;
+    if (coverage.files.has(importPath) || coverage.files.has(rel)) continue;
+    let text;
+    try {
+      text = await readFile(file, 'utf8');
+    } catch {
+      continue;
+    }
+    if (goFunctionRanges(text).some(fn => fn.name === symbol)) return rel;
+  }
+  return null;
 }

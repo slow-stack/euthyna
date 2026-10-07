@@ -157,4 +157,79 @@ describe('Go coverage profiles', () => {
     assert.equal(measured, false);
     assert.ok(notEvaluated.some(n => /无法读取覆盖率数据|cannot read coverage data/.test(n.reason)));
   });
+
+  test('comments and raw strings cannot start or end function ranges', () => {
+    const tricky = [
+      'package pkg',
+      '',
+      '/*',
+      'func Phantom() {',
+      '}',
+      '*/',
+      'func Real(n int) int {',
+      '\ts := `',
+      'func AlsoPhantom() {}',
+      '}',
+      '`',
+      '\treturn n',
+      '}',
+      '',
+      '// } a col-zero brace inside a line comment',
+      'func NeverCalled(n int) int {',
+      '\treturn n * 2',
+      '}'
+    ].join('\n');
+    const ranges = goFunctionRanges(tricky);
+    assert.deepEqual(ranges.map(r => r.name), ['Real', 'NeverCalled']);
+    // Real spans its actual body, the raw string inside it included
+    assert.deepEqual([ranges[0].startLine, ranges[0].endLine], [7, 13]);
+  });
+
+  test('a one-line empty function does not absorb later blocks', () => {
+    const oneLine = [
+      'package pkg',
+      '',
+      'func Empty() {}',
+      '',
+      'func Real(n int) int {',
+      '\treturn n',
+      '}'
+    ].join('\n');
+    const ranges = goFunctionRanges(oneLine);
+    assert.deepEqual(ranges.map(r => r.name), ['Empty', 'Real']);
+    assert.deepEqual([ranges[0].startLine, ranges[0].endLine], [3, 3]);
+    assert.deepEqual([ranges[1].startLine, ranges[1].endLine], [5, 7]);
+  });
+
+  test('a query answered only by refusals is measured: false, never clean', async () => {
+    const profile = path.join(dir, 'go-refused-only.out');
+    await writeFile(profile, PROFILE_LINES, 'utf8');
+    const { facts, measured } = await collectCoverageFacts({
+      coverageFile: profile,
+      source: goRoot,
+      targets: [{ symbol: 'Called', file: 'example.com/mini/pkg/missing.go' }]
+    });
+    assert.equal(facts.length, 0);
+    assert.equal(measured, false);
+  });
+
+  test('a symbol declared only in a file absent from the profile is not evaluated, not "not located"', async () => {
+    const profile = path.join(dir, 'go-elsewhere.out');
+    await writeFile(profile, PROFILE_LINES, 'utf8');
+    await writeFile(
+      path.join(goRoot, 'pkg', 'b.go'),
+      'package pkg\n\nfunc OnlyInB(n int) int {\n\treturn n - 1\n}\n',
+      'utf8'
+    );
+    const { facts, notEvaluated, measured } = await collectCoverageFacts({
+      coverageFile: profile,
+      source: goRoot,
+      targets: [{ symbol: 'OnlyInB' }]
+    });
+    assert.equal(facts.length, 0);
+    assert.equal(measured, false);
+    assert.ok(
+      notEvaluated.some(n => /does not appear in the Go coverage profile|没有出现在 Go coverage profile/.test(n.reason))
+    );
+  });
 });

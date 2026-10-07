@@ -73,7 +73,7 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
 用法:
   euthyna audit    --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
   euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
-  euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--json]
+  euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--source <dir>] [--json]
   euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json]
   euthyna gate     <报告文件> [--verify] [--cwd <dir>] [--json]
 
@@ -92,6 +92,8 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
              --coverage  覆盖率数据文件，c8 的 coverage-final.json
              --symbol    要查询的符号名，可重复
              --file      可选，限定到某个文件
+             --source    可选，Go profile（go test -coverprofile）必需：模块根目录，
+                         用于把行区间映射回函数（profile 不含函数名）
   deps       某个依赖在 lockfile 里被锁定/声明成什么版本（供应链声明的裁决依据）
              --repo      可选，依赖清单所在目录（默认当前目录，自动检测）
              --lockfile  可选，显式指定清单文件（支持 package-lock.json / Cargo.lock / go.mod）
@@ -123,7 +125,7 @@ reliably, and writes the answers as facts with evidence.
 Usage:
   euthyna audit    --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
   euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
-  euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--json]
+  euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--source <dir>] [--json]
   euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json]
   euthyna gate     <report file> [--verify] [--cwd <dir>] [--json]
 
@@ -147,6 +149,9 @@ Commands:
              --coverage  the coverage data file, c8's coverage-final.json
              --symbol    symbol name(s) to query, repeatable
              --file      optional, restrict to one file
+             --source    optional, required for Go profiles (go test -coverprofile):
+                         the module root, used to map line ranges back to
+                         functions (the profile carries no function names)
   deps       what version does the lockfile pin or declare for a dependency? (the basis for supply-chain claims)
              --repo      optional, directory containing the manifest (default cwd, auto-detected)
              --lockfile  optional, explicit manifest path (package-lock.json / Cargo.lock / go.mod)
@@ -305,6 +310,7 @@ async function runCoverage(flags, lang) {
   );
   const symbols = asArray(flags.symbol).map(String);
   const file = flags.file ? String(flags.file) : undefined;
+  const source = flags.source ? path.resolve(String(flags.source)) : undefined;
 
   // Asking for nothing is a caller mistake, not a measurement failure.
   if (symbols.length === 0) {
@@ -318,12 +324,13 @@ async function runCoverage(flags, lang) {
   const { facts, evaluated, notEvaluated, measured } = await collectCoverageFacts({
     coverageFile,
     targets,
+    source,
     lang
   });
 
   const report = makeReport({
     producer: producerFor(COVERAGE_PRODUCER, lang),
-    subject: { coverageFile, symbols, file },
+    subject: { coverageFile, symbols, file, ...(source ? { source } : {}) },
     facts,
     evaluated,
     notEvaluated

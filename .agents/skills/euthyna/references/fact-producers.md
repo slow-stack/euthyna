@@ -146,14 +146,31 @@ node <euthyna 仓库>/bin/euthyna.js coverage `
   --symbol <符号名> --symbol <符号名>
 ```
 
-`--symbol` 可重复，一次查多个。加 `--file` 可限定到某个文件。
+`--symbol` 可重复，一次查多个。加 `--file` 可限定到某个文件。Go profile 另需 `--source`
+（见下）。
 
-**两种覆盖率格式都读**（自动识别，无需参数）：
+**三种覆盖率格式都读**（自动识别，无需参数）：
 
 | 格式 | 来源 | 说明 |
 |---|---|---|
 | c8 / v8-to-istanbul `coverage-final.json` | JS 项目（c8 默认落在 `coverage/coverage-final.json`） | 每文件有 `fnMap` + `f`（调用计数数组） |
 | coverage.py JSON（format 3） | Python 项目（`coverage json` 产出） | 顶层 `{meta, files}`；`functions` 里「函数名 → 已执行行列表」，**无调用计数**。从未调用的函数仍在列表中且 `executed_lines` 为空 |
+| Go `-coverprofile`（文本） | Go 项目（`go test -coverprofile` 产出） | `mode:` 头 + 每区块一行 `路径:起始行.列,结束行.列 语句数 命中数`，**无函数名**。必须加 `--source <模块根目录>`：产出器读源码里的顶层 `func` 把行区间映射回函数 |
+
+Go 的产出命令（Go 目标）：
+```bash
+go test ./包路径/ -coverprofile=<绝对路径>.out -run <测试名>
+node <euthyna 仓库>/bin/euthyna.js coverage `
+  --coverage <绝对路径>.out --symbol <符号名> --source <Go 模块根目录>
+```
+
+> Go 专属注意事项（在 act 案例研究中实测）：
+> 1. **文件不在 profile 里 ≠ 未执行**——该文件所在的包可能根本没被编译进测试二进制。
+>    产出器把这种情况报为「未评估」，绝不当「未被覆盖」。要测到某个包，用
+>    `-coverpkg=<包>` 或直接运行对应包的测试。
+> 2. profile 路径是模块导入路径（`module/pkg/file.go`）；`--source` 指向含 go.mod 的
+>    模块根，产出器据此把导入路径映射回磁盘文件。
+> 3. `mode: set` 就够用——两态语义（调用过/从未调用）不需要 `count`/`atomic` 的精确计数。
 
 coverage.py 的产出命令（Python 目标）：
 ```powershell

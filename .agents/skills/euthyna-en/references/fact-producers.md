@@ -135,13 +135,33 @@ node <euthyna repo>/bin/euthyna.js coverage `
 ```
 
 `--symbol` is repeatable — query several at once. Add `--file` to restrict to a single file.
+Go profiles additionally need `--source` (see below).
 
-**Both coverage formats are read** (auto-detected, no parameters needed):
+**Three coverage formats are read** (auto-detected, no parameters needed):
 
 | Format | Source | Notes |
 |---|---|---|
 | c8 / v8-to-istanbul `coverage-final.json` | JS projects (c8 lands at `coverage/coverage-final.json` by default) | Per-file `fnMap` + `f` (invocation-count array) |
 | coverage.py JSON (format 3) | Python projects (produced by `coverage json`) | Top-level `{meta, files}`; in `functions`, "function name → list of executed lines", **no invocation counts**. Functions never called are still in the list with empty `executed_lines` |
+| Go `-coverprofile` (text) | Go projects (produced by `go test -coverprofile`) | A `mode:` header plus one line per block (`path:startL.startC,endL.endC stmts count`), **no function names**. `--source <module root>` is required: the producer reads top-level `func` declarations in the source to map line ranges back to functions |
+
+The Go production commands (Go targets):
+
+```bash
+go test ./<package>/ -coverprofile=<absolute path>.out -run <test name>
+node <euthyna repo>/bin/euthyna.js coverage `
+  --coverage <absolute path>.out --symbol <symbol> --source <Go module root>
+```
+
+> Go-specific notes (measured in the act case study):
+> 1. **A file absent from the profile is not "never executed"** — its package may not have
+>    been compiled into the test binary at all. The producer reports this as "not evaluated",
+>    never as "not covered". To measure a package, use `-coverpkg=<package>` or run that
+>    package's tests directly.
+> 2. Profile paths are module import paths (`module/pkg/file.go`); point `--source` at the
+>    module root containing go.mod, and the producer maps import paths back to disk files.
+> 3. `mode: set` is enough — the two-state semantics (invoked / never invoked) do not need
+>    the exact counts of `count`/`atomic`.
 
 The coverage.py production commands (Python targets):
 

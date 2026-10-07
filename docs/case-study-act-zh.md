@@ -154,10 +154,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -167,8 +169,15 @@ func TestEuthynaPocUnauthenticatedUploadAndTraversal(t *testing.T) {
 	baseDir := t.TempDir()
 	parent := filepath.Dir(baseDir)
 
-	addr := "127.0.0.1"
-	port := "39517"
+	// 先占用一个空闲临时端口再交给 Serve。Serve() 不暴露 listener 句柄，
+	// 预留窗口极小但非零；下方的「上传后原样读回」断言把本次运行钉死在这台服务上。
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().(*net.TCPAddr).IP.String()
+	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+	l.Close()
 	base := fmt.Sprintf("http://%s:%s", addr, port)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -231,14 +240,14 @@ func TestEuthynaPocUnauthenticatedUploadAndTraversal(t *testing.T) {
 }
 ```
 
-实测输出：
+实测输出（端口每次运行分配，本次为 57282）：
 
 ```
 PUT /upload status=200 body={"message":"success"}
 clamped into baseDir: …\001\123\euthyna-poc.txt ("euthyna-poc-content")
 no file outside baseDir: …\euthyna-poc.txt
 GET /artifact status=200 body="euthyna-poc-content"
---- PASS: TestEuthynaPocUnauthenticatedUploadAndTraversal (0.18s)
+--- PASS: TestEuthynaPocUnauthenticatedUploadAndTraversal (0.17s)
 ```
 
 **穿越死，无鉴权活**。
@@ -323,8 +332,10 @@ fact-contract「测量器只回答能确定回答的问题」的原则一致。
 ### 4.3 `coverage` 不支持 Go 格式——本次确认的能力缺口
 
 ```bash
-go test -coverprofile=act-cover.out ./pkg/artifacts/ -run TestEuthynaPoc   # 成功，14.7%
-node bin/euthyna.js coverage --coverage act-cover.out --symbol safeResolve
+# 第一步：在 act 克隆内执行（覆盖率文件写绝对路径）
+go -C <act 克隆> test ./pkg/artifacts/ -coverprofile=<绝对路径>/act-cover.out -run TestEuthynaPoc   # 成功，14.7%
+# 第二步：在 euthyna 仓库内执行（读同一个绝对路径，避免相对路径随 cwd 漂移）
+node bin/euthyna.js coverage --coverage <绝对路径>/act-cover.out --symbol safeResolve
 ```
 
 真实输出：

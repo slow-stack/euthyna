@@ -175,10 +175,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -188,8 +190,16 @@ func TestEuthynaPocUnauthenticatedUploadAndTraversal(t *testing.T) {
 	baseDir := t.TempDir()
 	parent := filepath.Dir(baseDir)
 
-	addr := "127.0.0.1"
-	port := "39517"
+	// claim a free ephemeral port, then hand it to Serve. Serve() exposes no
+	// listener handle, so the reservation window is tiny but nonzero; the
+	// upload-then-read-back assertion below still pins this run to this server.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().(*net.TCPAddr).IP.String()
+	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+	l.Close()
 	base := fmt.Sprintf("http://%s:%s", addr, port)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -252,14 +262,14 @@ func TestEuthynaPocUnauthenticatedUploadAndTraversal(t *testing.T) {
 }
 ```
 
-Measured output:
+Measured output (the port is assigned per run; this run got 57282):
 
 ```
 PUT /upload status=200 body={"message":"success"}
 clamped into baseDir: …\001\123\euthyna-poc.txt ("euthyna-poc-content")
 no file outside baseDir: …\euthyna-poc.txt
 GET /artifact status=200 body="euthyna-poc-content"
---- PASS: TestEuthynaPocUnauthenticatedUploadAndTraversal (0.18s)
+--- PASS: TestEuthynaPocUnauthenticatedUploadAndTraversal (0.17s)
 ```
 
 **The traversal is dead; the missing authentication is alive.**
@@ -363,8 +373,10 @@ that a measurer only answers questions it can answer deterministically.
 ### 4.3 `coverage` does not support the Go format — the gap confirmed by this run
 
 ```bash
-go test -coverprofile=act-cover.out ./pkg/artifacts/ -run TestEuthynaPoc   # ok, 14.7%
-node bin/euthyna.js coverage --coverage act-cover.out --symbol safeResolve
+# step 1: run inside the act clone (the coverage file gets an absolute path)
+go -C <act clone> test ./pkg/artifacts/ -coverprofile=<abs-path>/act-cover.out -run TestEuthynaPoc   # ok, 14.7%
+# step 2: run inside the euthyna repository (reads the same absolute path, so cwd cannot drift)
+node bin/euthyna.js coverage --coverage <abs-path>/act-cover.out --symbol safeResolve
 ```
 
 Real output:

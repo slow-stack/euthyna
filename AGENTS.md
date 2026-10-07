@@ -75,6 +75,12 @@ Not inferred. Do not re-research these.
   `plugin/index.js`, `cordis.patch.yml`, `.agents/skills/euthyna/` plus its
   seven references), so `dsh plugin --profile web add euthyna` now installs the
   skill. `npm view euthyna dist-tags` → `latest: 0.2.0`.
+- 🧪 **`0.3.0` through `0.5.0` (2026-09-22 → 2026-09-24) were all published with
+  no manual step**: every release page is authored by `github-actions[bot]`
+  (verified with `gh release view` for each of `v0.3.0`, `v0.4.0`, `v0.5.0`).
+  The OIDC path above is no longer a migration plan — it is the stable
+  channel. The manual `EOTP` path below is history unless trusted publishing
+  breaks.
 - 🧪 Releases run through `.github/workflows/publish.yml`: pushing a `v*` tag
   (the tag must match `package.json`) runs the suite and publishes with
   `--provenance` through trusted publishing (OIDC); a version already on the
@@ -282,6 +288,23 @@ Full analysis: `docs/dsh-stop-gate.md`.
 - So the **`SKILL.md` layer is portable across all three hosts**; only the hook config format,
   the host plugin code, and the distribution entry point differ
 
+**Two skill editions, kept in sync by hand.** `.agents/skills/euthyna/` is the Chinese
+original; `.agents/skills/euthyna-en/` is the English mirror (commit `47454ce`). Both carry
+seven references. A discipline change to one must be mirrored to the other — CI does not
+enforce this (inferred from the tree; not measured, no sync test exists).
+
+**Per-host distribution surfaces actually in the tree** (all shipped between 0.2.0 and 0.5.0):
+
+| Host | Surface |
+|---|---|
+| DSH | the `dsh` bundle in `package.json` + `cordis.patch.yml`, installed via npm |
+| Claude Code | `.claude-plugin/marketplace.json` + `plugin.json` — a self-hosted marketplace (`eafd69d`) |
+| Hermes | `plugin.yaml` with the `/euthyna` slash command (`d978605`) |
+| OpenCode | `.opencode/commands/euthyna.md` (`6d18fcc`) |
+| Cursor | `.cursor/commands/euthyna.md` (`d2ec676`) |
+| Copilot | `.github/prompts/euthyna.prompt.md` (`d2ec676`) |
+| ClawHub | both skill editions pushed by `publish.yml` on every release (`f5b4bc7`) — `clawhub login --token` with a `CLAWHUB_TOKEN` secret; ClawHub has no pull-through, its registry only carries what a publisher pushed, so version bumps must land before the tag is cut |
+
 ### DSH plugin mechanism
 
 - A plugin is an npm package: `dsh plugin --profile web add <name>` (forwards to pnpm)
@@ -365,15 +388,17 @@ Full analysis: `docs/dsh-stop-gate.md`.
 
 | Path | What it is |
 |---|---|
-| `bin/` + `src/` | **Fact producers** (zero-dependency Node CLI). `src/contract.js` is the contract in code; `src/facts/history.js`, `src/facts/coverage.js` and `src/facts/deps.js` are the three measurements (`history` has `--origins` to chase the first introducer and classifies by message + deleted-line + diff; `coverage.js` reads **both** c8/V8 JSON and coverage.py JSON (format 3); `deps.js` reads package-lock.json / Cargo.lock / go.mod). `src/gate.js` is the six-gate report validator behind `euthyna gate <报告> [--verify] [--allow-exec]` — it parses the skill's 裁定格式, downgrades findings that lack evidence/reproduce or contradict their verdict, and executes nothing but `git` unless the caller consents to interpreters |
-| `test/` | 178 tests via `node --test`, no third-party framework. **The history tests build real git repositories rather than mocking**; the coverage tests carry fixtures shaped like both c8 and coverage.py output; the deps tests carry fixture lockfiles (npm v1/v2/v3, Cargo.lock, go.mod); the contract tests carry the shell-quoting and render-boundary regressions from PR #1; `git.test.js` carries the error-path quoting and stderr-sanitization regressions from issue #2; `gate.test.js` pins the six-gate validator (including that `--verify` does not run an interpreter command without `--allow-exec`); `skill.test.js` pins the written discipline (the six gates, the three verdicts, the `euthyna gate` reference) so weakening the skill turns CI red; `plugin.test.js` pins the dsh bundle manifest, patch and entry |
+| `bin/` + `src/` | **Fact producers** (zero-dependency Node CLI). `src/contract.js` is the contract in code; `src/facts/history.js`, `src/facts/coverage.js` and `src/facts/deps.js` are the three measurements (`history` has `--origins` to chase the first introducer and classifies by message + deleted-line + diff, **on by default since `euthyna audit`**; `coverage.js` reads **both** c8/V8 JSON and coverage.py JSON (format 3); `deps.js` reads package-lock.json / Cargo.lock / go.mod). `euthyna audit` (0.4.0, `src/cli.js`) runs history + the full dependency surface in one command — the single entry point the CI recipe and the skill both describe. `src/gate.js` is the six-gate report validator behind `euthyna gate <报告> [--verify] [--allow-exec]` — it parses the skill's 裁定格式, downgrades findings that lack evidence/reproduce or contradict their verdict, and executes nothing but `git` unless the caller consents to interpreters |
+| `test/` | 208 tests via `node --test` (207 pass + 1 deliberate skip on non-Windows, measured 2026-10-08), no third-party framework. **The history tests build real git repositories rather than mocking**; the coverage tests carry fixtures shaped like both c8 and coverage.py output; the deps tests carry fixture lockfiles (npm v1/v2/v3, Cargo.lock, go.mod); the contract tests carry the shell-quoting and render-boundary regressions from PR #1; `git.test.js` carries the error-path quoting and stderr-sanitization regressions from issue #2; `gate.test.js` pins the six-gate validator (including that `--verify` does not run an interpreter command without `--allow-exec`); `cli.test.js` pins the `audit` command and its exit codes; `skill.test.js` pins the written discipline (the six gates, the three verdicts, the `euthyna gate` reference) so weakening the skill turns CI red; `plugin.test.js`, `claude-plugin.test.js` and `hermes-plugin.test.js` pin the three manifest surfaces; `i18n.test.js` pins the zh/en skill mirror pairing |
 | `.agents/skills/euthyna/` | **The skill.** Doubles as source and as a project skill root (rank 200), so it is live in this workspace without a restart |
 | `bench/` | **The recall benchmark.** `exploits.js` establishes ground truth by execution (18 cases, 8 near-neighbour pairs); `prepare-blind.js` produces answer-free copies with per-round shuffled ids; `adjudicate.js` closes the loop end to end (blind tree → one adjudicator process per case → `collect-verdicts.js` machine validation → `score.js`), with a deterministic `golden` mode (ground truth written into reports — plumbing self-check only, never a real round) for CI; `collect-verdicts.js` machine-validates reports and extracts verdicts without the orchestrator reading report bodies; `score.js` computes the confusion matrix and the pair view; `perf.js` is the `history` scaling baseline. The verified-platform matrix (bsdtar vs GNU tar, p6 skip) lives in `bench/README.md`. Results: `bench/RESULTS.md` (round 1), `bench/RESULTS-round2.md` (round 2: three independent runs per case, zero flips), `bench/RESULTS-round3.md` (round 3: 18 cases, 54 adjudications, two fixture defects caught by adjudicators), `bench/RESULTS-round4.md` (round 4: 54/54, p6b v3 confirmed by first blind adjudication, cross-model run executed — zero flips across two model families); protocols in `bench/README.md`, design pre-registrations in `bench/DESIGN-round3.md` and `bench/DESIGN-round4.md` |
 | `docs/positioning.md` + `-zh` | Competitive analysis across the DSH catalog, including three claims that were tested and refuted |
 | `docs/fact-contract.md` + `-zh` | The measurement ↔ adjudication interface. The project's core design artefact |
 | `docs/dsh-stop-gate.md` + `-zh` | Hook-gate facts, with reproduction |
+| `docs/ci-integration.md` + `-zh` | A paste-ready GitHub Actions recipe that gates a pull request on `euthyna audit`, keyed to the CLI's published exit-code contract (needs `fetch-depth: 0` for the history producer) |
 | `docs/case-study-axe-core.md` + `-zh` | Validation run #1: JavaScript (axe-core), 5/5 coarse-screen candidates refuted at the gates |
 | `docs/case-study-crewai.md` + `-zh` | Validation run #2: Python (crewAI). **Proved the Python claim**: `history` works on Python repos, and the coverage producer was extended to read coverage.py JSON. 3 candidates → 2 FP + 1 INCONCLUSIVE (pickle, supply-chain-dependent) |
+| `docs/case-study-act.md` + `-zh` | Validation run #3: Go (nektos/act, v0.2.89). **Proved the Go claim** for `history` (GHSL-2023-004 fix's deleted lines traced to the introducing commit) and `deps` (go.mod, honestly labelled "declared, not resolved"). **Coverage on Go targets is a confirmed gap** (`go test -coverprofile` text format refused). 4 candidates → 4 FP + 2 observations; the traversal fix re-verified by an executable PoC that also confirmed the artifacts server is unauthenticated. The act clone and PoC live in `.scratch/` (gitignored) |
 | `audits/` | **Audit reports, one per run, local-only** (never written into the target repository, and deliberately **not committed** here — the public form is `docs/case-study-*.md`). See `audits/CREWAI_EUTHYNA_AUDIT_2026-09-20.md` (gitignored) |
 | `tools/fetch-references.js` | Fetches upstream sources on demand into `.refs/` (gitignored). **The repo distributes no third-party files** |
 | `tools/check-license-text.mjs` | Verifies `LICENSE` against the canonical Apache-2.0 text, fetched live. **The licence claim is checkable rather than asserted** |

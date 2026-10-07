@@ -41,16 +41,16 @@ written into the target repository** (the act clone sits in `.scratch/`, gitigno
 | FALSE POSITIVE | 4 |
 | INCONCLUSIVE | 0 |
 | Non-security observations | 2 |
-| **False-positive rate of this coarse screen** | **4/4 = 100%** |
+| **False-discovery proportion among screened candidates** | **4/4 = 100%** (no true negatives were established in this run, so it is not called a statistical false-positive rate) |
 
 **Method validation results**:
 
 | Verification point | Result |
 |---|---|
 | `history` works on a Go repository | ✅ Two real runs: the v4 rewrite commit (5 facts); the GHSL fix commit (59 deleted lines attributed back to the artifact server's original implementation commit `11f6ee37a6`) |
-| `deps` reads go.mod | ✅ Real run: 104 facts, each honestly labelled "declared requirement, not the resolved version" (go.mod is a manifest, not a lockfile) |
+| `deps` reads go.mod | ✅ Real run: 104 facts, each honestly labelled "declared requirement, not the resolved version" (deps reads the go.mod requirements and does not resolve the module graph) |
 | `coverage` reads Go coverage data | ❌ **Gap confirmed by this run**: the text format of `go test -coverprofile` is correctly refused (`Unexpected token 'm', "mode: set\n" is not valid JSON`); the refusal itself honours the "missing data is not clean data" design |
-| Six-gate discipline holds on Go code | ✅ All four candidates died at different gates, each with concrete evidence; the traversal candidate was refuted by an executable PoC |
+| Six-gate discipline holds on Go code | ✅ Of the 4 candidates, 3 died at gate 2 (reachability) and 1 (the traversal) was refuted at gate 4 (PoC verification); each with concrete evidence |
 
 **Conclusion**: on this target, **all 4 coarse-screen candidates were false positives**, and
 the most storied one — an artifact server that carries a CVE-class advisory ID — had its
@@ -163,35 +163,106 @@ test fixture `pkg/artifacts/testdata/GHSL-2023-004/artifacts.yml`).
 | 5 mathematical bound | — | Covered by the PoC |
 | 6 environment | ✅ | No sandbox interference |
 
-**PoC (real `Serve()`, real TCP, real filesystem)**: an unauthenticated PUT to
-`/upload/123?itemPath=../../../euthyna-poc.txt` — **accepted** (200
-`{"message":"success"}`), but the payload is clamped by `safeResolve`
-(`server.go:91-93`: `filepath.Join(os.PathSeparator, relPath)` clamps to root, Clean, then
-join back into `baseDir`) into `baseDir/123/`, and no file appears outside `baseDir`;
-a following `GET /artifact/123/euthyna-poc.txt` reads the payload back, unauthenticated
-(200). **The traversal is dead; the missing authentication is alive.** PoC source (a Go test;
-drop into `pkg/artifacts/` and run `go test -run TestEuthynaPoc -v`):
+**PoC (real `Serve()`, real TCP, real filesystem)**: the complete runnable source follows
+(drop into `pkg/artifacts/` and run `go test -run TestEuthynaPoc -v`; the act clone lives in
+`.scratch/`, and the source is inlined here so the run can be reproduced after `.scratch` is
+cleaned):
 
 ```go
+package artifacts
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+)
+
 func TestEuthynaPocUnauthenticatedUploadAndTraversal(t *testing.T) {
 	baseDir := t.TempDir()
 	parent := filepath.Dir(baseDir)
-	base := "http://127.0.0.1:39517"
+
+	addr := "127.0.0.1"
+	port := "39517"
+	base := fmt.Sprintf("http://%s:%s", addr, port)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop := Serve(ctx, baseDir, "127.0.0.1", "39517")
+	stop := Serve(ctx, baseDir, addr, port)
 	defer stop()
-	// …wait for readiness…
-	req, _ := http.NewRequest(http.MethodPut,
-		base+"/upload/123?itemPath=../../../euthyna-poc.txt",
-		strings.NewReader("euthyna-poc-content"))
-	resp, _ := http.DefaultClient.Do(req)         // → 200 {"message":"success"}
-	// the payload lands at baseDir/123/euthyna-poc.txt; nothing outside baseDir
-	gresp, _ := http.Get(base + "/artifact/123/euthyna-poc.txt") // → 200, content verbatim
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := http.Get(base + "/"); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("server did not start")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	req, _ := http.NewRequest(http.MethodPut, base+"/upload/123?itemPath=../../../euthyna-poc.txt", strings.NewReader("euthyna-poc-content"))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rbody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	t.Logf("PUT /upload status=%d body=%s", resp.StatusCode, rbody)
+
+	clamped := filepath.Join(baseDir, "123", "euthyna-poc.txt")
+	if data, err := os.ReadFile(clamped); err != nil {
+		t.Errorf("expected the payload clamped inside baseDir at %s: %v", clamped, err)
+	} else {
+		t.Logf("clamped into baseDir: %s (%q)", clamped, data)
+	}
+
+	escaped := filepath.Join(parent, "euthyna-poc.txt")
+	if _, err := os.Stat(escaped); err == nil {
+		t.Errorf("TRAVERSAL: file escaped baseDir to %s", escaped)
+	} else {
+		t.Logf("no file outside baseDir: %s", escaped)
+	}
+
+	gresp, err := http.Get(base + "/artifact/123/euthyna-poc.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gbody, _ := io.ReadAll(gresp.Body)
+	gresp.Body.Close()
+	t.Logf("GET /artifact status=%d body=%q", gresp.StatusCode, gbody)
+	if gresp.StatusCode != http.StatusOK {
+		t.Errorf("expected unauthenticated download to succeed, got %d", gresp.StatusCode)
+	}
+
+	// the GET handler never closes the file; on Windows the still-open handle
+	// breaks t.TempDir cleanup. Force the finalizer to prove the fd is only
+	// reachable through GC, not through any Close call.
+	stop()
+	cancel()
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond)
 }
 ```
 
-(The full version, with the landing assertions and the readiness loop, is in section 6.)
+Measured output:
+
+```
+PUT /upload status=200 body={"message":"success"}
+clamped into baseDir: …\001\123\euthyna-poc.txt ("euthyna-poc-content")
+no file outside baseDir: …\euthyna-poc.txt
+GET /artifact status=200 body="euthyna-poc-content"
+--- PASS: TestEuthynaPocUnauthenticatedUploadAndTraversal (0.18s)
+```
+
+**The traversal is dead; the missing authentication is alive.**
 
 **Verdict: FALSE POSITIVE** — the traversal fix (`safeResolve`, introduced by `63ae215`,
 replacing the bare `fmt.Sprintf("%s/%s", runID, itemPath)`) still fully covers upload,
@@ -202,8 +273,16 @@ download, and the v4 routes at the current HEAD (`safeResolve` has 13 call sites
 server — every artifacts route is unauthenticated, and `--artifact-server-addr` defaults to
 the **outbound IP** (`cmd/root.go:118`); `--artifact-server-path` is opt-in (the server does
 not start without it), but once enabled the service offers unauthenticated file upload and
-download to the LAN, with impact confined to `baseDir` by `safeResolve`. Suggest defaulting
-to `127.0.0.1`, or adding a token prefix like the cache server's.
+download to the LAN. Under the declared attacker model (a same-network peer), the impact
+surface is explicit: the peer can **write arbitrary content to any path under `baseDir`,
+unauthenticated** (including overwriting existing artifacts — poisoning what the user later
+downloads; the downstream consequence depends on what the user does with the artifact, a
+supply-chain surface) and **read every artifact, unauthenticated** (the contents the user
+chose to stage leak), plus trivial resource exhaustion via observation 2's handle leak. The
+reason this does not become a reportable finding is not that the impact is absent, but that
+the exploitation premises stack: explicit opt-in, same-network position, and `safeResolve`
+clamping the boundary to `baseDir`. The impact itself is real. Suggest defaulting to
+`127.0.0.1`, or adding a token prefix like the cache server's.
 
 ### BUG #4 FALSE POSITIVE — `os.WriteFile(filepath.Join(destPath, f.Name))`, the FileEntry write
 
@@ -269,10 +348,17 @@ the same honest label:
 > **this is the declared requirement, not the resolved version (go.sum carries no versions,
 > so the resolution cannot be verified here)**
 
-Go's dependency-adjudication semantics differ from npm/Cargo: go.mod is a manifest, go.sum
-stores hashes but no versions, and the truly locked resolution lives in the build cache. The
-deps producer does not pretend to answer what it cannot — consistent with the fact-contract
-principle that a measurer only answers questions it can answer deterministically.
+Go's dependency-adjudication semantics differ from npm/Cargo: go.mod carries only the
+requirements; the selected build list is the result of MVS solving the whole module graph
+(each go.mod), and go.sum records version-plus-hash pairs, not the selected list. The deps
+producer does not resolve the module graph, so it only answers "what is declared" — it does
+not pretend to answer what it cannot. This is consistent with the fact-contract principle
+that a measurer only answers questions it can answer deterministically.
+
+> Revision note: the tool output quoted by this run originally read "go.sum carries no
+> versions", which is inaccurate (every go.sum line has a version); the tool message has
+> been corrected in this PR to "go.sum records version-hash pairs but not the build list
+> MVS selected".
 
 ### 4.3 `coverage` does not support the Go format — the gap confirmed by this run
 
@@ -307,10 +393,13 @@ source), which is more work than coverage.py was (`Class.method` is right there 
 
 Cache server: every route sits behind a token prefix (BUG #2). Artifacts server: zero
 authentication (proven by BUG #3's PoC). Both share the same bind-address default (the
-outbound IP, `cmd/root.go:118,124`). The asymmetry itself hints that the artifacts server's
-zero-auth state is an oversight rather than a design decision — exploitability depends on
-deployment (the service requires an explicit `--artifact-server-path` to start at all),
-so discipline says record it as an observation.
+outbound IP, `cmd/root.go:118,124`). Under the attacker model, a peer can do three things:
+write arbitrary content into `baseDir` (artifact poisoning), read every artifact, and
+exhaust resources via observation 2's handle leak. The reason this stays an observation is
+not "no impact" but the stack of exploitation premises: explicit opt-in, same-network
+position, and the `safeResolve` boundary clamped to `baseDir`. The asymmetry itself hints
+that the artifacts server's zero-auth state is an oversight rather than a design decision —
+if upstream confirms it is intentional, this observation should be re-escalated.
 
 ### Observation 2: the `GET /artifact` handler never closes the file
 
@@ -362,11 +451,11 @@ time. Adjudicate per claim at the gates; never hand down a single verdict for a 
    are classified accordingly), diluting the real signal from code files. This is a
    deployment detail on Go targets (the counterpart of crewAI's `-o addopts=""` note);
    path filtering or denoising is a future improvement, not implemented in this run.
-3. **`deps` can only answer "what is declared" for go.mod** — go.sum has no versions and the
-   resolution lives in the build cache; that is a structural limit of the Go toolchain, and
-   the producer labels it honestly. Resolved versions would require `go list -m`, which
-   would break the "nothing but git executes without explicit consent" boundary — a separate
-   decision to make.
+3. **`deps` can only answer "what is declared" for go.mod** — the selected build list is
+   MVS's solution over the whole module graph, and deps does not resolve the module graph;
+   that is the producer's designed boundary, not a gap in go.sum's contents. Resolved
+   versions would require `go list -m`, which would break the "nothing but git executes
+   without explicit consent" boundary — a separate decision to make.
 
 ---
 

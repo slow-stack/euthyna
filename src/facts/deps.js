@@ -425,11 +425,11 @@ export async function collectDependencyFacts({ cwd = process.cwd(), lockfile, de
             t(
               `依赖 ${dep} 在 ${listLabel}（${target.type}）中被${verb}为版本 ${versions.join(' / ')}` +
                 (isGo
-                  ? ' —— 这是声明的需求版本，非最终解析版本（go.sum 不含版本，无法在此验证解析结果）'
+                  ? ' —— 这是声明的需求版本，非最终解析版本（选定版本由 MVS 对整个模块图求解，go.sum 记录版本与哈希但不含选定的构建清单，deps 不做模块图解析）'
                   : ''),
               isGo
                 ? `Dependency ${dep} is declared as version ${versions.join(' / ')} in the ${listLabel} (${target.type})` +
-                  ' — this is the declared requirement version, not the final resolved version (go.sum carries no versions, so the resolution cannot be verified here)'
+                  ' — this is the declared requirement version, not the final resolved version (the selected version comes from MVS over the whole module graph; go.sum records version-hash pairs but not the selected build list, and this producer does not resolve the module graph)'
                 : `Dependency ${dep} is locked to version ${versions.join(' / ')} in the ${listLabel} (${target.type})`
             ),
           status: STATUS.ESTABLISHED,

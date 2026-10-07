@@ -33,16 +33,16 @@
 | FALSE POSITIVE | 4 |
 | INCONCLUSIVE | 0 |
 | 非安全观察 | 2 |
-| **本次粗筛的误报率** | **4/4 = 100%** |
+| **粗筛候选中的误报占比** | **4/4 = 100%**（本次未建立真阴性样本，故不称统计意义上的误报率） |
 
 **方法验证结果**：
 
 | 验证点 | 结果 |
 |---|---|
 | `history` 在 Go 仓库上工作 | ✅ 真实运行两次：v4 重写提交（5 条事实）；GHSL 修复提交（删除的 59 行被归属到 artifact 服务最初的实现提交 `11f6ee37a6`） |
-| `deps` 读取 go.mod | ✅ 真实运行：104 条事实，每条都如实标注「声明版本非解析版本」（go.mod 是清单不是锁文件） |
+| `deps` 读取 go.mod | ✅ 真实运行：104 条事实，每条都如实标注「声明版本非解析版本」（deps 读 go.mod 的需求声明，不做模块图解析） |
 | `coverage` 读取 Go 覆盖率数据 | ❌ **本次确认的缺口**：`go test -coverprofile` 的文本格式被正确拒答（`Unexpected token 'm', "mode: set\n" is not valid JSON`），拒答行为本身符合「缺数据不是干净」的设计 |
-| 六门禁判定纪律在 Go 代码上成立 | ✅ 四个候选分别死于不同门禁，均有具体证据；其中穿越候选被 PoC 实测证伪 |
+| 六门禁判定纪律在 Go 代码上成立 | ✅ 4 个候选中 3 个死于门禁 2（可达性），1 个（穿越）在门禁 4（PoC 验证）被实测证伪；每个都有具体证据 |
 
 **结论**：在这个目标上，**全部 4 个粗筛候选都是误报**，且其中最有故事性的一个——自带
 CVE 级通告编号的 artifact 服务——其历史穿越面（GHSL-2023-004）已被 `safeResolve` 修复，
@@ -143,33 +143,105 @@ workflow step 的 `run:` 命令——那是用户自己写的（见信任模型�
 | 5 数学边界 | — | 被 PoC 覆盖 |
 | 6 环境 | ✅ | 无沙箱阻断 |
 
-**PoC（真实 `Serve()`、真实 TCP、真实文件系统）**：向 `/upload/123?itemPath=../../../euthyna-poc.txt`
-无鉴权 PUT——**服务接受**（200 `{"message":"success"}`），但文件被
-`safeResolve`（`server.go:91-93`：先 `filepath.Join(os.PathSeparator, relPath)` 钳到根再
-Clean 后 Join 回 `baseDir`）钳进 `baseDir/123/`，`baseDir` 外无任何文件产生；随后
-`GET /artifact/123/euthyna-poc.txt` 无鉴权读回载荷原文（200）。**穿越死，无鉴权活**。
-PoC 源码（Go test，放入 `pkg/artifacts/` 运行 `go test -run TestEuthynaPoc -v`）：
+**PoC（真实 `Serve()`、真实 TCP、真实文件系统）**：完整可运行源码如下（放入
+`pkg/artifacts/` 运行 `go test -run TestEuthynaPoc -v`；act 克隆在 `.scratch/`，本源码
+已内联于此，供 `.scratch` 清理后复现）：
 
 ```go
+package artifacts
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+)
+
 func TestEuthynaPocUnauthenticatedUploadAndTraversal(t *testing.T) {
 	baseDir := t.TempDir()
 	parent := filepath.Dir(baseDir)
-	base := "http://127.0.0.1:39517"
+
+	addr := "127.0.0.1"
+	port := "39517"
+	base := fmt.Sprintf("http://%s:%s", addr, port)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop := Serve(ctx, baseDir, "127.0.0.1", "39517")
+	stop := Serve(ctx, baseDir, addr, port)
 	defer stop()
-	// …等待服务就绪…
-	req, _ := http.NewRequest(http.MethodPut,
-		base+"/upload/123?itemPath=../../../euthyna-poc.txt",
-		strings.NewReader("euthyna-poc-content"))
-	resp, _ := http.DefaultClient.Do(req)         // → 200 {"message":"success"}
-	// 载荷落在 baseDir/123/euthyna-poc.txt；baseDir 外无文件
-	gresp, _ := http.Get(base + "/artifact/123/euthyna-poc.txt") // → 200，内容原样
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := http.Get(base + "/"); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("server did not start")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	req, _ := http.NewRequest(http.MethodPut, base+"/upload/123?itemPath=../../../euthyna-poc.txt", strings.NewReader("euthyna-poc-content"))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rbody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	t.Logf("PUT /upload status=%d body=%s", resp.StatusCode, rbody)
+
+	clamped := filepath.Join(baseDir, "123", "euthyna-poc.txt")
+	if data, err := os.ReadFile(clamped); err != nil {
+		t.Errorf("expected the payload clamped inside baseDir at %s: %v", clamped, err)
+	} else {
+		t.Logf("clamped into baseDir: %s (%q)", clamped, data)
+	}
+
+	escaped := filepath.Join(parent, "euthyna-poc.txt")
+	if _, err := os.Stat(escaped); err == nil {
+		t.Errorf("TRAVERSAL: file escaped baseDir to %s", escaped)
+	} else {
+		t.Logf("no file outside baseDir: %s", escaped)
+	}
+
+	gresp, err := http.Get(base + "/artifact/123/euthyna-poc.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gbody, _ := io.ReadAll(gresp.Body)
+	gresp.Body.Close()
+	t.Logf("GET /artifact status=%d body=%q", gresp.StatusCode, gbody)
+	if gresp.StatusCode != http.StatusOK {
+		t.Errorf("expected unauthenticated download to succeed, got %d", gresp.StatusCode)
+	}
+
+	// the GET handler never closes the file; on Windows the still-open handle
+	// breaks t.TempDir cleanup. Force the finalizer to prove the fd is only
+	// reachable through GC, not through any Close call.
+	stop()
+	cancel()
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond)
 }
 ```
 
-（完整版含文件落地断言与等待逻辑，实测输出见第 6 节。）
+实测输出：
+
+```
+PUT /upload status=200 body={"message":"success"}
+clamped into baseDir: …\001\123\euthyna-poc.txt ("euthyna-poc-content")
+no file outside baseDir: …\euthyna-poc.txt
+GET /artifact status=200 body="euthyna-poc-content"
+--- PASS: TestEuthynaPocUnauthenticatedUploadAndTraversal (0.18s)
+```
+
+**穿越死，无鉴权活**。
 
 **裁定：FALSE POSITIVE**——穿越修复（`63ae215` 引入 `safeResolve`，替换裸
 `fmt.Sprintf("%s/%s", runID, itemPath)`）在当前 HEAD 依然完整覆盖上传、下载与 v4 路由
@@ -178,8 +250,12 @@ func TestEuthynaPocUnauthenticatedUploadAndTraversal(t *testing.T) {
 **给项目方的建议（作为观察，非裁定）**：与 cache 服务对齐——artifacts 服务全部路由无
 token、无任何鉴权，且 `--artifact-server-addr` 默认绑**外网 IP**（`cmd/root.go:118`），
 `--artifact-server-path` 虽是可选（不传则服务不启动），但一旦启用即向局域网开放无鉴权的
-文件上传/下载（影响被 `safeResolve` 限制在 `baseDir` 内）。建议默认绑 `127.0.0.1`，或
-照 cache 服务加 token 前缀。
+文件上传/下载。按声明攻击者模型（同网络对端）明确评估影响面：对端可以**无鉴权写任意
+内容进 `baseDir` 下的任意路径**（含覆盖既有 artifact，即投毒用户随后下载的产物——下游
+后果取决于用户对产物做的事，属供应链面）与**无鉴权读全部 artifact**（用户暂存的产物
+内容泄露），外加观察 2 的句柄泄漏构成平凡 DoS。影响被 `safeResolve` 限制在 `baseDir`
+内、服务需显式 opt-in、且需要同网络位置——三者合起来使它不构成「可报裁定」的发现，
+但影响面本身是真实的。建议默认绑 `127.0.0.1`，或照 cache 服务加 token 前缀。
 
 ### BUG #4 FALSE POSITIVE — `os.WriteFile(filepath.Join(destPath, f.Name))` 的 FileEntry 写入
 
@@ -235,9 +311,14 @@ node <euthyna 仓库>/bin/euthyna.js history --base 63ae215^ --head 63ae215 --re
 > 依赖 github.com/docker/cli 在 go.mod（go）中被声明为版本 v29.3.0+incompatible ——
 > **这是声明的需求版本，非最终解析版本（go.sum 不含版本，无法在此验证解析结果）**
 
-Go 的依赖裁决语义与 npm/Cargo 不同：go.mod 是清单，go.sum 只存哈希不存版本，真正锁定的
-解析结果在构建缓存里。deps 生产者没有假装能回答它回答不了的问题——这与 fact-contract
-「测量器只回答能确定回答的问题」的原则一致。
+Go 的依赖裁决语义与 npm/Cargo 不同：go.mod 只承载需求声明，选定的构建清单是 MVS 对整个
+模块图（各 go.mod）求解的结果，go.sum 记录的是「版本+哈希」对而非选定清单。deps 生产者
+不做模块图解析，所以只答「声明了什么」——它没有假装能回答它回答不了的问题。这与
+fact-contract「测量器只回答能确定回答的问题」的原则一致。
+
+> 修订说明：本次运行的工具输出原文写着「go.sum 不含版本」，该措辞不准确（go.sum 每行
+> 都有版本）；工具消息已随本 PR 更正为「go.sum 记录版本与哈希，但不含 MVS 选定的构建
+> 清单」。
 
 ### 4.3 `coverage` 不支持 Go 格式——本次确认的能力缺口
 
@@ -267,9 +348,11 @@ Go 的 profile 是文本格式（`mode: set` 头 + `file.go:起始行.起始列,
 ### 观察 1：两个本地服务的鉴权不对称
 
 cache 服务：token 前缀保护全部路由（BUG #2）。artifacts 服务：零鉴权（BUG #3 的 PoC 证明）。
-两者绑定地址默认值相同（外网 IP，`cmd/root.go:118,124`）。不对称本身暗示 artifacts 服务
-的零鉴权不是设计决定而是遗漏——是否可利用取决于部署（服务需显式 `--artifact-server-path`
-才会启动），故按纪律记为观察。
+两者绑定地址默认值相同（外网 IP，`cmd/root.go:118,124`）。按攻击者模型评估，对端可做
+三件事：写任意内容进 `baseDir`（artifact 投毒）、读全部 artifact、经观察 2 的句柄泄漏
+耗尽资源。不报裁定的理由不是「影响不存在」，而是利用前提的叠加：服务需显式 opt-in、
+需要同网络位置、影响边界由 `safeResolve` 钳在 `baseDir` 内。不对称本身暗示零鉴权不是
+设计决定而是遗漏——若上游确认这是有意为之，本观察应升格重估。
 
 ### 观察 2：`GET /artifact` 处理器从不关闭文件句柄
 
@@ -314,9 +397,10 @@ because it is being used by another process`），只有 GC finalizer 兜底。�
    "security"，被正确分类）塞进 history 报告，代码文件的真实信号被稀释。这是 Go 目标的
    部署细节（crewAI 案例里 `-o addopts=""` 的对位物）；按路径过滤或降噪是后续改进方向，
    本次未实现。
-3. **deps 对 go.mod 只能答「声明了什么」**——go.sum 无版本、解析结果在构建缓存，这是
-   Go 工具链的结构限制，生产者如实标注。若需解析版本，需要引入 `go list -m`（这会打破
-   「执行 git 之外的东西要显式同意」的边界，需要单独决策）。
+3. **deps 对 go.mod 只能答「声明了什么」**——选定构建清单是 MVS 对整个模块图求解的
+   结果，deps 不做模块图解析，这是生产者的设计边界而非 go.sum 的内容缺失。若需解析
+   版本，需要引入 `go list -m`（这会打破「执行 git 之外的东西要显式同意」的边界，
+   需要单独决策）。
 
 ---
 

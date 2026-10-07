@@ -31,12 +31,14 @@ When an AI coding agent touches security, it fails in two specific ways:
 
 1. **It reports things that are not real.** Code that *looks* dangerous gets called a
    vulnerability, without tracing the data. In validation runs on real codebases — a
-   JavaScript one and a Python one — the pattern-matched "vulnerabilities" were mostly
-   false: **5 out of 5** refuted at the gates on the first run; **2 out of 3** refuted,
-   the third unresolved (INCONCLUSIVE, supply-chain-dependent) on the second. See the
+   JavaScript one, a Python one, and a Go one — the pattern-matched "vulnerabilities" were
+   mostly false: **5 out of 5** refuted at the gates on the first run; **2 out of 3**
+   refuted, the third unresolved (INCONCLUSIVE, supply-chain-dependent) on the second;
+   **4 out of 4** refuted on the third. See the
    [case studies](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md)
    ([Python/crewAI](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md),
-   [JavaScript/axe-core](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-axe-core.md)).
+   [JavaScript/axe-core](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-axe-core.md),
+   [Go/nektos-act](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-act.md)).
 2. **Its reassurances cannot be checked.** "I'm done." "The tests cover this." "It's
    safe now." These are assertions. You cannot tell a done-claim from a done-deal.
 
@@ -303,9 +305,10 @@ This project tries to be explicit about the difference. Current state:
   *declared* requirement, not the resolved build version; and the producer never maps a version
   to a CVE — that mapping is deliberately left to the adjudication layer.
 - **Anything about the case-study targets' security** — the runs found nothing to endorse or
-  condemn; that is not a statement about either project. See
-  [`docs/case-study-crewai.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md) and
-  [`docs/case-study-axe-core.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-axe-core.md).
+  condemn; that is not a statement about any of the projects. See
+  [`docs/case-study-crewai.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md),
+  [`docs/case-study-axe-core.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-axe-core.md),
+  and [`docs/case-study-act.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-act.md).
 - **A CI recipe, by running it on GitHub.** The exit-code gate and the workflow wiring are
   documented in [`docs/ci-integration.md`](https://github.com/slow-stack/euthyna/blob/main/docs/ci-integration.md);
   the workflow snippet has not been exercised as a live Actions run.

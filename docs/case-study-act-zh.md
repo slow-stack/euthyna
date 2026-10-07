@@ -352,6 +352,12 @@ Go 的 profile 是文本格式（`mode: set` 头 + `file.go:起始行.起始列,
 运行当年 coverage.py 缺口的模式一致。补齐它需要把行区间映射回函数（解析源码函数声明），
 工作量大于 coverage.py 那次（`Class.method` 直接在 JSON 里）。
 
+> **修订注记（2026-10-08，运行当天）**：这个缺口已在本次运行之后闭合——coverage 生产者
+> 现在可读 Go profile（`--source <模块根目录>` 把行区间映射回顶层 `func`），并在真实
+> act profile 上双向验证：`safeResolve` / `uploads` 报 UNKNOWN（PoC 运行调用过），
+> `OpenAppendable` 报 ESTABLISHED（从未调用，证据行 72 正确）。本节以上原文保留，
+> 记录的是运行当时的状态。
+
 ---
 
 ## 5. 非安全观察（**不是发现**）

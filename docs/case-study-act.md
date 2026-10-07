@@ -397,6 +397,13 @@ Go targets — matching the pattern of the crewAI run, which exposed the coverag
 close it, line ranges must be mapped back to functions (parsing function declarations from
 source), which is more work than coverage.py was (`Class.method` is right there in the JSON).
 
+> **Revision note (2026-10-08, the day of the run)**: the gap was closed right after this
+> run — the coverage producer now reads Go profiles (`--source <module root>` maps line
+> ranges back to top-level `func` declarations), verified in both directions against the
+> real act profile: `safeResolve` / `uploads` report UNKNOWN (invoked by the PoC run),
+> `OpenAppendable` reports ESTABLISHED (never invoked, evidence line 72 correct). The text
+> above is kept as it stood at run time.
+
 ---
 
 ## 5. Non-security observations (**not findings**)

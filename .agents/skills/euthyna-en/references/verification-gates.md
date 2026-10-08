@@ -289,3 +289,5 @@ When there are multiple suspected bugs:
 2. TRUE POSITIVE list: each with a brief vulnerability description
 3. FALSE POSITIVE list: each with a brief rejection reason
 4. INCONCLUSIVE list: **each with what is missing and why**
+
+5. **A dismissal must carry the coverage fact.** Before recording a claim as FALSE POSITIVE, state what the measurement layer says about the path it rests on. If the symbol-level coverage fact is `unknown` (the coverage producer never reports `executed`, only "never invoked" or "unknown"), a FALSE POSITIVE is not allowed: record it as INCONCLUSIVE and write `coverage=unknown` under "what is missing". Showing that a path did not fire is not showing that it cannot fire.

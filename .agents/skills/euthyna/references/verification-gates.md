@@ -291,3 +291,5 @@ Gate Review（被 P5 阻塞）: 6 门禁评估 → 裁定
 2. TRUE POSITIVE 列表：每条附简要漏洞描述
 3. FALSE POSITIVE 列表：每条附简要拒绝理由
 4. INCONCLUSIVE 列表：**每条附缺什么、为什么缺**
+
+5. **驳回必须带 coverage 事实。** 在把一条断言记为 FALSE POSITIVE 之前，先写清测量层对它所依赖的那条路径给出的结论。若该符号的覆盖事实是 `unknown`（coverage 生产者永不报 `executed`，只有「从未被调用」与「unknown」两种出口），则不得判 FALSE POSITIVE，只能记为 INCONCLUSIVE，并把 `coverage=unknown` 写进「缺什么、为什么缺」。**「这条路径没有触发」不等于「这条路径不可能触发」。**

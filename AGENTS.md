@@ -333,9 +333,13 @@ Full analysis: `docs/dsh-stop-gate.md`.
 **Two skill editions, kept in sync — and CI now checks it.** `.agents/skills/euthyna/` is the
 Chinese original; `.agents/skills/euthyna-en/` is the English mirror (commit `47454ce`). Both
 carry seven references. `test/skill-mirror.test.js` pins the file set and, per file, the
-heading-level sequence, the fenced-block count, the table shapes in order, and the sets of
-`euthyna <subcommand>` and `--flag` identifiers — mutation-checked (removing `--source` from
-the English `fact-producers.md` turns CI red with "flags only in zh: --source"). It
+heading-level sequence, the fenced-block count, the table shapes in order (every row's
+column count), and the sets of `--flag` and `euthyna <subcommand>` identifiers — the command
+names come from `src/cli.js`'s dispatch, not a hand-written list, and both written forms count
+(`bin/euthyna.js deps` and `euthyna deps`), because the skill documents invocations in the
+`.js` form. Mutation-checked both ways: stripping `--source` from the English
+`fact-producers.md` turns CI red with `flags only in zh: --source`, and adding a
+`deps` mention to the Chinese side only turns it red with `subcommands only in zh: deps`. It
 deliberately does **not** count how often a word appears: the English edition legitimately
 mentions `INCONCLUSIVE` one extra time because a sentence there talks about the state itself,
 and a translation needing that room is not drift. A missing *identifier* is drift — it means

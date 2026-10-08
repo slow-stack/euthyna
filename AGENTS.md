@@ -334,12 +334,16 @@ Full analysis: `docs/dsh-stop-gate.md`.
 Chinese original; `.agents/skills/euthyna-en/` is the English mirror (commit `47454ce`). Both
 carry seven references. `test/skill-mirror.test.js` pins the file set and, per file, the
 heading-level sequence, the fenced-block count, the table shapes in order (every row's
-column count), and the sets of `--flag` and `euthyna <subcommand>` identifiers — the command
+column count, with rows recognised in **both** legal GFM forms — `| a | b |` and the
+outer-pipe-less `a | b`; a table is confirmed by its delimiter row so prose containing a
+`|` is not counted), and the sets of `--flag` and `euthyna <subcommand>` identifiers — the command
 names come from `src/cli.js`'s dispatch, not a hand-written list, and both written forms count
 (`bin/euthyna.js deps` and `euthyna deps`), because the skill documents invocations in the
-`.js` form. Mutation-checked both ways: stripping `--source` from the English
-`fact-producers.md` turns CI red with `flags only in zh: --source`, and adding a
-`deps` mention to the Chinese side only turns it red with `subcommands only in zh: deps`. It
+`.js` form. Mutation-checked three ways: stripping `--source` from the English
+`fact-producers.md` turns CI red with `flags only in zh: --source`, adding a
+`deps` mention to the Chinese side only turns it red with `subcommands only in zh: deps`,
+and appending a pipe-less table to one `SKILL.md` only turns it red on `tables` — that last
+one was the detector's own blind spot before it was fixed. It
 deliberately does **not** count how often a word appears: the English edition legitimately
 mentions `INCONCLUSIVE` one extra time because a sentence there talks about the state itself,
 and a translation needing that room is not drift. A missing *identifier* is drift — it means

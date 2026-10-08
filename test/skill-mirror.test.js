@@ -63,6 +63,24 @@ function bodyLines(text) {
   return lines; // unterminated: do not guess, keep the whole file
 }
 
+/**
+ * A table row, recognised in both legal GFM forms: with outer pipes
+ * (`| a | b |`) and without them (`a | b`). Requiring the leading pipe was a
+ * real blind spot — an edition could carry a whole table the scan never saw.
+ * A row counts as part of a table only when it holds a pipe; a table is
+ * confirmed by its delimiter row, so prose containing `|` is not miscounted.
+ */
+const isTableRow = (line) => /^ {0,3}\S.*\|/.test(line) || /^ {0,3}\|/.test(line);
+const isTableDelimiter = (line) => /^ {0,3}\|?[\s:]*-[\s:|.-]*$/.test(line) && line.includes('-') && line.includes('|');
+
+/** Cell count with the outer pipes normalised away. */
+function tableColumns(line) {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').length;
+}
+
 function structure(text, realCommands) {
   const lines = bodyLines(text);
   const headings = [];
@@ -72,7 +90,8 @@ function structure(text, realCommands) {
   let fence = null; // the opening marker while inside a fenced block
   let table = null;
 
-  for (const line of lines) {
+  for (let idx = 0; idx < lines.length; idx++) {
+    const line = lines[idx];
     identifiers.push(line);
 
     const fenceMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
@@ -102,14 +121,12 @@ function structure(text, realCommands) {
       continue;
     }
 
-    const row = /^ {0,3}\|.*$/.exec(line);
-    if (row) {
-      const columns = row[0].split('|').length - 2;
-      if (!table) {
+    if (isTableRow(line)) {
+      if (!table && isTableDelimiter(lines[idx + 1] ?? '')) {
         table = [];
         tables.push(table);
       }
-      table.push(columns);
+      if (table) table.push(tableColumns(line));
       continue;
     }
     table = null;
@@ -139,8 +156,8 @@ function structure(text, realCommands) {
       // Only tokens the CLI actually dispatches count as command mentions: the
       // English edition writes ordinary sentences like "the euthyna repo", and a
       // pattern that cannot tell those apart reports drift that is not there.
-      // Real commands come from src/cli.js, so one added there can never be
-      // invisible here — see the "every dispatched command is documented" test.
+      // Real commands come from src/cli.js, so a command added there is in this
+      // set by construction rather than by someone remembering to edit a test.
       .filter((name) => realCommands.includes(name))
       .sort(),
     flags: [...new Set([...joined.matchAll(/--[a-z][a-z0-9-]*/g)].map((m) => m[0]))].sort()

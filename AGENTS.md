@@ -42,7 +42,9 @@ have to be handed over and the gates have to pass.**
 ### Writing conventions
 
 - Every document in `docs/` exists twice: the `-zh` file is the original, the unsuffixed
-  file is its English translation. `README.md` is English only.
+  file is its English translation. `README.md` is English only. **`test/docs-pair.test.js`
+  enforces the pairing now**, and compares each pair on structure and identifiers — what it
+  cannot check is whether the translation is faithful, and it does not pretend to.
 - Public text states facts and decisions only. No internal questions, no "let me know what
   you think" — those belong in a conversation, not in a repository.
 - When a claim is hedged, keep the hedging. It is usually load-bearing.
@@ -341,12 +343,19 @@ outer-pipe-less `a | b`; a table is confirmed by its delimiter row so prose cont
 and the sets of `--flag` and `euthyna <subcommand>` identifiers — the command
 names come from `src/cli.js`'s dispatch, not a hand-written list, and both written forms count
 (`bin/euthyna.js deps` and `euthyna deps`), because the skill documents invocations in the
-`.js` form. Mutation-checked three ways: stripping `--source` from the English
+`.js` form.
+The Markdown scan itself is `test/markdown-structure.js`, shared with `test/docs-pair.test.js`
+(the same structure-and-identifier comparison applied to the seven `docs/` translation pairs),
+and `test/cli-commands.js` holds the dispatch list both guards filter against. One scan rather
+than two, because two hand-written ones disagree about what structure *is* — and a scan that
+cannot see a legal form makes its comparison pass on that form. The mirror guard was
+mutation-checked three ways: stripping `--source` from the English
 `fact-producers.md` turns CI red with `flags only in zh: --source`, adding a
 `deps` mention to the Chinese side only turns it red with `subcommands only in zh: deps`,
 and appending a pipe-less table to one `SKILL.md` only turns it red on `tables` — that last
 one was the detector's own blind spot before it was fixed. The scan's own rules are pinned by
-four crafted-document cases, and those were measured the other way round: run against the
+five crafted-document cases in `test/markdown-structure.test.js`, and four of them were
+measured the other way round: run against the
 pre-fix rules all four fail while **both parity tests stay green**, which is what it means for
 a legal Markdown form to be invisible to a comparison. The command list
 `cliSubcommands()` derives from `src/cli.js` is cross-checked against the command section of
@@ -360,6 +369,19 @@ deliberately does **not** count how often a word appears: the English edition le
 mentions `INCONCLUSIVE` one extra time because a sentence there talks about the state itself,
 and a translation needing that room is not drift. A missing *identifier* is drift — it means
 one language documents a capability the other does not.
+
+**`docs/` was the same gap one directory over, and it is guarded the same way.** The
+convention above (`-zh` original, unsuffixed translation) had no checker: measured before
+`test/docs-pair.test.js` existed, nothing under `test/` looked at `docs/` at all. The guard
+pins the pairing in both directions and, per pair, the same structure and identifier
+comparison. It starts with no debt and no allow-list — at the time it was written all seven
+pairs were already identical on heading sequence, fenced blocks, tables, command mentions and
+flags. Mutation-checked four ways: deleting one English twin goes red naming the file; adding
+a section and an `euthyna deps` mention to the Chinese original only goes red on `heading
+levels` **and** `subcommands only in zh: deps`; adding a `--allow-exec` sentence to the
+English side only goes red on `flags only in en: --allow-exec`; creating an English file with
+no `-zh` original goes red on the pairing itself. What it does **not** pin is whether a translation
+is faithful — that is a reading job, and a mechanical stand-in would only manufacture noise.
 
 **Per-host distribution surfaces actually in the tree** (all shipped between 0.2.0 and 0.5.0):
 
@@ -457,7 +479,7 @@ one language documents a capability the other does not.
 | Path | What it is |
 |---|---|
 | `bin/` + `src/` | **Fact producers** (zero-dependency Node CLI). `src/contract.js` is the contract in code; `src/facts/history.js`, `src/facts/coverage.js` and `src/facts/deps.js` are the three measurements (`history` has `--origins` to chase the first introducer and classifies by message + deleted-line + diff, **on by default since `euthyna audit`**; `coverage.js` reads c8/V8 JSON, coverage.py JSON (format 3) **and Go's text `-coverprofile`** (the latter needs `--source <module root>`: the profile carries no function names, so the producer parses top-level `func` ranges from the gofmt'd source; a file absent from the profile is notEvaluated, never "never executed"); `deps.js` reads package-lock.json / Cargo.lock / go.mod). `euthyna audit` (0.4.0, `src/cli.js`) runs history + the full dependency surface in one command — the single entry point the CI recipe and the skill both describe. `src/gate.js` is the six-gate report validator behind `euthyna gate <报告> [--verify] [--allow-exec]` — it parses the skill's 裁定格式, downgrades findings that lack evidence/reproduce or contradict their verdict, and executes nothing but `git` unless the caller consents to interpreters |
-| `test/` | 228 tests via `node --test` (227 pass + 1 deliberate skip on non-Windows, measured 2026-10-08), no third-party framework. **The history tests build real git repositories rather than mocking**; the coverage tests carry fixtures shaped like c8, coverage.py and Go profile output (`coverage.test.js` + `coverage-go.test.js`); the deps tests carry fixture lockfiles (npm v1/v2/v3, Cargo.lock, go.mod); the contract tests carry the shell-quoting and render-boundary regressions from PR #1; `git.test.js` carries the error-path quoting and stderr-sanitization regressions from issue #2; `gate.test.js` pins the six-gate validator (including that `--verify` does not run an interpreter command without `--allow-exec`); `cli.test.js` pins the `audit` command and its exit codes; `skill.test.js` pins the written discipline (the six gates, the three verdicts, the `euthyna gate` reference) so weakening the skill turns CI red; `plugin.test.js`, `claude-plugin.test.js` and `hermes-plugin.test.js` pin the three manifest surfaces; `manifest-version.test.js` pins `package.json` against the three plugin manifests (0.5.0 shipped them a release behind and nothing compared them); `i18n.test.js` pins language rendering and report parsing (zh/en); `skill-mirror.test.js` compares the two skill editions against each other — file set, heading sequence (ATX and Setext), fenced blocks, table shapes, and the `euthyna <subcommand>` / `--flag` identifier sets — so an unmirrored discipline change goes red instead of relying on memory, and four of its cases pin the scanner itself on crafted documents, because a legal Markdown form it cannot read makes the comparison pass on that form (it does not compare word counts, which a translation legitimately needs room for) |
+| `test/` | 233 tests via `node --test` (232 pass + 1 deliberate skip on non-Windows, measured 2026-10-08), no third-party framework. **The history tests build real git repositories rather than mocking**; the coverage tests carry fixtures shaped like c8, coverage.py and Go profile output (`coverage.test.js` + `coverage-go.test.js`); the deps tests carry fixture lockfiles (npm v1/v2/v3, Cargo.lock, go.mod); the contract tests carry the shell-quoting and render-boundary regressions from PR #1; `git.test.js` carries the error-path quoting and stderr-sanitization regressions from issue #2; `gate.test.js` pins the six-gate validator (including that `--verify` does not run an interpreter command without `--allow-exec`); `cli.test.js` pins the `audit` command and its exit codes; `skill.test.js` pins the written discipline (the six gates, the three verdicts, the `euthyna gate` reference) so weakening the skill turns CI red; `plugin.test.js`, `claude-plugin.test.js` and `hermes-plugin.test.js` pin the three manifest surfaces; `manifest-version.test.js` pins `package.json` against the three plugin manifests (0.5.0 shipped them a release behind and nothing compared them); `i18n.test.js` pins language rendering and report parsing (zh/en); `skill-mirror.test.js` compares the two skill editions against each other — file set, heading sequence (ATX and Setext), fenced blocks, table shapes, and the `euthyna <subcommand>` / `--flag` identifier sets — so an unmirrored discipline change goes red instead of relying on memory, and four of its cases pin the scanner itself on crafted documents, because a legal Markdown form it cannot read makes the comparison pass on that form (it does not compare word counts, which a translation legitimately needs room for) |
 | `.agents/skills/euthyna/` | **The skill.** Doubles as source and as a project skill root (rank 200), so it is live in this workspace without a restart |
 | `bench/` | **The recall benchmark.** `exploits.js` establishes ground truth by execution (18 cases, 8 near-neighbour pairs); `prepare-blind.js` produces answer-free copies with per-round shuffled ids; `adjudicate.js` closes the loop end to end (blind tree → one adjudicator process per case → `collect-verdicts.js` machine validation → `score.js`), with a deterministic `golden` mode (ground truth written into reports — plumbing self-check only, never a real round) for CI; `collect-verdicts.js` machine-validates reports and extracts verdicts without the orchestrator reading report bodies; `score.js` computes the confusion matrix and the pair view; `perf.js` is the `history` scaling baseline. The verified-platform matrix (bsdtar vs GNU tar, p6 skip) lives in `bench/README.md`. Results: `bench/RESULTS.md` (round 1), `bench/RESULTS-round2.md` (round 2: three independent runs per case, zero flips), `bench/RESULTS-round3.md` (round 3: 18 cases, 54 adjudications, two fixture defects caught by adjudicators), `bench/RESULTS-round4.md` (round 4: 54/54, p6b v3 confirmed by first blind adjudication, cross-model run executed — zero flips across two model families); protocols in `bench/README.md`, design pre-registrations in `bench/DESIGN-round3.md` and `bench/DESIGN-round4.md` |
 | `docs/positioning.md` + `-zh` | Competitive analysis across the DSH catalog, including three claims that were tested and refuted |

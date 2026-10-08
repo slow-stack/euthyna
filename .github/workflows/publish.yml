@@ -1,4 +1,5 @@
-# Publishes euthyna to npm and cuts the matching GitHub release.
+# Publishes euthyna to npm, cuts the matching GitHub release, and pushes both
+# skill editions to ClawHub.
 #
 # Two ways to run:
 #
@@ -24,6 +25,21 @@
 #
 # A version already on the registry is skipped by the gate rather than failing
 # the run, which makes a duplicated tag a no-op.
+#
+# ## Why this is three jobs rather than one
+#
+# `id-token: write` authorises minting this workflow's OIDC identity, and that
+# identity IS the npm publishing credential. Installing a third-party CLI inside
+# a job that holds it means the package's install-time lifecycle scripts could
+# request an identity token and publish anything under this name. So the ClawHub
+# work runs in its own job with `permissions: contents: read` and no `id-token`,
+# and installs with lifecycle scripts disabled.
+#
+# The token-presence check is a job of its own for two reasons: it reports a
+# boolean, so CLAWHUB_TOKEN never sits in the environment of the job that holds
+# the npm identity; and it runs before anything ships, because a release that
+# goes out on npm while the listing is left behind is exactly the failure this
+# workflow made silently for two releases (measured 2026-10-08).
 
 name: Publish
 
@@ -42,7 +58,31 @@ permissions:
   id-token: write
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    # Holds a credential and mints nothing.
+    permissions: {}
+    outputs:
+      clawhub-token: ${{ steps.check.outputs.clawhub-token }}
+    steps:
+      - name: Is the ClawHub token present?
+        id: check
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          releasing="${{ github.event_name == 'push' || inputs.publish == true }}"
+          if [ -n "$CLAWHUB_TOKEN" ]; then
+            echo "clawhub-token=present" >> "$GITHUB_OUTPUT"
+          elif [ "$releasing" = "true" ]; then
+            echo "::error::CLAWHUB_TOKEN is not set — nothing will be published. Set it under the repository's Secrets (use the GitHub web UI: the gh CLI prompt has stored an empty value on this operator's machine twice), then re-run the tag."
+            exit 1
+          else
+            # A rehearsal needs no credentials; the ClawHub job is skipped anyway.
+            echo "clawhub-token=absent" >> "$GITHUB_OUTPUT"
+          fi
+
   publish:
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,30 +154,55 @@ jobs:
           sed "s/{{version}}/$PKG/g" .github/release-notes-template.md > release-notes.md
           gh release create "v$PKG" --title "euthyna $PKG" --notes-file release-notes.md
 
-      # ClawHub has no pull-through: its registry only carries what a publisher
-      # pushes, so without this step the listing silently falls behind npm.
-      # The token is a secret created on clawhub.ai (account → API token);
-      # `clawhub login --token` accepts it non-interactively, and CI writes it
-      # to a throwaway config via CLAWHUB_CONFIG_PATH. Both language editions
-      # are published from the tarball's .agents/skills/ directories. A version
-      # already present is skipped by the CLI's own version gate rather than
-      # failing the run.
-      - name: Publish the skills to ClawHub (zh + en)
-        if: >-
-          (github.event_name == 'push' ||
-           (github.event_name == 'workflow_dispatch' && inputs.publish == true)) &&
-          steps.gate.outputs.already-published != 'true'
-        env:
-          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+  # ClawHub has no pull-through: its registry only carries what a publisher
+  # pushes, so without this job the listing falls behind npm and nothing reports
+  # it. It is deliberately NOT gated on already-published — "npm already has
+  # this version" says nothing about whether the listing does, and that coupling
+  # was a second way to skip.
+  #
+  # Concurrency serialises the listing, so two releases cannot interleave and an
+  # older one leave `latest` pointing backwards.
+  clawhub:
+    needs: [preflight, publish]
+    if: >-
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish == true)) &&
+      needs.preflight.outputs.clawhub-token == 'present'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: clawhub-listing
+      cancel-in-progress: false
+    # The registry settles on the order of tens of minutes (see the verify
+    # step's note), so this job waits; the ceiling keeps a wedged read from
+    # hanging a release forever.
+    timeout-minutes: 90
+    env:
+      CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+      CLAWHUB_CONFIG_PATH: ${{ runner.temp }}/clawhub-config.json
+    steps:
+      # fetch-depth: 0 because the changelog is derived from the commits between
+      # the previous tag and this one.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Pinned, and installed with lifecycle scripts disabled: this is the step
+      # that runs third-party package code, and it must not execute install-time
+      # payloads at all. The pin is the version whose verify replies were read
+      # on 2026-10-08.
+      - name: Install the ClawHub CLI
         run: |
-          if [ -z "$CLAWHUB_TOKEN" ]; then
-            echo "CLAWHUB_TOKEN is not set; skipping the ClawHub publish"
-            exit 0
-          fi
-          npm install -g clawhub
-          export CLAWHUB_CONFIG_PATH="$RUNNER_TEMP/clawhub-config.json"
-          clawhub login --token "$CLAWHUB_TOKEN" --label "github-actions-publish"
-          PKG="${{ steps.version.outputs.version }}"
+          npm install -g --ignore-scripts clawhub@0.23.3
+          clawhub --cli-version
+
+      - name: Log in
+        run: clawhub login --token "$CLAWHUB_TOKEN" --label "github-actions-publish"
+
+      - name: Publish the skills to ClawHub (zh + en)
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
           SHA="${{ github.sha }}"
           # Changelog: the conventional-commit subjects since the previous tag.
           # This repo's history IS the change summary, so it is derived here
@@ -149,6 +214,45 @@ jobs:
           else
             CHANGELOG="euthyna $PKG — $(node -p "require('./package.json').description")"
           fi
+
+          # Both publishes pass `--tags latest`, which moves a pointer, so an
+          # older tag must not be able to drag the listing backwards. This read
+          # fails CLOSED: an unreadable listing is not the same thing as a
+          # listing that holds nothing, and treating the two alike is how a
+          # rate-limit reply ends up moving latest blindly.
+          for slug in euthyna euthyna-en; do
+            current=""
+            for i in 1 2 3; do
+              raw="$( { clawhub skill verify "$slug" 2>&1 || true; } )"
+              parsed="$(printf '%s' "$raw" | node tools/clawhub-listing.mjs)"
+              kind="$(printf '%s' "$parsed" | cut -d'|' -f1)"
+              text="$(printf '%s' "$parsed" | cut -d'|' -f2)"
+              version="$(printf '%s' "$parsed" | cut -d'|' -f4)"
+              if [ -n "$version" ]; then
+                current="$version"
+                break
+              fi
+              case "$text" in
+                # Nothing published yet is an empty listing, not a failed read.
+                *"not found"*|*"no version"*|*"No skill"*) current="none"; break ;;
+              esac
+              echo "$slug preflight read $i/3 returned no version ($kind: $text)"
+              sleep 60
+            done
+            if [ -z "$current" ]; then
+              echo "::error::cannot read $slug's current listing after 3 attempts — refusing to publish rather than move latest blindly"
+              exit 1
+            fi
+            if [ "$current" != "none" ]; then
+              verdict="$(node tools/clawhub-listing.mjs --compare "$PKG" "$current")"
+              echo "$slug currently lists $current; candidate $PKG compares: $verdict"
+              if [ "$verdict" != "newer" ] && [ "$verdict" != "same" ]; then
+                echo "::error::$slug already lists $current, which is not older than $PKG — refusing to move latest backwards"
+                exit 1
+              fi
+            fi
+          done
+
           clawhub skill publish \
             --slug euthyna --name euthyna --version "$PKG" \
             --categories security,development \
@@ -165,3 +269,57 @@ jobs:
             --source-path .agents/skills/euthyna-en \
             --changelog "English edition. Changes in $PKG: $CHANGELOG" \
             --tags latest .agents/skills/euthyna-en
+
+      # A push is not a listing. `clawhub skill publish` returns once the
+      # submission is queued; the registry then generates a skill card and runs
+      # its security scan asynchronously. Measured on 2026-10-08: minutes after
+      # a real push both slugs read decision=fail / reasons=["card.missing"],
+      # the English edition also security=suspicious, and neither had settled
+      # half an hour later — both reached pass / clean / benign / high only
+      # after that. The budget is sized to that observation, not to optimism.
+      #
+      # Every read is captured rather than trusted as a command status: a reply
+      # is data to inspect, and the CLI's exit code must not end the step before
+      # the loop sees what came back. Anything short of `pass` is retried until
+      # the budget runs out, so a genuine rejection costs a bounded wait instead
+      # of a wrong verdict — the alternative is mistaking an in-flight scan for a
+      # decision, which reports a healthy release as dead.
+      - name: Verify the ClawHub listing reached decision=pass
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          attempts=25
+          settle_seconds=150
+          failed=0
+
+          for slug in euthyna euthyna-en; do
+            passed=0
+            for i in $(seq 1 "$attempts"); do
+              out="$( { clawhub skill verify "$slug" --version "$PKG" 2>&1 || true; } | node tools/clawhub-listing.mjs )"
+              decision="$(printf '%s' "$out" | cut -d'|' -f1)"
+              reasons="$(printf '%s' "$out" | cut -d'|' -f2)"
+              security="$(printf '%s' "$out" | cut -d'|' -f3)"
+              echo "attempt $i/$attempts: $slug@$PKG decision=$decision security=$security reasons=$reasons"
+              if [ "$decision" = "pass" ]; then
+                passed=1
+                break
+              fi
+              sleep "$settle_seconds"
+            done
+
+            if [ "$passed" != "1" ]; then
+              echo "::error::$slug@$PKG never reached decision=pass within the budget (last read: $out)"
+              failed=1
+              continue
+            fi
+
+            # decision=pass for the version says the release is healthy; the
+            # pointer is a separate claim — check it moved to this release.
+            latest="$( { clawhub skill verify "$slug" 2>&1 || true; } | node tools/clawhub-listing.mjs | cut -d'|' -f4 )"
+            echo "$slug: latest=$latest expected=$PKG"
+            if [ "$latest" != "$PKG" ]; then
+              echo "::error::$slug lists $latest as latest after publishing $PKG — the pointer did not move"
+              failed=1
+            fi
+            sleep 45
+          done
+          exit "$failed"

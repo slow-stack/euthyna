@@ -149,6 +149,48 @@ Not inferred. Do not re-research these.
   otherwise throws with the URL redacted — so pipe the output only after the
   interactive step has finished. This is how `0.1.0` and `0.1.1` were
   published; the release is then cut with `gh release create`.
+- 🧪 `euthyna@0.6.0` published 2026-10-08 by the same workflow (run
+  `37775126062`, 18 seconds end to end: suite → OIDC publish → provenance →
+  GitHub release, all `github-actions[bot]`). Verified from the outside, not from
+  the run colour: `npm view euthyna dist-tags` → `latest: 0.6.0`, the attestations
+  endpoint returns 200, and a tarball installed from the registry into a temp
+  prefix runs `euthyna --lang en`. **The ClawHub step in the same run skipped** —
+  see `### ClawHub registry` below.
+
+### ClawHub registry
+
+🧪 **A green publish run does not mean the listing updated. Measured 2026-10-08.**
+
+`v0.6.0` published to npm through OIDC and cut the GitHub release automatically
+(run `37775126062`, attestations endpoint returns 200 for `euthyna@0.6.0`), while
+the ClawHub step printed `CLAWHUB_TOKEN is not set; skipping the ClawHub publish`
+and exited 0. Registry reads then showed **both slugs at `latest = 0.4.2`**, and
+`0.5.0` returns "Version not found" for either — so the listing was a whole release
+behind npm before this run, and two behind after it.
+
+Three facts worth keeping:
+
+- **The secret can be empty.** `gh secret list` shows `CLAWHUB_TOKEN` as present
+  (last updated 2026-09-23T20:20Z), yet the job's env arrived blank. Secrets are
+  write-only, so "present in the list" is not evidence "the value is set". This is
+  the recorded `gh secret set` pitfall resurfacing, not a new failure mode.
+- **A push is not a listing.** `clawhub skill publish` returns once the submission
+  is queued. The registry then generates a skill card and runs a security scan
+  asynchronously, and `skill verify` reads the intermediate states: minutes after
+  the manual re-push both slugs read `decision=fail`, `reasons=["card.missing"]`,
+  and the English edition additionally `security=suspicious`. Later the same
+  evening both were `decision=pass / security=clean/benign/high / card.available`.
+  **One read right after publishing is a false negative — re-read before
+  concluding**, and the workflow now retries rather than trusts a single read.
+- **The `0.5.0` gap has no explanation on record.** Its release run did not print
+  the skip line, so the step ran; but the registry carries no such version. CI logs
+  for that run are no longer available to inspect the failure point. Do not write
+  this off as "it eventually appears" — `latest` was still 0.4.2 three releases later.
+
+The 0.6.0 listing was restored from this machine with the locally logged-in
+`clawhub` CLI (v0.23.3, token in `%APPDATA%\clawhub\config.json`), using exactly the
+workflow's flag set so the registry entry matches what CI would have produced
+(`--source-commit` = the tag's commit).
 
 ### Skill contract
 
@@ -303,7 +345,7 @@ enforce this (inferred from the tree; not measured, no sync test exists).
 | OpenCode | `.opencode/commands/euthyna.md` (`6d18fcc`) |
 | Cursor | `.cursor/commands/euthyna.md` (`d2ec676`) |
 | Copilot | `.github/prompts/euthyna.prompt.md` (`d2ec676`) |
-| ClawHub | both skill editions pushed by `publish.yml` on every release (`f5b4bc7`) — `clawhub login --token` with a `CLAWHUB_TOKEN` secret; ClawHub has no pull-through, its registry only carries what a publisher pushed, so version bumps must land before the tag is cut. **If `CLAWHUB_TOKEN` is unset the step skips with exit 0** — a release can succeed on npm while ClawHub silently misses it |
+| ClawHub | both skill editions pushed by `publish.yml` on every release (`f5b4bc7`) — `clawhub login --token` with a `CLAWHUB_TOKEN` secret; ClawHub has no pull-through, its registry only carries what a publisher pushed, so version bumps must land before the tag is cut. **A missing token now fails the run, and a verify step re-reads the listing until it settles** — the old `exit 0` skip is what let the listing sit three releases behind (see `### ClawHub registry` above for the measurement) |
 
 ### DSH plugin mechanism
 
@@ -389,7 +431,7 @@ enforce this (inferred from the tree; not measured, no sync test exists).
 | Path | What it is |
 |---|---|
 | `bin/` + `src/` | **Fact producers** (zero-dependency Node CLI). `src/contract.js` is the contract in code; `src/facts/history.js`, `src/facts/coverage.js` and `src/facts/deps.js` are the three measurements (`history` has `--origins` to chase the first introducer and classifies by message + deleted-line + diff, **on by default since `euthyna audit`**; `coverage.js` reads c8/V8 JSON, coverage.py JSON (format 3) **and Go's text `-coverprofile`** (the latter needs `--source <module root>`: the profile carries no function names, so the producer parses top-level `func` ranges from the gofmt'd source; a file absent from the profile is notEvaluated, never "never executed"); `deps.js` reads package-lock.json / Cargo.lock / go.mod). `euthyna audit` (0.4.0, `src/cli.js`) runs history + the full dependency surface in one command — the single entry point the CI recipe and the skill both describe. `src/gate.js` is the six-gate report validator behind `euthyna gate <报告> [--verify] [--allow-exec]` — it parses the skill's 裁定格式, downgrades findings that lack evidence/reproduce or contradict their verdict, and executes nothing but `git` unless the caller consents to interpreters |
-| `test/` | 220 tests via `node --test` (219 pass + 1 deliberate skip on non-Windows, measured 2026-10-08), no third-party framework. **The history tests build real git repositories rather than mocking**; the coverage tests carry fixtures shaped like c8, coverage.py and Go profile output (`coverage.test.js` + `coverage-go.test.js`); the deps tests carry fixture lockfiles (npm v1/v2/v3, Cargo.lock, go.mod); the contract tests carry the shell-quoting and render-boundary regressions from PR #1; `git.test.js` carries the error-path quoting and stderr-sanitization regressions from issue #2; `gate.test.js` pins the six-gate validator (including that `--verify` does not run an interpreter command without `--allow-exec`); `cli.test.js` pins the `audit` command and its exit codes; `skill.test.js` pins the written discipline (the six gates, the three verdicts, the `euthyna gate` reference) so weakening the skill turns CI red; `plugin.test.js`, `claude-plugin.test.js` and `hermes-plugin.test.js` pin the three manifest surfaces; `i18n.test.js` pins language rendering and report parsing (zh/en) — **no test compares the two skill editions against each other, so mirror drift is caught by hand, not CI** |
+| `test/` | 221 tests via `node --test` (220 pass + 1 deliberate skip on non-Windows, measured 2026-10-08), no third-party framework. **The history tests build real git repositories rather than mocking**; the coverage tests carry fixtures shaped like c8, coverage.py and Go profile output (`coverage.test.js` + `coverage-go.test.js`); the deps tests carry fixture lockfiles (npm v1/v2/v3, Cargo.lock, go.mod); the contract tests carry the shell-quoting and render-boundary regressions from PR #1; `git.test.js` carries the error-path quoting and stderr-sanitization regressions from issue #2; `gate.test.js` pins the six-gate validator (including that `--verify` does not run an interpreter command without `--allow-exec`); `cli.test.js` pins the `audit` command and its exit codes; `skill.test.js` pins the written discipline (the six gates, the three verdicts, the `euthyna gate` reference) so weakening the skill turns CI red; `plugin.test.js`, `claude-plugin.test.js` and `hermes-plugin.test.js` pin the three manifest surfaces; `manifest-version.test.js` pins `package.json` against the three plugin manifests (0.5.0 shipped them a release behind and nothing compared them); `i18n.test.js` pins language rendering and report parsing (zh/en) — **no test compares the two skill editions against each other, so mirror drift is caught by hand, not CI** |
 | `.agents/skills/euthyna/` | **The skill.** Doubles as source and as a project skill root (rank 200), so it is live in this workspace without a restart |
 | `bench/` | **The recall benchmark.** `exploits.js` establishes ground truth by execution (18 cases, 8 near-neighbour pairs); `prepare-blind.js` produces answer-free copies with per-round shuffled ids; `adjudicate.js` closes the loop end to end (blind tree → one adjudicator process per case → `collect-verdicts.js` machine validation → `score.js`), with a deterministic `golden` mode (ground truth written into reports — plumbing self-check only, never a real round) for CI; `collect-verdicts.js` machine-validates reports and extracts verdicts without the orchestrator reading report bodies; `score.js` computes the confusion matrix and the pair view; `perf.js` is the `history` scaling baseline. The verified-platform matrix (bsdtar vs GNU tar, p6 skip) lives in `bench/README.md`. Results: `bench/RESULTS.md` (round 1), `bench/RESULTS-round2.md` (round 2: three independent runs per case, zero flips), `bench/RESULTS-round3.md` (round 3: 18 cases, 54 adjudications, two fixture defects caught by adjudicators), `bench/RESULTS-round4.md` (round 4: 54/54, p6b v3 confirmed by first blind adjudication, cross-model run executed — zero flips across two model families); protocols in `bench/README.md`, design pre-registrations in `bench/DESIGN-round3.md` and `bench/DESIGN-round4.md` |
 | `docs/positioning.md` + `-zh` | Competitive analysis across the DSH catalog, including three claims that were tested and refuted |

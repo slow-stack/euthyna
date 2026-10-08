@@ -279,12 +279,23 @@ so the conclusion is now structural rather than inferential.
 The same run also re-does the old observational test on live data, and attributes each hit to the
 root the provider actually read it from: of the **5** skill directories that exist only under
 `~/.claude/skills`, **0** were discovered from any root; of the **78** that exist only under the
-resolved agents home, 62 were discovered — `user-agents` 62, `user-dsh` 4, `project-agents` 2,
-so some of those names live in more than one root and the sets are not exclusive (the probe
-prints the attribution rather than a bare count, because a bare count was the weaker claim).
-The remainder are names the provider refused, and it says why — surfaced rather than folded into
-a count, e.g. `skill file ~/.agents/skills/editorial-style-design-v1/SKILL.md ignored: missing
-YAML frontmatter`. `list()` returned 178 candidates.
+resolved agents home, **all 78** were discovered — attributed `user-agents` 78, plus 4 of them
+also reachable as `user-dsh` and 2 as `project-agents`, because some names live in more than one
+root and the sets are not exclusive.
+
+Two counting choices had to be corrected to get that, and both came from review. Comparing by
+**directory basename** instead of the name a `SKILL.md` declares reported 62 of 79 discovered.
+Measured: **16** skill folders declare a name different from their directory (e.g.
+`superpowers-brainstorming` declares `brainstorming`, `fretboard-skills` declares
+`guitar-fretboard`), and those are exactly the entries the provider's own output could not be
+matched back to — nothing was refused. With names read from the frontmatter the agents-only set is
+78 and all 78 are discovered. Separately, skipping symlinked skill directories (this machine links
+them between homes) read `.claude` as 96 rather than 97. A probe that counts the wrong thing still
+prints a number, which is the reason it is a measurement and not an `ls`: an unreadable path or a
+provider `error` is now reported under `INCOMPLETE` with a non-zero exit instead of folding into a
+clean count.
+`list()` returned 178 candidates, and one refusal is surfaced rather than dropped — `skill file
+~/.agents/skills/editorial-style-design-v1/SKILL.md ignored: missing YAML frontmatter`.
 
 The earlier basis for this claim was weaker and is kept for the record: *"65 skills present only
 under `~/.agents/skills` appeared in a session's skill catalog, while all 5 present only under

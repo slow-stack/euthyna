@@ -24,7 +24,7 @@
  *   - a read or stat that fails for a reason **other than absence** is a broken measurement, not
  *     an empty directory, and provider warnings are evidence — neither may be swallowed.
  */
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -39,12 +39,14 @@ if (!providerEntry) {
 // URL syntax, and the import would target something else while appearing to succeed.
 const { FileSystemSkillProvider } = await import(pathToFileURL(path.resolve(providerEntry)).href);
 
-// Provider warnings are part of the measurement: a file it refused to parse explains a name that
-// is missing from the output. Forward them instead of silencing them.
-const warnings = [];
+// Provider messages are part of the measurement: a file it refused to parse explains a name that
+// is missing from the output, and an error means the result is partial. Neither may be silenced,
+// and an error must not be able to exit 0.
+const notices = [];
+const failures = [];
 const logger = {
-  warn: (message) => warnings.push(`warn: ${message}`),
-  error: (message) => warnings.push(`error: ${message}`),
+  warn: (message) => notices.push(`warn: ${message}`),
+  error: (message) => failures.push(`error: ${message}`),
   info() {},
   debug() {}
 };
@@ -62,11 +64,13 @@ for (const root of roots) console.log(`  rank ${String(root.rank).padEnd(4)} ${r
 if (!roots.some((root) => root.path.includes('.claude'))) console.log('  → no `.claude` path at any rank');
 
 /**
- * Skill directory names under `dir`, plus every problem met on the way.
+ * Skill names under `dir`, plus every problem met on the way.
  *
- * A directory counts when it holds a `SKILL.md`, whether it is a real directory or a symlink to
- * one. Anything other than ENOENT is recorded: an empty result must be distinguishable from a
- * scan that never happened.
+ * Two things this has to match about the provider, or the comparison is between different
+ * things: it reports the name a SKILL.md **declares**, which is not always the directory's
+ * basename, and an entry that is a symlink to a plain file is not a skill directory at all —
+ * it is a perfectly ordinary absence, not a broken scan. Anything other than ENOENT is
+ * recorded, so an empty result stays distinguishable from a measurement that never happened.
  */
 async function skillDirs(dir) {
   const names = [];
@@ -79,16 +83,33 @@ async function skillDirs(dir) {
     return { names, problems };
   }
   for (const entry of entries) {
-    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-    const marker = path.join(dir, entry.name, 'SKILL.md');
+    const here = path.join(dir, entry.name);
+    let target;
     try {
-      const info = await stat(marker); // stat follows symlinks
-      if (info.isFile()) names.push(entry.name);
+      target = await stat(here); // follows a symlink; a link to a file is then not a directory
+    } catch (error) {
+      if (error.code !== 'ENOENT') problems.push(`${here}: ${error.code ?? error.message}`);
+      continue; // a dangling link holds no skill, and says nothing about the roots
+    }
+    if (!target.isDirectory()) continue;
+    const marker = path.join(here, 'SKILL.md');
+    let text;
+    try {
+      text = await readFile(marker, 'utf8');
     } catch (error) {
       if (error.code !== 'ENOENT') problems.push(`${marker}: ${error.code ?? error.message}`);
+      continue;
     }
+    names.push(declaredName(text) ?? entry.name);
   }
   return { names, problems };
+}
+
+/** The `name:` a SKILL.md declares in its frontmatter — the identifier the provider reports. */
+function declaredName(text) {
+  const frontmatter = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text)?.[1];
+  const declared = frontmatter ? /^name:[ \t]*["']?([^"'\r\n]+?)["']?[ \t]*$/m.exec(frontmatter)?.[1] : undefined;
+  return declared?.trim() || undefined;
 }
 
 // Read the compared directories off the provider instance. The provider resolves agentsHome as
@@ -144,11 +165,20 @@ for (const candidate of ours) {
 }
 
 // A measurement that hit anything on the way is reported, never folded into a count.
-if (warnings.length) console.log(`\nprovider said (${warnings.length}): ${[...new Set(warnings)].slice(0, 8).join(' | ')}`);
-if (problems.length) {
-  console.log(`\nINCOMPLETE — ${problems.length} read/stat problem(s), so the counts above are not full measurements:`);
-  for (const problem of problems) console.log(`  ${problem}`);
+if (notices.length) {
+  const unique = [...new Set(notices)];
+  const shown = unique.slice(0, 8);
+  console.log(`
+provider said (${unique.length} unique): ${shown.join(' | ')}` +
+    (unique.length > shown.length ? `
+  … ${unique.length - shown.length} more omitted` : ''));
+}
+const incomplete = [...problems, ...failures];
+if (incomplete.length) {
+  console.log(`
+INCOMPLETE — ${incomplete.length} scan problem(s), so the counts above are not full measurements:`);
+  for (const problem of incomplete) console.log(`  ${problem}`);
 }
 
 controller.abort();
-process.exitCode = problems.length ? 1 : 0;
+process.exitCode = incomplete.length ? 1 : 0;

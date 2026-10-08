@@ -26,11 +26,20 @@ import { readFileSync } from 'node:fs';
 
 const arg = process.argv[2];
 
-/** Numeric dot-prefix comparison; build metadata and prerelease are ignored. */
+/**
+ * Numeric dot-prefix comparison over the core version.
+ *
+ * Prerelease and build metadata are stripped rather than ordered: this is used
+ * to decide whether publishing a candidate may move `latest`, and "0.6.0-rc.1
+ * is not comparable" must not fail closed forever against "0.6.0". A candidate
+ * that shares its core with the current listing compares "same", which the
+ * guard allows; ordering two prereleases of the same core is out of scope here.
+ */
 function compareVersions(a, b) {
-  if (!/^\d+(\.\d+)*$/.test(String(a) ?? '') || !/^\d+(\.\d+)*$/.test(String(b) ?? '')) return 'unknown';
-  const pa = String(a).split('.').map(Number);
-  const pb = String(b).split('.').map(Number);
+  const core = (v) => String(v ?? '').replace(/[-+].*$/, '');
+  if (!/^\d+(\.\d+)*$/.test(core(a)) || !/^\d+(\.\d+)*$/.test(core(b))) return 'unknown';
+  const pa = core(a).split('.').map(Number);
+  const pb = core(b).split('.').map(Number);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const x = pa[i] ?? 0;
     const y = pb[i] ?? 0;

@@ -214,8 +214,10 @@ function structure(text, realCommands) {
  * into a shape the pattern does not read, the set would come back short or empty,
  * every mention would be filtered out of *both* editions, and parity would pass
  * on nothing. So the dispatch forms written here are the two the repository uses
- * (a `===` chain today, `case` if it becomes a switch), and the parity test
- * refuses to run on an empty derivation rather than comparing nothing.
+ * (a `===` chain today, `case` if it becomes a switch), and the list is
+ * cross-checked against the command section of the CLI's own help, in both
+ * languages — which turns even a *partial* miss into a red run rather than a
+ * quieter comparison.
  */
 async function cliSubcommands() {
   const cli = await readFile(path.join(ROOT, 'src/cli.js'), 'utf8');
@@ -235,14 +237,8 @@ describe('the two skill editions stay in step', () => {
   });
 
   test('every shared file matches on structure and identifiers, file by file', async () => {
+    // The derivation itself is pinned by the next test; here it is only consumed.
     const real = await cliSubcommands();
-    // An empty list is not "no commands mentioned", it is "the dispatch shape
-    // changed and nothing is recognised any more": every mention would then be
-    // filtered out of both editions and the comparison would pass on nothing.
-    assert.ok(
-      real.length > 0,
-      'no subcommand derived from src/cli.js — update cliSubcommands() to the dispatch shape it now uses'
-    );
     const diffs = [];
 
     for (const rel of await filesUnder(ZH)) {
@@ -268,6 +264,32 @@ describe('the two skill editions stay in step', () => {
     }
 
     assert.deepEqual(diffs, [], `\n${diffs.join('\n')}`);
+  });
+
+  test('the derived dispatch list matches the CLI\'s own command list', async () => {
+    // Why this test belongs to the mirror guard rather than to the CLI: the
+    // guard filters `euthyna <word>` mentions against cliSubcommands(), and a
+    // list that silently lost a name would drop that command from *both*
+    // editions' identifier sets and pass. Asserting "not empty" only catches a
+    // total collapse, so the list is cross-checked against the enumeration the
+    // CLI shows users — in both languages, because they mirror each other too.
+    const cli = await readFile(path.join(ROOT, 'src/cli.js'), 'utf8');
+    const listed = (marker) => {
+      const block = new RegExp(`${marker}:\\n([\\s\\S]*?)\\n\\n`).exec(cli)?.[1] ?? '';
+      return [...new Set([...block.matchAll(/^ {2}([a-z][a-z0-9-]*)\s{2,}/gm)].map((m) => m[1]))].sort();
+    };
+    const [zh, en] = [listed('命令'), listed('Commands')];
+    const real = await cliSubcommands();
+
+    assert.ok(real.length > 0, 'no subcommand derived from src/cli.js');
+    assert.deepEqual(zh, en, `the CLI's command list differs between its zh and English help:\nzh ${zh}\nen ${en}`);
+    // `help` is dispatched but not a documented command, so it is the one name
+    // the dispatch may carry that the help does not list.
+    assert.deepEqual(
+      real.filter((name) => name !== 'help'),
+      zh,
+      `dispatch and help disagree — dispatch ${real}, help ${zh}`
+    );
   });
 });
 

@@ -43,7 +43,27 @@ describe('the structure scan reads the Markdown forms it claims', () => {
   test('frontmatter ends only at an unindented delimiter', () => {
     const doc = ['---', 'name: x', '  ---', '# still metadata, not a heading', 'description: y', '---', 'body'].join('\n');
     assert.deepEqual(s(doc).headings, [], 'the indented --- is YAML content, so the body starts at the real closer');
+    // The body itself, not just what the scan says about it: a version that
+    // discarded everything after a valid closer would also report no headings.
+    assert.deepEqual(bodyLines(doc), ['body']);
     assert.deepEqual(bodyLines('---\ntitle: x'), ['---', 'title: x'], 'unterminated frontmatter is not guessed away');
+  });
+
+  test('every invocation form in the documents yields its command', () => {
+    const forms = [
+      'euthyna audit --base main',
+      'node <repo>/bin/euthyna.js coverage --coverage x.json',
+      'npx --yes euthyna@latest gate report.md',
+      'npx --yes euthyna@0.6.0 deps --all'
+    ].join('\n');
+    assert.deepEqual(s(forms).subcommands, ['audit', 'coverage', 'deps', 'gate']);
+    // Ordinary prose must not become a command: `repo` and `run` are not dispatched.
+    assert.deepEqual(s('the euthyna repo is small; beyond euthyna gate there is nothing').subcommands, ['gate']);
+  });
+
+  test('a pipe escaped by an even backslash run is still a cell boundary', () => {
+    assert.deepEqual(s('| a \\| b | c |\n| --- | --- |\n').tables[0], [2, 2], 'the escaped pipe stays inside the cell');
+    assert.deepEqual(s('| a \\\\| b | c |\n| --- | --- |\n').tables[0], [3, 2], 'an escaped backslash leaves the pipe bare');
   });
 
   test('the diff list names the side a difference belongs to', () => {

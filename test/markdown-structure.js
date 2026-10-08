@@ -43,12 +43,21 @@ export function structureDiffs(a, b, side = { left: 'left', right: 'right' }) {
  *   - fenced blocks, where a closing marker must be at least as long as its opener
  *   - tables, with rows recognised with or without outer pipes, confirmed by their
  *     delimiter row, and `\|` treated as cell content rather than a boundary
- *   - identifiers: `--flag` tokens and `euthyna <subcommand>` mentions
+ *   - identifiers: `--flag` tokens and `euthyna <subcommand>` mentions, in the
+ *     `.js`, plain and `@version` invocation forms
  *
  * Headings and tables are counted outside fenced blocks only — a `#` comment in a
  * bash example is not a heading and a `|` in a diagram is not a table. Frontmatter
  * is cut line by line rather than by regex, because a body containing its own
  * `---` rule would otherwise swallow half the document.
+ *
+ * A known limit, deliberately not modelled: **container content**. A heading or a
+ * fence written inside a blockquote (`> ## Title`) is Markdown structure that this
+ * scan does not see, because modelling quote and list containers means tracking
+ * open and close of every container, which this scan's flat line loop does not do.
+ * Measured across `.agents/skills/**` and `docs/**` on 2026-10-09: zero lines of
+ * that form, so nothing is missed today; if a document ever starts using it, the
+ * fix is container tracking, not another regex.
  */
 
 import { readdir } from 'node:fs/promises';
@@ -98,15 +107,44 @@ export function bodyLines(text) {
 const isTableRow = (line) => /^ {0,3}\S.*\|/.test(line) || /^ {0,3}\|/.test(line);
 const isTableDelimiter = (line) => /^ {0,3}\|?[\s:]*-[\s:|.-]*$/.test(line) && line.includes('-') && line.includes('|');
 
+/**
+ * Split a table row on the pipes that actually separate cells.
+ *
+ * GFM's escape is `\|`: a backslash escapes the following character, so a pipe
+ * preceded by an odd number of backslashes is cell content, while one preceded
+ * by an even run (`\\|` — an escaped backslash, then a bare pipe) is a real
+ * boundary. Counting backslashes is why this walks the line instead of
+ * `split('|')` or a regex: a fixed-length lookbehind cannot express "odd".
+ */
+function splitCells(line) {
+  const cells = [];
+  let current = '';
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '\\') {
+      current += ch + (line[i + 1] ?? '');
+      i++;
+      continue;
+    }
+    if (ch === '|') {
+      cells.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  cells.push(current);
+  return cells;
+}
+
 /** Cell count with the outer pipes normalised away. */
 function tableColumns(line) {
-  // `\|` is GFM's escape for a literal pipe inside a cell, so it separates
-  // nothing; counting it would make two documents that escaped it differently
-  // look like tables of different widths.
-  let s = line.trim().replace(/\\\|/g, '');
-  if (s.startsWith('|')) s = s.slice(1);
-  if (s.endsWith('|')) s = s.slice(0, -1);
-  return s.split('|').length;
+  const cells = splitCells(line.trim());
+  // An outer pipe leaves an empty cell at that end; a row of one column is the
+  // case where both ends are empty, and it has one cell, not zero.
+  if (cells.length > 1 && cells[0].trim() === '') cells.shift();
+  if (cells.length > 1 && cells[cells.length - 1].trim() === '') cells.pop();
+  return cells.length;
 }
 
 /**
@@ -208,12 +246,15 @@ export function structure(text, commandNames = []) {
     openFence: fence,
     fences: fenceStarts.length,
     tables,
-    // Both written forms count: the documents cite commands as
-    // `node <repo>/bin/euthyna.js coverage …` while prose says `euthyna gate`.
-    // Missing the `.js` form was caught by mutation — a one-sided `deps`
-    // invocation stayed invisible until the pattern accepted it.
+    // Three written forms count. The skill and docs cite commands as
+    // `node <repo>/bin/euthyna.js coverage …` while prose says `euthyna gate`, and
+    // the CI recipe installs a pinned version with `npx --yes euthyna@latest audit`
+    // — missing the `@version` form was caught in review, and it would have let a
+    // command changed only in that line drift unnoticed.
     subcommands: [
-      ...new Set([...joined.matchAll(/\beuthyna(?:\.js)?\s+([a-z][a-z0-9-]*)\b/g)].map((m) => m[1]))
+      ...new Set(
+        [...joined.matchAll(/\beuthyna(?:\.js|@\S+?)?\s+([a-z][a-z0-9-]*)\b/g)].map((m) => m[1])
+      )
     ]
       .filter((name) => commandNames.includes(name))
       .sort(),

@@ -73,14 +73,14 @@ if (!roots.some((root) => root.path.includes('.claude'))) console.log('  → no 
  * recorded, so an empty result stays distinguishable from a measurement that never happened.
  */
 async function skillDirs(dir) {
-  const names = [];
+  const names = new Set();
   const problems = [];
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch (error) {
     if (error.code !== 'ENOENT') problems.push(`readdir ${dir}: ${error.code ?? error.message}`);
-    return { names, problems };
+    return { names: [...names], problems };
   }
   for (const entry of entries) {
     const here = path.join(dir, entry.name);
@@ -100,16 +100,28 @@ async function skillDirs(dir) {
       if (error.code !== 'ENOENT') problems.push(`${marker}: ${error.code ?? error.message}`);
       continue;
     }
-    names.push(declaredName(text) ?? entry.name);
+    // A set, because the comparison below is by name: two directories declaring the same name
+    // would otherwise count twice here while the provider reports one candidate.
+    names.add(declaredName(text) ?? entry.name);
   }
-  return { names, problems };
+  return { names: [...names], problems };
 }
 
-/** The `name:` a SKILL.md declares in its frontmatter — the identifier the provider reports. */
+/**
+ * The `name:` a SKILL.md declares in its frontmatter — the identifier the provider reports.
+ *
+ * A YAML scalar may carry an inline comment after whitespace (`name: foo # note`), which a real
+ * parser drops and a naive match would swallow into the value. Quoted values are left alone:
+ * inside quotes the `#` is part of the name.
+ */
 function declaredName(text) {
   const frontmatter = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text)?.[1];
-  const declared = frontmatter ? /^name:[ \t]*["']?([^"'\r\n]+?)["']?[ \t]*$/m.exec(frontmatter)?.[1] : undefined;
-  return declared?.trim() || undefined;
+  const raw = frontmatter ? /^name:[ \t]+(\S.*)$/m.exec(frontmatter)?.[1] : undefined;
+  if (raw === undefined) return undefined;
+  const value = raw.trim();
+  const quoted = /^"([^"]*)"|'([^']*)'$/.exec(value);
+  if (quoted) return (quoted[1] ?? quoted[2]).trim() || undefined;
+  return value.replace(/[ \t]+#.*$/, '').trim() || undefined;
 }
 
 // Read the compared directories off the provider instance. The provider resolves agentsHome as
@@ -125,7 +137,7 @@ console.log(
 const [agentsScan, claudeScan] = await Promise.all([skillDirs(agentsDir), skillDirs(claudeDir)]);
 const { names: agents } = agentsScan;
 const { names: claude } = claudeScan;
-const problems = [...agentsScan.problems, ...claudeScan.problems];
+let problems = [...agentsScan.problems, ...claudeScan.problems];
 const agentsOnly = agents.filter((n) => !claude.includes(n));
 const claudeOnly = claude.filter((n) => !agents.includes(n));
 
@@ -163,6 +175,26 @@ console.log('\nthis project, as the real provider sees it:');
 for (const candidate of ours) {
   console.log(`  ${candidate.name} rank=${candidate.rank} source=${candidate.source} invocation=${JSON.stringify(candidate.invocation)}`);
 }
+
+// The provider indexes skills by name, so a name declared twice would be counted as discovered
+// once here and attributed to every directory carrying it. Measured on this machine: no
+// duplicates (169 names in the agents root, 95 in `.claude`, none repeated within a root), so
+// the probe asserts it instead of trusting it — a silent double count would be invisible.
+const duplicated = (names) => [...new Set(names.filter((n, i) => names.indexOf(n) !== i))];
+const collisions = [...duplicated(agents), ...duplicated(claude)];
+if (collisions.length)
+  console.log(`\nNOTE — ${collisions.length} name(s) declared by more than one directory in a root: ${collisions.join(', ')}; per-name counts cannot separate them`);
+
+// These two homes are directories other programs edit — a running DSH session installs into them.
+// The scan and provider.list() are not one atomic read, so re-scan and say so if the ground moved.
+const after = await Promise.all([skillDirs(agentsDir), skillDirs(claudeDir)]);
+if (after[0].names.length !== agents.length || after[1].names.length !== claude.length) {
+  console.log(
+    `\nUNSTABLE — the tree changed while measuring (agents ${agents.length} → ${after[0].names.length}, ` +
+      `.claude ${claude.length} → ${after[1].names.length}); the counts above describe two different moments`
+  );
+}
+problems = [...problems, ...after[0].problems, ...after[1].problems];
 
 // A measurement that hit anything on the way is reported, never folded into a count.
 if (notices.length) {

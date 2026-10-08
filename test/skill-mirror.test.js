@@ -10,7 +10,8 @@
  *
  * What this pins is structure and identifiers, NOT prose:
  *   - the same relative file set
- *   - per file: heading-level sequence, table shapes (every row's column count),
+ *   - per file: heading-level sequence (ATX and Setext), table shapes (every
+ *     row's column count, rows recognised with or without outer pipes),
  *     fenced-block count
  *   - per file: the set of `euthyna <word>` mentions and the set of `--flags`
  *
@@ -56,9 +57,12 @@ async function filesUnder(dir, base = dir) {
  */
 function bodyLines(text) {
   const lines = text.split(/\r?\n/);
-  if ((lines[0] ?? '').trim() !== '---') return lines;
+  // Both delimiters sit at column 0. An indented `---` is not a boundary: in the
+  // opener position it would not be frontmatter at all, and inside the block it
+  // is YAML content (a block scalar, say) that must not end the frontmatter early.
+  if (!/^---[ \t]*$/.test(lines[0] ?? '')) return lines;
   for (let i = 1; i < lines.length; i++) {
-    if ((lines[i] ?? '').trim() === '---') return lines.slice(i + 1);
+    if (/^---[ \t]*$/.test(lines[i] ?? '')) return lines.slice(i + 1);
   }
   return lines; // unterminated: do not guess, keep the whole file
 }
@@ -75,11 +79,23 @@ const isTableDelimiter = (line) => /^ {0,3}\|?[\s:]*-[\s:|.-]*$/.test(line) && l
 
 /** Cell count with the outer pipes normalised away. */
 function tableColumns(line) {
-  let s = line.trim();
+  // `\|` is GFM's escape for a literal pipe inside a cell, so it separates
+  // nothing; counting it would make two editions that escaped it differently
+  // look like tables of different widths.
+  let s = line.trim().replace(/\\\|/g, '');
   if (s.startsWith('|')) s = s.slice(1);
   if (s.endsWith('|')) s = s.slice(0, -1);
   return s.split('|').length;
 }
+
+/**
+ * Whether a line can be the text a Setext underline (`===` / `---`) heads.
+ * Blank lines cannot, and neither can a blockquote or list-item line: its
+ * paragraph lives inside that container, so an underline under it is a
+ * thematic break instead.
+ */
+const isParagraphLine = (line) =>
+  line.trim() !== '' && !/^ {0,3}(?:>|[-+*] |\d+[.)] )/.test(line);
 
 function structure(text, realCommands) {
   const lines = bodyLines(text);
@@ -87,8 +103,9 @@ function structure(text, realCommands) {
   const tables = [];
   const fenceStarts = [];
   const identifiers = [];
-  let fence = null; // the opening marker while inside a fenced block
+  let fence = null; // the opening marker string while inside a fenced block
   let table = null;
+  let paragraph = false;
 
   for (let idx = 0; idx < lines.length; idx++) {
     const line = lines[idx];
@@ -97,16 +114,18 @@ function structure(text, realCommands) {
     const fenceMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (fenceMatch) {
       const marker = fenceMatch[1];
-      const kind = marker[0];
+      paragraph = false;
       if (!fence) {
-        fence = kind;
+        fence = marker;
         fenceStarts.push(line);
         table = null;
         continue;
       }
       // a closing fence is the same character class and at least as long, with
-      // no info string; anything else is content inside the block
-      if (kind === fence && marker.length >= fence.length && fenceMatch[2].trim() === '') {
+      // no info string; anything else is content inside the block. Keeping the
+      // whole marker matters: a 4-backtick block containing a 3-backtick line
+      // stays open, and storing only the character let it close early.
+      if (marker[0] === fence[0] && marker.length >= fence.length && fenceMatch[2].trim() === '') {
         fence = null;
         continue;
       }
@@ -114,10 +133,20 @@ function structure(text, realCommands) {
     }
     if (fence) continue; // a `#` comment in a bash example is not a heading
 
+    // Setext form: an underline directly under a paragraph line is a heading
+    // (level 1 for `=`, level 2 for `-`), not a thematic break.
+    const setext = /^ {0,3}(=+|-+)[ \t]*$/.exec(line);
+    if (setext && paragraph) {
+      headings.push(setext[1][0] === '=' ? 1 : 2);
+      paragraph = false;
+      continue;
+    }
+
     const heading = /^ {0,3}(#{1,6})\s/.exec(line);
     if (heading) {
       headings.push(heading[1].length);
       table = null;
+      paragraph = false;
       continue;
     }
 
@@ -126,18 +155,25 @@ function structure(text, realCommands) {
         table = [];
         tables.push(table);
       }
-      if (table) table.push(tableColumns(line));
+      if (table) {
+        table.push(tableColumns(line));
+        paragraph = false;
+      } else {
+        paragraph = isParagraphLine(line);
+      }
       continue;
     }
     table = null;
+    paragraph = isParagraphLine(line);
   }
 
-  // Identifiers are read across the whole file, code examples included: the
-  // `--flag` and `euthyna <subcommand>` occurrences that must match are the ones
-  // in the commands an agent will copy. Prose is excluded from this concern's
-  // reach in the other direction too — the Chinese note "`--coverage` 没有
-  // `--repo`" is faithfully translated as "the coverage command has no `--repo`",
-  // and naming the flag in prose is not what the parity is about.
+  // Identifiers are read across the whole file, prose included, not only out of
+  // the command examples. That is the stricter side and it is deliberate: a flag
+  // named in a Chinese sentence and dropped in the English one is the same drift
+  // as a flag missing from a documented invocation, and both editions do mirror
+  // such sentences today ("`--coverage` 没有 `--repo`" ↔ "the coverage command has
+  // no `--repo`"). The cost is that a prose-only difference goes red, and the
+  // remedy then is to mirror the sentence.
   const joined = identifiers.join('\n');
   return {
     headings,
@@ -172,10 +208,19 @@ function structure(text, realCommands) {
  * added next month escape the comparison silently. Deriving the set from
  * src/cli.js fixes both directions: mentions are restricted to real commands,
  * and a real command cannot be missing from the list.
+ *
+ * The derivation is what has to fail loudly. Both this pattern and the filter
+ * that consumes it are silent by construction: if the dispatch were re-written
+ * into a shape the pattern does not read, the set would come back short or empty,
+ * every mention would be filtered out of *both* editions, and parity would pass
+ * on nothing. So the dispatch forms written here are the two the repository uses
+ * (a `===` chain today, `case` if it becomes a switch), and the parity test
+ * refuses to run on an empty derivation rather than comparing nothing.
  */
 async function cliSubcommands() {
   const cli = await readFile(path.join(ROOT, 'src/cli.js'), 'utf8');
-  return [...new Set([...cli.matchAll(/command === '([a-z][a-z0-9-]*)'/g)].map((m) => m[1]))].sort();
+  const names = [...cli.matchAll(/(?:command ===|case)\s*'([a-z][a-z0-9-]*)'/g)].map((m) => m[1]);
+  return [...new Set(names)].sort();
 }
 
 describe('the two skill editions stay in step', () => {
@@ -191,6 +236,13 @@ describe('the two skill editions stay in step', () => {
 
   test('every shared file matches on structure and identifiers, file by file', async () => {
     const real = await cliSubcommands();
+    // An empty list is not "no commands mentioned", it is "the dispatch shape
+    // changed and nothing is recognised any more": every mention would then be
+    // filtered out of both editions and the comparison would pass on nothing.
+    assert.ok(
+      real.length > 0,
+      'no subcommand derived from src/cli.js — update cliSubcommands() to the dispatch shape it now uses'
+    );
     const diffs = [];
 
     for (const rel of await filesUnder(ZH)) {
@@ -216,5 +268,42 @@ describe('the two skill editions stay in step', () => {
     }
 
     assert.deepEqual(diffs, [], `\n${diffs.join('\n')}`);
+  });
+});
+
+/**
+ * The parity test is only as good as the scan, and every rule above has a legal
+ * Markdown form that used to be invisible to it. These cases pin the scan itself
+ * on crafted documents, so a rule is demonstrated rather than asserted from the
+ * mirror's green colour.
+ */
+describe('the structure scan reads the Markdown forms it claims', () => {
+  const s = (text) => structure(text, ['audit', 'coverage', 'deps', 'gate', 'help', 'history']);
+
+  test('a fence closes only on a marker at least as long as its opener', () => {
+    const doc = ['````', '```', '# inside the block', '````', '# after the block'].join('\n');
+    assert.deepEqual(s(doc).headings, [1], 'the 3-backtick line is content, so the heading under it stays fenced');
+    assert.equal(s(doc).fences, 1);
+  });
+
+  test('a Setext underline under a paragraph is a heading, and after a blank line it is not', () => {
+    assert.deepEqual(s('Title\n===\n\ntext\n---\n').headings, [1, 2]);
+    assert.deepEqual(s('text\n\n---\n').headings, [], 'a thematic break is not a heading');
+    assert.deepEqual(s('- item\n---\n').headings, [], 'a list item is not a paragraph to underline');
+  });
+
+  test('a table is confirmed by its delimiter row and its cells keep escaped pipes', () => {
+    assert.deepEqual(s('a | b\n--- | ---\n1 | 2\n').tables, [[2, 2, 2]], 'no outer pipes');
+    assert.deepEqual(s('prose with a | inside\n').tables, [], 'a stray pipe is not a table');
+    assert.deepEqual(
+      s('| a | b |\n| --- | --- |\n| x \\| y | z |\n').tables,
+      [[2, 2, 2]],
+      'an escaped pipe is cell content, not a cell boundary'
+    );
+  });
+
+  test('frontmatter ends only at an unindented delimiter', () => {
+    const doc = ['---', 'name: x', '  ---', '# still metadata, not a heading', 'description: y', '---', 'body'].join('\n');
+    assert.deepEqual(s(doc).headings, [], 'the indented --- is YAML content, so the body starts at the real closer');
   });
 });

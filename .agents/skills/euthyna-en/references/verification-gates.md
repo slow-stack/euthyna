@@ -289,3 +289,8 @@ When there are multiple suspected bugs:
 2. TRUE POSITIVE list: each with a brief vulnerability description
 3. FALSE POSITIVE list: each with a brief rejection reason
 4. INCONCLUSIVE list: **each with what is missing and why**
+
+5. **Triggerability cannot carry a dismissal.** When a claim is excluded because "this path cannot be reached / never runs / is dead code":
+   - Neither outlet of the coverage producer can carry that argument. **ESTABLISHED (never invoked — including the "file does not appear in the coverage data" outlet) records only "not exercised in this run"**: it may sit in the evidence column as corroboration, but it proves nothing about whether the path *can* fire; **the UNKNOWN "symbol not located" is the absence of a coverage fact**.
+   - When no coverage fact was obtained, the gate that would carry the argument is recorded **NOT EVALUATED** with the reason `coverage=not-measured`. Not-evaluated is that gate's **completed state**, not a skipped step: every other gate is still evaluated in full. The verdict then follows the folding — any other gate FAILs and the FALSE POSITIVE is carried by that gate (whose own argument must not rest on triggerability); with no other FAIL, the verdict is INCONCLUSIVE.
+   - **So a triggerability-based FALSE POSITIVE has exactly one legal form**: some refutation that does not rest on triggerability carries it — impossibility by data flow (hardcoded arguments, no attacker-controlled input), or a PoC that disproves it directly. Coverage adds nothing to and takes nothing from such an argument, and this rule does not apply to it. "This path did not fire" is never "this path cannot fire".

@@ -26,6 +26,7 @@
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 const providerEntry = process.argv[2];
 if (!providerEntry) {
@@ -33,7 +34,9 @@ if (!providerEntry) {
   process.exit(2);
 }
 
-const { FileSystemSkillProvider } = await import(new URL(`file:///${path.resolve(providerEntry).replace(/\\/g, '/')}`).href);
+// pathToFileURL, not a hand-assembled `file:///` string: a path containing `#`,
+// `?` or `%` is URL syntax, and the import would silently target something else.
+const { FileSystemSkillProvider } = await import(pathToFileURL(path.resolve(providerEntry)).href);
 
 const quietLogger = { warn() {}, info() {}, debug() {}, error() {} };
 const controller = new AbortController();
@@ -69,29 +72,49 @@ async function skillDirs(dir) {
   return found;
 }
 
-const agentsDir = path.join(os.homedir(), '.agents', 'skills');
+// Read the directories off the provider instance, not off os.homedir(): the
+// provider resolves agentsHome as `config.agentsHome ?? DSH_AGENTS_HOME ??
+// ~/.agents`, so assuming the default would compare a directory the provider
+// never reads whenever that variable is set.
+const agentsDir = path.join(provider.agentsHome, 'skills');
 const claudeDir = path.join(os.homedir(), '.claude', 'skills');
+console.log(`\nagentsHome the provider resolved: ${provider.agentsHome}` +
+  (process.env.DSH_AGENTS_HOME ? ` (DSH_AGENTS_HOME=${process.env.DSH_AGENTS_HOME})` : ' (DSH_AGENTS_HOME unset → default)'));
 const [agents, claude] = await Promise.all([skillDirs(agentsDir), skillDirs(claudeDir)]);
 const agentsOnly = agents.filter((n) => !claude.includes(n));
 const claudeOnly = claude.filter((n) => !agents.includes(n));
 
 const listed = await provider.list({ cwd: process.cwd() });
 const candidates = Array.isArray(listed) ? listed : listed.candidates;
-const seen = new Set(candidates.map((candidate) => candidate.name));
+
+// Which root a name came from, not merely whether the name appeared: a skill can
+// be discovered through a third root and still prove nothing about the two being
+// compared, so counts are attributed to the provider's own `source` label.
+const sourcesOf = new Map();
+for (const candidate of candidates) {
+  if (!sourcesOf.has(candidate.name)) sourcesOf.set(candidate.name, new Set());
+  sourcesOf.get(candidate.name).add(candidate.source ?? 'unknown');
+}
+const anywhere = (names) => names.filter((n) => sourcesOf.has(n)).length;
+const bySource = (names) => {
+  const tally = {};
+  for (const n of names) for (const s of sourcesOf.get(n) ?? []) tally[s] = (tally[s] ?? 0) + 1;
+  return JSON.stringify(tally);
+};
 
 console.log(
-  `\ndisk: .agents ${agents.length} skill dirs, .claude ${claude.length}, overlap ` +
-    `${agents.length - agentsOnly.length}`
+  `\ndisk: agents-root ${agents.length} skill dirs at ${agentsDir}, .claude ${claude.length}, ` +
+    `overlap ${agents.length - agentsOnly.length}`
 );
 console.log(`discovered ${candidates.length} candidates for cwd=${process.cwd()}`);
 console.log(
-  `  .claude-only: ${claudeOnly.filter((n) => seen.has(n)).length} of ${claudeOnly.length} discovered ` +
-    `[${claudeOnly.filter((n) => !seen.has(n)).join(', ')}] are not`
+  `  .claude-only (${claudeOnly.length}): discovered ${anywhere(claudeOnly)} [${claudeOnly.join(', ')}] ` +
+    `— none of these directories is a root, so any hit would have to come from elsewhere: ${bySource(claudeOnly)}`
 );
 console.log(
-  `  .agents-only: ${agentsOnly.filter((n) => seen.has(n)).length} of ${agentsOnly.length} discovered` +
-    (agentsOnly.length - agentsOnly.filter((n) => seen.has(n)).length
-      ? ` (the rest fail to parse as skills — their files, not this question)`
+  `  agents-only (${agentsOnly.length}): discovered ${anywhere(agentsOnly)} by source ${bySource(agentsOnly)}` +
+    (anywhere(agentsOnly) < agentsOnly.length
+      ? ' — the remainder fail to parse as skills (their files, not this question)'
       : '')
 );
 

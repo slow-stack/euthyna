@@ -276,10 +276,13 @@ rank 500  C:\Users\<user>\.agents\skills  (agentsHome)
 the list at any rank**, and the string `claude` does not occur once in the provider's 888 lines,
 so the conclusion is now structural rather than inferential.
 
-The same run also re-does the old observational test on live data: of the **5** skill directories
-that exist only under `~/.claude/skills`, **0** were discovered; of the **79** that exist only
-under `~/.agents/skills`, 63 were (the other 16 fail to parse as skills — that is a property of
-those third-party files, not of which root is read). `list()` returned 178 candidates.
+The same run also re-does the old observational test on live data, and attributes each hit to the
+root the provider actually read it from: of the **5** skill directories that exist only under
+`~/.claude/skills`, **0** were discovered from any root; of the **79** that exist only under the
+resolved agents home, 63 were discovered — `user-agents` 63, `user-dsh` 4, `project-agents` 2,
+so some of those names live in more than one root and the sets are not exclusive (the probe
+prints the attribution rather than a bare count, because a bare count was the weaker claim).
+`list()` returned 178 candidates.
 
 The earlier basis for this claim was weaker and is kept for the record: *"65 skills present only
 under `~/.agents/skills` appeared in a session's skill catalog, while all 5 present only under

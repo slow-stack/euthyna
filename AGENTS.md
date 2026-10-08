@@ -278,19 +278,24 @@ so the conclusion is now structural rather than inferential.
 
 The same run also re-does the old observational test on live data, and attributes each hit to the
 root the provider actually read it from: of the **5** skill directories that exist only under
-`~/.claude/skills`, **0** were discovered from any root; of the **79** that exist only under the
-resolved agents home, 63 were discovered — `user-agents` 63, `user-dsh` 4, `project-agents` 2,
+`~/.claude/skills`, **0** were discovered from any root; of the **78** that exist only under the
+resolved agents home, 62 were discovered — `user-agents` 62, `user-dsh` 4, `project-agents` 2,
 so some of those names live in more than one root and the sets are not exclusive (the probe
 prints the attribution rather than a bare count, because a bare count was the weaker claim).
-`list()` returned 178 candidates.
+The remainder are names the provider refused, and it says why — surfaced rather than folded into
+a count, e.g. `skill file ~/.agents/skills/editorial-style-design-v1/SKILL.md ignored: missing
+YAML frontmatter`. `list()` returned 178 candidates.
 
 The earlier basis for this claim was weaker and is kept for the record: *"65 skills present only
 under `~/.agents/skills` appeared in a session's skill catalog, while all 5 present only under
-`~/.claude/skills` were absent."* Those counts no longer reproduce — measured 2026-10-09:
-`~/.agents/skills` 170 directories, `~/.claude/skills` 96, sharing 91 names, so the disjoint
-remainder that made the test decisive is now 79 and 5. Counts drift; the root list does not.
-Also measured that day: `~/.codex/skills` holds 75, and `~/.dsh/skills` (6 entries) is a mix of
-real directories and **symlinks into `~/.agents/skills`**, so it is not an independent catalogue.
+`~/.claude/skills` were absent."* Those counts no longer reproduce — measured 2026-10-09 with the
+probe, which also follows symlinked skill directories: 170 skills in the resolved agents home,
+97 in `~/.claude/skills`, sharing 92 names, so the disjoint remainder that made the test decisive
+is now 78 and 5. Counts drift; the root list does not. (An earlier hand count of `~/.claude/skills`
+said 96 — it missed the one entry that is a symlink, which is exactly the error the probe now
+guards against.) Also measured that day, by a plain `SKILL.md` file search rather than by the
+probe: `~/.codex/skills` holds 75, and `~/.dsh/skills` (6 entries) is a mix of real directories
+and **symlinks into `~/.agents/skills`**, so it is not an independent catalogue.
 
 🧪 **The invocation policy reads correctly on 0.1.6-alpha.1, verified through the real provider
 again** — the way the bug in the section above was originally caught. Both editions are
@@ -521,7 +526,7 @@ is faithful — that is a reading job, and a mechanical stand-in would only manu
 | **A "corrupted" test fixture that silently failed to mutate** | The checker correctly reported VERIFIED, because the file was byte-identical to the control. Assert that every negative fixture actually differs from the control before trusting any result that comes out of it |
 | **A control byte in a git argv does not survive the Windows command-line round trip** | Measured while writing the issue #2 regressions: a BEL reached git as `?`, and an ESC-bearing argument got different semantics entirely (exit 0, no error). A hostile-argv test against real git therefore cannot assert the escape form cross-platform — assert the portable property (no raw control byte in the output) against git, and the exact escape form against the pure message builder (`gitFailureMessage`) |
 | **euthyna 的 CLI 在沙箱 pwsh 里跑必失败** | 沙箱拒绝 Node 起 git 子进程（piped stdio 的 EPERM，见上）后，`repoToplevel` 静默返回空，CLI 报 exit 2「不在任何 git 仓库」——看起来像目标仓库问题，其实是沙箱问题。一律用侧边栏嵌入式终端跑 `node D:\euthyna\bin\euthyna.js ...` |
-| **A user-level installed skill silently lags the published version** | 🧪 Measured 2026-10-09: `~/.agents/skills/euthyna/` was still pre-0.6.0 (1 `--source` mention where the shipped tree has 5, no `coverprofile`, missing the rule-5 wording from PR #21), while npm and ClawHub both read 0.6.0. Inside this repository it is invisible — the project root (rank 200) wins — but **outside it the old discipline is what actually runs**. Check with `diff -rq ~/.agents/skills/euthyna .agents/skills/euthyna`, not by assuming a release propagated |
+| **A user-level installed skill silently lags the published version** | 🧪 Measured 2026-10-09: `~/.agents/skills/euthyna/` was still pre-0.6.0 (1 `--source` mention where the shipped tree has 5, no `coverprofile`, missing the rule-5 wording from PR #21), while npm and ClawHub both read 0.6.0. Inside this repository it is invisible — the project root (rank 200) wins — but **outside it the old discipline is what actually runs**. Check with `git diff --no-index --stat ~/.agents/skills/euthyna .agents/skills/euthyna` (empty output = in sync) rather than assuming a release propagated. Use `git`, not `diff`: in PowerShell `diff` is the `Compare-Object` alias and refuses `-rq`. |
 | **Deleting `TEMP` from the env handed to a child does not remove it in the child** | 🧪 Measured while writing the issue #7 regressions: after the parent deleted `TEMP`/`TMP`/`TMPDIR` from the env object passed to `execFileSync`, the child still reported `'TEMP' in process.env === true` and `os.tmpdir()` equal to the real user temp (`TMP`/`TMPDIR` did stay absent). Setting them to `''` **does** propagate, and `os.tmpdir()` skips an empty value and falls back to an absolute default — so a test that needs "no temp variable" must set them empty rather than delete them, or assert the property on a pure helper instead (see `bench/results-dir.js` and its unit test in `test/bench.test.js`) |
 
 ---

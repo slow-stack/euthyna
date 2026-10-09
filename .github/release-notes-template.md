@@ -17,8 +17,9 @@ euthyna history --repo <path> --base main
 
 - Zero runtime dependencies by design: a fact producer an audit depends on
   should not itself need a supply-chain review.
-- The CLI's report text is currently Chinese; the audit discipline (the skill)
-  is host-agnostic Markdown.
+- The CLI reports in Chinese by default and in English on `--lang en` (or
+  `EUTHYNA_LANG=en`). The audit discipline ships as two mirrored skill editions —
+  Chinese and English — and both are in the published package.
 - Published by the release workflow: the test suite ran, publishing goes through
   trusted publishing (OIDC), and the npm upload carries a provenance attestation.
 - See the [README](https://github.com/slow-stack/euthyna#readme) and the

@@ -427,7 +427,8 @@ structure *inside* a blockquote (`> ## Title`) is not read — measured 2026-10-
 skill editions and `docs/**`, zero lines of that form, so the channel carries nothing today;
 if that changes, the fix is container tracking, not another regex.
 The Markdown scan itself is `test/markdown-structure.js`, shared with `test/docs-pair.test.js`
-(the same structure-and-identifier comparison applied to the seven `docs/` translation pairs),
+(the same structure-and-identifier comparison applied to every `docs/` translation pair —
+eight as of 2026-10-09),
 and `test/cli-commands.js` holds the dispatch list both guards filter against. One scan rather
 than two, because two hand-written ones disagree about what structure *is* — and a scan that
 cannot see a legal form makes its comparison pass on that form. The mirror guard was
@@ -573,7 +574,8 @@ is faithful — that is a reading job, and a mechanical stand-in would only manu
 | `docs/case-study-axe-core.md` + `-zh` | Validation run #1: JavaScript (axe-core), 5/5 coarse-screen candidates refuted at the gates |
 | `docs/case-study-crewai.md` + `-zh` | Validation run #2: Python (crewAI). **Proved the Python claim**: `history` works on Python repos, and the coverage producer was extended to read coverage.py JSON. 3 candidates → 2 FP + 1 INCONCLUSIVE (pickle, supply-chain-dependent) |
 | `docs/case-study-act.md` + `-zh` | Validation run #3: Go (nektos/act, v0.2.89). **Proved the Go claim** for `history` (GHSL-2023-004 fix's deleted lines traced to the introducing commit) and `deps` (go.mod, honestly labelled "declared, not resolved"). **Coverage on Go targets is a confirmed gap** (`go test -coverprofile` text format refused). 4 candidates → 4 FP + 2 observations; the traversal fix re-verified by an executable PoC that also confirmed the artifacts server is unauthenticated. The act clone and PoC live in `.scratch/` (gitignored) |
-| `audits/` | **Audit reports, one per run, local-only** (never written into the target repository, and deliberately **not committed** here — the public form is `docs/case-study-*.md`). See `audits/CREWAI_EUTHYNA_AUDIT_2026-09-20.md` (gitignored) |
+| `docs/case-study-rust.md` + `-zh` | Validation run #4: Rust (rustls, `v/0.23.44`→`v/0.23.45` = RUSTSEC-2026-0285). **Proved the Rust claim** for `history` (43 facts over the fix's deleted lines) and `deps` (366 Cargo.lock facts). **The project's first TRUE POSITIVE**: a standalone PoC drives `ServerConnection` with hand-built ClientHello wire bytes and shows the pre-fix server accepting a second hello that withdraws the HelloRetryRequest's named suite (ServerHello selects `0x1303` after the retry said `0x1301`), while the fixed tag refuses with `CipherSuiteDifferedOnRetry`. 6 verdicts → 1 TP / 4 FP / 1 INC, validated by `euthyna gate` (exit 0). Rust coverage remains a **confirmed gap**; the target's own test suite cannot run here at all (`aws-lc-sys` build script requires NASM), which is why the PoC is a separate crate on the `ring` provider. Clone, PoC and reports live in `.scratch/` (gitignored) |
+| `audits/` | **Audit reports, one per run, local-only** (never written into the target repository, and deliberately **not committed** here — the public form is `docs/case-study-*.md`). See `audits/CREWAI_EUTHYNA_AUDIT_2026-09-20.md` and `audits/RUSTLS_EUTHYNA_AUDIT_2026-10-09.md` (gitignored) |
 | `tools/fetch-references.js` | Fetches upstream sources on demand into `.refs/` (gitignored). **The repo distributes no third-party files** |
 | `tools/check-license-text.mjs` | Verifies `LICENSE` against the canonical Apache-2.0 text, fetched live. **The licence claim is checkable rather than asserted** |
 | `tools/probe-skill-roots.mjs` | Drives the **installed** DSH skill provider and prints the roots it reads plus what it discovers, so the discovery-path facts above stay re-measurable instead of remembered. Read-only; needs the harness's module path as its argument |

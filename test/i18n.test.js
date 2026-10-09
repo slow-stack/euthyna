@@ -256,8 +256,8 @@ describe('CLI language switch', () => {
       await main(['audit', '--repo', repo, '--base', base, '--head', head, '--lang', 'en']);
     } finally {
       const out = restore();
-      assert.match(out, /dependency facts come from the checked-out/);
-      assert.doesNotMatch(out, /依赖事实取自/);
+      assert.match(out, /differs in content from the one at --head/);
+      assert.doesNotMatch(out, /测到的依赖清单/);
     }
   });
 

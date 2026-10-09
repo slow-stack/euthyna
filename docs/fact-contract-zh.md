@@ -183,9 +183,10 @@
    而是「哪个工具、因为什么不可用」）。
 3. **空结果要显式区分**：「跑了但没发现」记 `evaluated` + `count: 0`；
    「根本没跑」记 `notEvaluated`。这两者在任何报告里都不许长得一样。
-4. **`code`（可选）是机读的判别名**，给 CI 和测试断言用：`audit` 的两半版本不一致记
-   `worktree-not-head`，清单有未提交改动记 `manifest-uncommitted`。人读的还是 `reason`——
-   `code` 只回答「哪一类缺口」，不替代理由，也不得被拿来当裁定。
+4. **`code`（可选）是机读的判别名**，给 CI 和测试断言用：`audit` 在测到的清单与 `--head` 那份
+   内容不一致（或清单在该提交里根本不存在）时记 `manifest-not-head`，探测本身失败时记
+   `manifest-unverified`。人读的还是 `reason`——`code` 只在 `--json` 通道上出现，终端渲染打的是
+   `kind: reason`；它只回答「哪一类缺口」，不替代理由，也不得被拿来当裁定。
 
 ---
 

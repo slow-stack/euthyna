@@ -17,6 +17,7 @@ import { resolveLang, T, isLang, DEFAULT_LANG } from '../src/lang.js';
 import { makeReport, renderReport, makeFact, notEvaluated, KIND, STATUS } from '../src/contract.js';
 import { parseGateReport, validateFindings, renderGateReport, isNotEvaluatedStatus, isPassStatus } from '../src/gate.js';
 import { EXIT } from '../src/cli.js';
+import { makeRepo, commitFiles, git, npmLockfile } from './helpers.js';
 
 describe('src/lang.js', () => {
   test('defaults to Chinese and switches on --lang en', () => {
@@ -232,6 +233,31 @@ describe('CLI language switch', () => {
       assert.match(out, /Target:/);
       assert.match(out, /Criteria not evaluated/);
       assert.doesNotMatch(out, /目标:|未评估的判据/);
+    }
+  });
+
+  test('the audit version declaration follows the requested language', async () => {
+    // The Chinese half of this pair is pinned in cli.test.js; without this case
+    // the English string in the same t() call is production code nothing runs.
+    const { main } = await import('../src/cli.js');
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, 'chore: pin left-pad', {
+      'package-lock.json': npmLockfile([['left-pad', '1.3.0']]),
+      'src/a.js': 'export const a = 1;\n'
+    });
+    const head = await commitFiles(repo, 'chore: pin alpha', {
+      'package-lock.json': npmLockfile([['left-pad', '1.3.0'], ['alpha', '2.0.0']]),
+      'src/b.js': 'export const b = 2;\n'
+    });
+    await git(repo, ['checkout', '-q', '--detach', base]);
+
+    const restore = capture(process.stdout);
+    try {
+      await main(['audit', '--repo', repo, '--base', base, '--head', head, '--lang', 'en']);
+    } finally {
+      const out = restore();
+      assert.match(out, /dependency facts come from the checked-out/);
+      assert.doesNotMatch(out, /依赖事实取自/);
     }
   });
 

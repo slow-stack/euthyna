@@ -280,4 +280,5 @@ that a conclusion without evidence is not handed over wearing the face of "estab
 - `history` only covers **deleted lines**. It does not handle newly added code (except with `--pickaxe`).
 - `coverage` **can only falsify**. See above.
 - `coverage` relies on invocation counts and **does not handle dynamic dispatch, reflection, or string-based calls**. Conclusions of count 0 must be discounted when such mechanisms exist.
+- The two halves of `audit` **do not read the same version**: `history` takes the commits named by `--base`/`--head`, while `deps` takes the manifest **currently checked out** in `--repo`. When the worktree is not at `--head`, or the manifest has uncommitted changes, the output names it under *Criteria not evaluated* (`worktree-not-head` / `manifest-uncommitted`). **Seeing one means checking out an end of the range and re-running** — the declaration keeps the trap from being silent; it does not measure the fact for you.
 - Neither **produces scores, severity, or fix suggestions**. That is the contract, not an omission.

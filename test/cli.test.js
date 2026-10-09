@@ -15,7 +15,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { parseArgs, EXIT } from '../src/cli.js';
-import { makeRepo, commitFiles, git } from './helpers.js';
+import { makeRepo, commitFiles, git, npmLockfile } from './helpers.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -243,6 +243,93 @@ describe('audit command (history + deps in one run)', () => {
   test('a missing --base is a usage error', async () => {
     const { main } = await import('../src/cli.js');
     assert.equal(await main(['audit', '--json']), EXIT.USAGE);
+  });
+});
+
+describe('audit declares which version its dependency half measured', () => {
+  // The two halves of audit read from different places: history from the commits
+  // named by --base/--head, deps from the manifest checked out in --repo. A clone
+  // parked elsewhere silently reports facts about a version the caller did not ask
+  // for — measured on a real repository as 284 dependency facts where the tag holds
+  // 366. These tests pin the declaration, not a fix to the dependency producer.
+  async function repoWithAGrowingLock() {
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, 'chore: pin left-pad', {
+      'package-lock.json': npmLockfile([['left-pad', '1.3.0']]),
+      'src/a.js': 'export const a = 1;\n'
+    });
+    const head = await commitFiles(repo, 'chore: pin alpha', {
+      'package-lock.json': npmLockfile([['left-pad', '1.3.0'], ['alpha', '2.0.0']]),
+      'src/b.js': 'export const b = 2;\n'
+    });
+    return { repo, base, head };
+  }
+
+  async function auditJson(args) {
+    const { main } = await import('../src/cli.js');
+    const chunks = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (chunk) => {
+      chunks.push(String(chunk));
+      return true;
+    };
+    let code;
+    try {
+      code = await main(args);
+    } finally {
+      process.stdout.write = original;
+    }
+    return { code, report: JSON.parse(chunks.join('')) };
+  }
+
+  const declared = (report) => report.coverage.notEvaluated.filter((e) => e.code);
+
+  test('a worktree behind --head names both commits in a not-evaluated entry', async () => {
+    const { repo, base, head } = await repoWithAGrowingLock();
+    await git(repo, ['checkout', '-q', '--detach', base]);
+
+    const { code, report } = await auditJson(['audit', '--repo', repo, '--base', base, '--head', head, '--json']);
+
+    const entry = declared(report).find((e) => e.kind === 'dependency' && e.code === 'worktree-not-head');
+    assert.ok(entry, 'the mismatch between the checkout and --head must be declared');
+    assert.ok(
+      entry.reason.includes(base.slice(0, 10)) && entry.reason.includes(head.slice(0, 10)),
+      `the reason must name both commits, got: ${entry.reason}`
+    );
+    assert.ok(
+      report.facts.some((f) => f.kind === 'dependency'),
+      'declaring the mismatch must not suppress the dependency facts that were measured'
+    );
+    assert.equal(code, EXIT.CLEAN, 'a declared gap cannot fail a run the history half answered');
+  });
+
+  test('a worktree exactly at --head declares nothing', async () => {
+    const { repo, base, head } = await repoWithAGrowingLock();
+    await git(repo, ['checkout', '-q', '--detach', head]);
+
+    const { report } = await auditJson(['audit', '--repo', repo, '--base', base, '--head', head, '--json']);
+
+    assert.deepEqual(declared(report), [], 'the normal case must not gain a warning line');
+  });
+
+  test('a manifest with uncommitted changes is declared by file name', async () => {
+    const { repo, base, head } = await repoWithAGrowingLock();
+    await git(repo, ['checkout', '-q', '--detach', head]);
+    await writeFile(path.join(repo, 'package-lock.json'), npmLockfile([['left-pad', '1.3.0'], ['beta', '3.0.0']]), 'utf8');
+
+    const { report } = await auditJson(['audit', '--repo', repo, '--base', base, '--head', head, '--json']);
+
+    const entry = declared(report).find((e) => e.code === 'manifest-uncommitted');
+    assert.ok(entry, 'a dirty manifest is invisible to a commit comparison, so it needs its own declaration');
+    assert.ok(entry.reason.includes('package-lock.json'), `the reason must name the manifest, got: ${entry.reason}`);
+  });
+
+  test('omitting --head declares nothing, because HEAD is the head by definition', async () => {
+    const { repo, base } = await repoWithAGrowingLock();
+
+    const { report } = await auditJson(['audit', '--repo', repo, '--base', base, '--json']);
+
+    assert.deepEqual(declared(report), [], 'comparing the literal "HEAD" against a sha would warn on every run');
   });
 });
 

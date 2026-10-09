@@ -21,7 +21,7 @@ import { collectCoverageFacts } from './facts/coverage.js';
 import { collectDependencyFacts, listDependencies, detectManifest, manifestTypeForFile } from './facts/deps.js';
 import { parseGateReport, validateFindings, verifyFinding, renderGateReport } from './gate.js';
 import { makeReport, renderReport, safeTextLines, KIND } from './contract.js';
-import { repoToplevel, revParse } from './git.js';
+import { repoToplevel, revParse, git } from './git.js';
 import { resolveLang, T, isLang, DEFAULT_LANG } from './lang.js';
 
 export const EXIT = Object.freeze({
@@ -474,6 +474,39 @@ async function runAudit(flags, lang) {
   const depNotEvaluated = depResult.report?.coverage?.notEvaluated ?? [];
   if (depResult.error) {
     depNotEvaluated.push({ kind: KIND.DEPENDENCY, reason: depResult.error });
+  }
+
+  // The two halves read from different places: history takes the commits named by
+  // --base/--head, deps takes the manifest checked out in --repo. A clone parked
+  // somewhere else therefore reports dependency facts about a version the caller
+  // never named (measured on rustls: 284 facts where the tag holds 366). An
+  // uncommitted manifest edit is the same trap with the commits matching, so it is
+  // declared separately rather than folded into the comparison above.
+  const worktree = await revParse(toplevel, 'HEAD');
+  if (worktree && worktree !== head) {
+    depNotEvaluated.push({
+      kind: KIND.DEPENDENCY,
+      code: 'worktree-not-head',
+      reason: t(
+        `依赖事实取自工作区检出的 ${worktree.slice(0, 10)}，不是 --head 指定的 ${head.slice(0, 10)}；本范围内清单的差异未被测量`,
+        `dependency facts come from the checked-out ${worktree.slice(0, 10)}, not from the --head ${head.slice(0, 10)}; this range's manifest difference was not measured`
+      )
+    });
+  }
+
+  const manifest = depResult.report?.subject?.lockfile;
+  if (typeof manifest === 'string' && path.isAbsolute(manifest)) {
+    const dirty = await git(['status', '--porcelain', '--', manifest], { cwd: toplevel, allowFailure: true });
+    if (dirty.trim() !== '') {
+      depNotEvaluated.push({
+        kind: KIND.DEPENDENCY,
+        code: 'manifest-uncommitted',
+        reason: t(
+          `依赖清单 ${path.basename(manifest)} 有未提交的改动，测到的是工作区内容，不属于任何提交`,
+          `the manifest ${path.basename(manifest)} has uncommitted changes; what was measured is working-tree content, which belongs to no commit`
+        )
+      });
+    }
   }
 
   const facts = [...history.facts, ...depFacts];

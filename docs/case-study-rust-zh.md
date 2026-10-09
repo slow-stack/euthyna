@@ -70,6 +70,11 @@ if let Some(before_retry) = self.suite_before_retry {
 }
 ```
 
+那句 rustls 注释引的编号容易让人以为是笔误：**RFC 9846（2026-07，E. Rescorla）就是现在的
+TLS 1.3 主规范，它 Obsoletes 了 RFC 8446**（从 rfc-editor.org 取回 `rfc/rfc9846.txt` 实测）。
+§4.2.4 的原文是："Servers MUST ensure that they negotiate the same cipher suite when receiving
+a conformant updated ClientHello."——守卫钉的就是这一句。
+
 ---
 
 ## 3. 测量的原始产出

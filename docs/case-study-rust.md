@@ -77,6 +77,12 @@ if let Some(before_retry) = self.suite_before_retry {
 }
 ```
 
+The number in that rustls comment looks like a typo and is not: **RFC 9846 (July 2026,
+E. Rescorla) is the current TLS 1.3 specification — it obsoletes RFC 8446** (measured by fetching
+`rfc/rfc9846.txt` from rfc-editor.org). Section 4.2.4 reads: "Servers MUST ensure that they
+negotiate the same cipher suite when receiving a conformant updated ClientHello." That sentence is
+what the guard pins.
+
 ---
 
 ## 3. The raw measurement

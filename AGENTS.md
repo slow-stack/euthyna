@@ -158,6 +158,16 @@ Not inferred. Do not re-research these.
   endpoint returns 200, and a tarball installed from the registry into a temp
   prefix runs `euthyna --lang en`. **The ClawHub step in the same run skipped** —
   see `### ClawHub registry` below.
+- 🧪 `euthyna@0.7.0` published 2026-10-10 by the same workflow: the tag points at
+  `26db136` and run `37998801395` took `preflight` and `publish` green and cut the
+  GitHub release (`publishedAt 2026-10-09T22:22:13Z`). Checked from outside, not from
+  the run colour: `npm view euthyna dist-tags` → `latest: 0.7.0`; the attestations
+  endpoint returns 200 for `euthyna@0.7.0`; registry metadata gives shasum
+  `553872addc83db7101f9c366919ed9e93ab1e85e` and 784,814 unpacked bytes; a
+  temp-prefix install runs `euthyna --lang en` with exit 0, its `src/cli.js` carries the
+  `manifest-not-head` declaration from PR #28, and the tarball holds **both**
+  `.agents/skills/euthyna` and `.agents/skills/euthyna-en`. Its ClawHub job did not
+  publish — see `### ClawHub registry` below.
 
 ### ClawHub registry
 
@@ -193,6 +203,28 @@ The 0.6.0 listing was restored from this machine with the locally logged-in
 `clawhub` CLI (v0.23.3, token in `%APPDATA%\clawhub\config.json`), using exactly the
 workflow's flag set so the registry entry matches what CI would have produced
 (`--source-commit` = the tag's commit).
+
+🧪 **The 0.7.0 push never landed, and the reason was the registry, not the repository.
+Measured 2026-10-10.** Run `37998801395` failed its `clawhub` job at `Log in` with
+`{"code":"InternalServerError","message":"Your request couldn't be completed. Try again
+later."}`. Re-running just that job got past login and died in `Publish` with the same 500;
+its fail-closed pre-read printed `euthyna currently lists 0.6.0; candidate 0.7.0 compares:
+newer` (and the same for `euthyna-en`), so nothing was pushed blind. Pushing from this
+machine with the locally logged-in CLI — v0.23.3, the workflow's own pin, the identical flag
+set, `--source-commit 26db136` — timed out twice, once direct and once through
+`HTTPS_PROXY=http://127.0.0.1:7897`, with `too many system operations`. Reads kept working
+through all of it, which is how the state was checked rather than assumed: both slugs still
+report `pass | clean | 0.6.0`, so **`latest` was never moved and no partial submission
+registered**. A retry is scheduled; if it succeeds the listing must be re-read until it
+settles, since one read right after a push is a known false negative here.
+
+One thing this did settle: `gh secret list` cannot tell a set secret from an empty one (the
+2026-09-23 entry is the precedent), but the step log masks a received value as
+`CLAWHUB_TOKEN: ***`, and preflight records `present`/`absent`. That is the evidence the
+secret is populated — which the earlier `absent`-in-the-job failure could not show either way.
+
+npm running ahead of ClawHub is the exact condition PR #23 added this job to detect, so the
+lag is visible as a red job plus these notes rather than silent.
 
 ### Skill contract
 
@@ -556,6 +588,7 @@ is faithful — that is a reading job, and a mechanical stand-in would only manu
 | **A control byte in a git argv does not survive the Windows command-line round trip** | Measured while writing the issue #2 regressions: a BEL reached git as `?`, and an ESC-bearing argument got different semantics entirely (exit 0, no error). A hostile-argv test against real git therefore cannot assert the escape form cross-platform — assert the portable property (no raw control byte in the output) against git, and the exact escape form against the pure message builder (`gitFailureMessage`) |
 | **euthyna 的 CLI 在沙箱 pwsh 里跑必失败** | 沙箱拒绝 Node 起 git 子进程（piped stdio 的 EPERM，见上）后，`repoToplevel` 静默返回空，CLI 报 exit 2「不在任何 git 仓库」——看起来像目标仓库问题，其实是沙箱问题。一律用侧边栏嵌入式终端跑 `node D:\euthyna\bin\euthyna.js ...` |
 | **A user-level installed skill silently lags the published version** | 🧪 Measured 2026-10-09: `~/.agents/skills/euthyna/` was still pre-0.6.0 (1 `--source` mention where the shipped tree has 5, no `coverprofile`, missing the rule-5 wording from PR #21), while npm and ClawHub both read 0.6.0. Inside this repository it is invisible — the project root (rank 200) wins — but **outside it the old discipline is what actually runs**. Check with `git diff --no-index --stat ~/.agents/skills/euthyna .agents/skills/euthyna` (empty output = in sync) rather than assuming a release propagated. Use `git`, not `diff`: in PowerShell `diff` is the `Compare-Object` alias and refuses `-rq`. |
+| **A workflow that only runs on release day can be broken for days and show nothing but ~0-second red runs** | 🧪 Measured 2026-10-10: `publish.yml` did not parse from `b795569` (PR #23) until the 0.7.0 rehearsal. The cause was `${{ runner.temp }}` in a **job-level `env:`**, where only the `secrets` and `vars` contexts are legal — one illegal reference invalidates the whole file. Every push produced a 0-second failure that no PR check reported, and the reason surfaced only as `HTTP 422 … Unrecognized named-value: 'runner'` from `gh workflow run`. So run the non-publishing rehearsal (`gh workflow run publish.yml --ref <branch> -f publish=false`, or on `main` before the tag) as a standing first step of any release: it costs a minute and is the only exercise that path gets between releases |
 | **Deleting `TEMP` from the env handed to a child does not remove it in the child** | 🧪 Measured while writing the issue #7 regressions: after the parent deleted `TEMP`/`TMP`/`TMPDIR` from the env object passed to `execFileSync`, the child still reported `'TEMP' in process.env === true` and `os.tmpdir()` equal to the real user temp (`TMP`/`TMPDIR` did stay absent). Setting them to `''` **does** propagate, and `os.tmpdir()` skips an empty value and falls back to an absolute default — so a test that needs "no temp variable" must set them empty rather than delete them, or assert the property on a pure helper instead (see `bench/results-dir.js` and its unit test in `test/bench.test.js`) |
 
 ---

@@ -31,14 +31,19 @@ When an AI coding agent touches security, it fails in two specific ways:
 
 1. **It reports things that are not real.** Code that *looks* dangerous gets called a
    vulnerability, without tracing the data. In validation runs on real codebases — a
-   JavaScript one, a Python one, and a Go one — the pattern-matched "vulnerabilities" were
-   mostly false: **5 out of 5** refuted at the gates on the first run; **2 out of 3**
-   refuted, the third unresolved (INCONCLUSIVE, supply-chain-dependent) on the second;
-   **4 out of 4** refuted on the third. See the
+   JavaScript one, a Python one, a Go one, and a Rust one — the pattern-matched
+   "vulnerabilities" were mostly false: **5 out of 5** refuted at the gates on the first run;
+   **2 out of 3** refuted, the third unresolved (INCONCLUSIVE, supply-chain-dependent) on the
+   second; **4 out of 4** refuted on the third. The fourth run is the one that tests the other
+   half: it faced a real vulnerability, and the gates let it through — **1 TRUE POSITIVE**
+   (fourth gate evidenced by a PoC run against both the fixed and the unfixed release), 3
+   refuted, 1 INCONCLUSIVE. A sieve that only ever says no would have refuted that one too. See
+   the
    [case studies](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md)
    ([Python/crewAI](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md),
    [JavaScript/axe-core](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-axe-core.md),
-   [Go/nektos-act](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-act.md)).
+   [Go/nektos-act](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-act.md),
+   [Rust/rustls](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-rust.md)).
 2. **Its reassurances cannot be checked.** "I'm done." "The tests cover this." "It's
    safe now." These are assertions. You cannot tell a done-claim from a done-deal.
 
@@ -241,19 +246,23 @@ This project tries to be explicit about the difference. Current state:
 
 ### Verified
 
-- **`history` attribution against real repositories — in two languages.** Run against
+- **`history` attribution against real repositories — in four languages.** Run against
   [axe-core](https://github.com/dequelabs/axe-core) (JavaScript) and
   [crewAI](https://github.com/crewAIInc/crewAI) (Python); deleted lines attributed to the
   commits that introduced them, then checked **by hand** against `git blame`. The checks
-  developed for that comparison now run as regression tests in the suite.
+  developed for that comparison now run as regression tests in the suite. The producer ran
+  unchanged on a Go repository ([nektos/act](https://github.com/nektos/act), where the deleted
+  lines of a security fix were traced back to the commit that introduced them) and on a Rust one
+  ([rustls](https://github.com/rustls/rustls), whose fix range yielded 43 provenance facts).
 - **`coverage` on real output in three formats** — c8/V8 JSON, classic istanbul (jest/nyc, same
   fnMap/f shape) and coverage.py JSON (format 3) — distinguishing all three states correctly, and
   refusing anything that is not a recognizable coverage report instead of answering "symbol not
   located" against it.
-- **`deps` against a real lockfile** — resolved versions reported with a line-level evidence
+- **`deps` against real manifests** — resolved versions reported with a line-level evidence
   pointer into the lockfile, and absent dependencies reported as established absences rather
-  than silent skips. Verified against a populated npm v3 lockfile and fixture lockfiles for
-  Cargo.lock and go.mod.
+  than silent skips. Verified against a populated npm v3 lockfile, a real `go.mod` (the *declared*
+  requirement, not a resolved build graph) and a real `Cargo.lock` (366 pinned-version facts on
+  the rustls run), plus fixture lockfiles for npm v1/v2/v3, Cargo.lock and go.mod in the suite.
 - **Adjudication recall and specificity**, measured blind: **10/10 cases**, 4 real
   vulnerabilities all caught, 6 non-vulnerabilities all correctly cleared, no abstentions.
   Round 2 repeated every case three times — **30 adjudications, zero flips**, four of them
@@ -290,9 +299,12 @@ This project tries to be explicit about the difference. Current state:
   discipline reaches the right verdict *on a claim*. It does not measure whether the claims would
   be found in the first place. The cases are deliberately constructed. The crewAI case study
   surfaced one INCONCLUSIVE (pickle deserialization, supply-chain-dependent) and refuted the
-  rest — a directional signal, not a rate.
-- **Recall in the field.** The benchmark's real-bug cases are constructed; whether the
-  discipline helps on code nobody staged for it is unmeasured.
+  rest — a directional signal, not a rate. The rustls run reached a TRUE POSITIVE on a real
+  flaw, but the range was chosen *from* the published advisory, so it shows the gates let a
+  genuine finding through; it does not show the coarse screen would have found it unaided.
+- **Recall in the field.** The benchmark's real-bug cases are constructed, and the real-repository
+  runs so far aimed at ranges already known to contain a fix. Whether the discipline helps on code
+  nobody staged for it is unmeasured.
 - **Source maps, bundlers, monorepos** for the coverage producer. Untested.
 - **A real model round on CI.** The golden round is deterministic plumbing, not an
   adjudication: it writes the ground truth into the reports by design. A model round needs
@@ -304,11 +316,15 @@ This project tries to be explicit about the difference. Current state:
   detected but not parsed (reported as *not evaluated*, never guessed at); go.mod reports the
   *declared* requirement, not the resolved build version; and the producer never maps a version
   to a CVE — that mapping is deliberately left to the adjudication layer.
-- **Anything about the case-study targets' security** — the runs found nothing to endorse or
-  condemn; that is not a statement about any of the projects. See
+- **Anything about the case-study targets' security.** These are method runs, not assessments.
+  Three of them found nothing to report. The fourth confirmed a real flaw in rustls 0.23.44, but
+  one already published and already fixed upstream (RUSTSEC-2026-0285 / GHSA-2mjx-qc3c-rqvc) which
+  the run re-verified rather than discovered, so none of them is a statement about any project's
+  security posture. See
   [`docs/case-study-crewai.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-crewai.md),
   [`docs/case-study-axe-core.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-axe-core.md),
-  and [`docs/case-study-act.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-act.md).
+  [`docs/case-study-act.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-act.md),
+  and [`docs/case-study-rust.md`](https://github.com/slow-stack/euthyna/blob/main/docs/case-study-rust.md).
 - **A CI recipe, by running it on GitHub.** The exit-code gate and the workflow wiring are
   documented in [`docs/ci-integration.md`](https://github.com/slow-stack/euthyna/blob/main/docs/ci-integration.md);
   the workflow snippet has not been exercised as a live Actions run.

@@ -48,6 +48,12 @@ Available discovery sources (use whichever is installed — **audit the source b
 **The target directory must have one of** `package.json` / `pyproject.toml` / `requirements*.txt` / `go.mod`.
 If none exists, **say so and stop** — do not improvise an audit for an ecosystem the collector does not parse.
 
+**Manifests are located from the repository root only.** A multi-package repository's per-package locks are not measured by
+`euthyna audit` or `euthyna deps --repo` (🧪 measured 2026-10-10: the root `package-lock.json` pins `root-a` while
+`packages/app/package-lock.json` pins `sub-b` and `sub-c`, and the output reports only `root-a`, **with no declaration at
+all**). Measuring a sub-package means running `euthyna deps --lockfile <path>` per package; if that is not done, say the
+sub-packages were not measured — do not treat the root manifest's facts as facts about the whole monorepo.
+
 **Exactly resolvable**: `package-lock.json`, `npm-shrinkwrap.json`, `uv.lock`, `go.mod` for Go 1.17+.
 
 **Not resolvable**: `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`.

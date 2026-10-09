@@ -192,7 +192,7 @@ From a checkout instead (development):
 
 ```sh
 git clone https://github.com/slow-stack/euthyna
-cd euthyna && npm test                                 # 207 tests; no install step exists
+cd euthyna && npm test                                 # the whole suite; no install step exists
 node bin/euthyna.js audit --repo <path> --base main --head HEAD
 ```
 

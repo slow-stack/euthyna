@@ -358,6 +358,13 @@ record of what is actually resolved.
 Anything else detected at auto-detect (`pnpm-lock.yaml`, `yarn.lock`, `poetry.lock`, …) is reported as
 *not evaluated* with the filenames named — never guessed at.
 
+**Manifests are located from the repository root only.** 🧪 Measured 2026-10-10 in a repository whose root
+`package-lock.json` pins `root-a` while a sub-package's `packages/app/package-lock.json` pins `sub-b` and
+`sub-c`: both `audit` and `deps --repo` reported only `root-a`, with **no declaration at all** (the
+manifest-version check compares the root manifest and nothing else). A sub-package's pinned versions require
+running `euthyna deps --lockfile <path>` per package (measured: it reports `sub-b` and `sub-c`), or an explicit
+statement that they were not measured — **do not read the root manifest's facts as facts about the whole monorepo.**
+
 **What it refuses to say is as important as what it says.** It emits versions, and nothing else:
 no "vulnerable", no severity, no CVE mapping. The version-to-CVE mapping is the adjudication layer's job
 (the `assertNoVerdictFields` guard enforces this mechanically). A producer that emitted "version 4.17.21 is

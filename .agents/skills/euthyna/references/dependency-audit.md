@@ -48,6 +48,11 @@
 **目标目录必须有** `package.json` / `pyproject.toml` / `requirements*.txt` / `go.mod` 之一。
 没有就**直接说没有并停止**，不要为一个采集器不解析的生态即兴审计。
 
+**清单只按仓库根查找。**多包仓库里子包各自的 lock 不会被 `euthyna audit` 或 `euthyna deps --repo` 测到
+（🧪 实测 2026-10-10：根 `package-lock.json` 锁 `root-a`，子包 `packages/app/package-lock.json` 锁 `sub-b`/`sub-c`，
+输出只有 `root-a`，**并且没有任何声明**）。要管子包就逐包跑 `euthyna deps --lockfile <路径>`；
+不跑就明说没测——别把根清单当成整个 monorepo 的事实。
+
 **能精确解析版本的**：`package-lock.json`、`npm-shrinkwrap.json`、`uv.lock`、Go 1.17+ 的 `go.mod`。
 
 **不能的**：`yarn.lock`、`pnpm-lock.yaml`、`poetry.lock`。

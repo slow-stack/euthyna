@@ -186,15 +186,30 @@ if (collisions.length)
   console.log(`\nNOTE — ${collisions.length} name(s) declared by more than one directory in a root: ${collisions.join(', ')}; per-name counts cannot separate them`);
 
 // These two homes are directories other programs edit — a running DSH session installs into them.
-// The scan and provider.list() are not one atomic read, so re-scan and say so if the ground moved.
+// The scan and provider.list() are not one atomic read, so re-scan and report if the ground moved.
+// Comparison is by content, not length: a skill replaced or renamed between the passes keeps the
+// count identical while the two halves of the measurement describe different trees.
 const after = await Promise.all([skillDirs(agentsDir), skillDirs(claudeDir)]);
-if (after[0].names.length !== agents.length || after[1].names.length !== claude.length) {
-  console.log(
-    `\nUNSTABLE — the tree changed while measuring (agents ${agents.length} → ${after[0].names.length}, ` +
-      `.claude ${claude.length} → ${after[1].names.length}); the counts above describe two different moments`
-  );
+const drift = [];
+for (const [label, before, again] of [
+  ['agents', agents, after[0].names],
+  ['.claude', claude, after[1].names]
+]) {
+  const added = again.filter((n) => !before.includes(n));
+  const gone = before.filter((n) => !again.includes(n));
+  if (added.length || gone.length)
+    drift.push(`${label}: -[${gone.join(', ')}] +[${added.join(', ')}]`);
 }
-problems = [...problems, ...after[0].problems, ...after[1].problems];
+if (drift.length)
+  console.log(
+    `\nUNSTABLE — the tree moved while measuring (${drift.join('; ')}); ` +
+      'the counts above describe two different moments and are not one measurement'
+  );
+
+// A name declared by two directories is the same kind of defect: the per-name tally below
+// cannot attribute a discovery to one of them, so the number it prints is not a count of skills.
+if (collisions.length) drift.push(`duplicate declarations: ${collisions.join(', ')}`);
+problems = [...problems, ...after[0].problems, ...after[1].problems, ...drift];
 
 // A measurement that hit anything on the way is reported, never folded into a count.
 if (notices.length) {

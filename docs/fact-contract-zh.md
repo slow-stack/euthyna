@@ -357,6 +357,12 @@ tsserver × c8 的**行号对齐未做集成验证**（fixture 里的调用点�
 自动检测到的其他格式（`pnpm-lock.yaml`、`yarn.lock`、`poetry.lock` 等）一律报
 **notEvaluated** 并点名文件名——绝不猜。
 
+**清单只按仓库根查找。**🧪 实测 2026-10-10：一个根 `package-lock.json` 锁 `root-a`、子包
+`packages/app/package-lock.json` 锁 `sub-b`/`sub-c` 的仓库里，`audit` 与 `deps --repo` 都只报出 `root-a`，
+且**没有任何声明**（版本一致性那条只比较根清单）。子包的锁定版本要么逐包跑
+`euthyna deps --lockfile <路径>`（实测报出 `sub-b`、`sub-c`），要么就明说没测——**不要把根清单的结果
+当作整个 monorepo 的事实。**
+
 **拒绝说什么和说什么同样重要。** 只报版本，其他一概不报：没有"有漏洞"、没有严重性、没有 CVE 映射。
 版本 → CVE 的映射归判定层（`assertNoVerdictFields` 在机制上强制这一点）。
 一个报出"版本 4.17.21 受 CVE-XXXX 影响"的产出器等于替判定层下了结论，而那个结论不可复算。

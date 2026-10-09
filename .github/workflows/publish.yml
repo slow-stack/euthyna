@@ -180,7 +180,6 @@ jobs:
     timeout-minutes: 90
     env:
       CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
-      CLAWHUB_CONFIG_PATH: ${{ runner.temp }}/clawhub-config.json
     steps:
       # fetch-depth: 0 because the changelog is derived from the commits between
       # the previous tag and this one.

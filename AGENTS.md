@@ -196,8 +196,10 @@ workflow's flag set so the registry entry matches what CI would have produced
 
 ### Skill contract
 
-Measured against `@deepseek-ai/dsh-skill-filesystem` **0.1.5-rc.2** on this machine
-(`lib/index.js:676-703` parses a file, `:833-865` reads the invocation policy). Frontmatter
+Measured against `@deepseek-ai/dsh-skill-filesystem` on this machine — first read at
+**0.1.5-rc.2**, re-read at **0.1.6-alpha.1** (2026-10-09) and every one of these facts is
+unchanged: `lib/index.js:682-699` parses a file, `:850-861` reads the invocation policy, and
+the legacy-key throw is still `frontmatter field "X" is unsupported; use "Y"`. Frontmatter
 keys the provider actually reads:
 
 | Key | Required | Meaning |
@@ -241,8 +243,9 @@ than a missing one, because it reads as a decision.
 
 ### Skill discovery paths (lower number wins; project can override global)
 
-Source: `@deepseek-ai/dsh-skill-filesystem` 0.1.5-rc.2 — the ranks are the constants at
-`lib/index.js:21-25`, consumed by the provider's `roots()`.
+Source: `@deepseek-ai/dsh-skill-filesystem` — the ranks are the constants at
+`lib/index.js:21-25` (verified identical at 0.1.5-rc.2 and 0.1.6-alpha.1), consumed by the
+provider's `roots()`.
 
 ```
 <project>/.dsh/skills       100   PROJECT_DSH_RANK
@@ -253,12 +256,78 @@ customSkillDirs             300   CUSTOM_RANK
 bundledSkillDir             built-in
 ```
 
-🧪 **`agentsHome` resolves to `~/.agents`, not `~/.claude`.**
-The resolution is `config.agentsHome ?? process.env.DSH_AGENTS_HOME ?? join(homedir(), ".agents")`
-(`lib/index.js:78`), and nothing overrides it on a default install.
+🧪 **`agentsHome` resolves to `~/.agents`, not `~/.claude` — measured by driving the real
+provider, not by counting directories.** The resolution is `config.agentsHome ??
+process.env.DSH_AGENTS_HOME ?? join(homedir(), ".agents")` (`lib/index.js:78`).
 
-Decisive test: 65 skills present only under `~/.agents/skills` appeared in a session's skill
-catalog, while all 5 present only under `~/.claude/skills` were absent.
+Re-run 2026-10-09 against the installed 0.1.6-alpha.1 — the reproduction command is
+`node tools/probe-skill-roots.mjs "<harness>/node_modules/@deepseek-ai/dsh-skill-filesystem/lib/index.js"`
+(read-only; it creates and writes nothing) — and `provider.roots(cwd)` returns exactly four
+entries on this machine:
+
+```
+rank 100  D:\euthyna\.dsh\skills          (project .dsh, empty)
+rank 200  D:\euthyna\.agents\skills       ← this repository's skill root
+rank 400  D:\DSH\.dsh\skills              (dshHome; the ~/.dsh junction target)
+rank 500  C:\Users\<user>\.agents\skills  (agentsHome)
+```
+
+— and rank 300 appears only when `customSkillDirs` is configured. **No `.claude` path is in
+the list at any rank**, and the string `claude` does not occur once in the provider's 888 lines,
+so the conclusion is now structural rather than inferential.
+
+The same run also re-does the old observational test on live data, and attributes each hit to the
+root the provider actually read it from: of the **3** skills that exist only under
+`~/.claude/skills` and could be indexed at all, **0** were discovered from any root; of the **78**
+that exist only under the resolved agents home, **all 78** were discovered — attributed
+`user-agents` 78, plus 4 of them also reachable as `user-dsh` and 2 as `project-agents`, because
+some names live in more than one root and the sets are not exclusive. `list()` returned 178
+candidates.
+
+Getting the `.claude` side honest took two more corrections, and the first changed what the earlier
+number meant. Entries whose declared name the provider would refuse — no `name:` at all, or one
+outside `^[a-z0-9]+(?:-[a-z0-9]+)*$` — had been counted as `.claude`-only skills that went
+undiscovered, when the reason they never appear is that **the names are invalid**, not that the
+root went unread: `de-AI-writing` carries an uppercase letter and `editorial-style-design-v1` has
+no frontmatter at all. Measured, `~/.claude/skills` holds 97 entries with a `SKILL.md` of which
+**3 the provider cannot index**, so the honest set is 94 and the `.claude`-only remainder is 3, not
+5. Refusals are excluded from the comparison and printed on their own line now, so a refusal can
+never masquerade as a missed root again.
+
+Three counting choices before that also came from review. Comparing by **directory basename**
+instead of the name a `SKILL.md` declares reported 62 of 79 discovered: measured, **16** folders
+declare a name different from their directory (e.g. `superpowers-brainstorming` declares
+`brainstorming`, `fretboard-skills` declares `guitar-fretboard`), and those are exactly the entries
+the provider's own output could not be matched back to. Skipping symlinked skill directories (this
+machine links them between homes) read `.claude` as 96 rather than 97. Comparing the two stability
+passes by **length** missed a rename that keeps the count — the check diffs the name sets now and
+exits non-zero, verified by racing a rename against it (6 attempts, 1 hit between the passes, both
+outcomes recorded). And an empty `DSH_AGENTS_HOME=` is a value the `??` chain honours — it resolves
+agentsHome to the current directory — not an unset one, so the probe reports it as set and quotes
+it. A probe that counts the wrong thing still prints a number, which is the reason it is a
+measurement and not an `ls`: an unreadable path or a provider `error` is reported under `INCOMPLETE`
+with a non-zero exit instead of folding into a clean count.
+
+The earlier basis for this claim was weaker and is kept for the record: *"65 skills present only
+under `~/.agents/skills` appeared in a session's skill catalog, while all 5 present only under
+`~/.claude/skills` were absent."* Those counts no longer reproduce — measured 2026-10-09 with the
+probe, which also follows symlinked skill directories. **Two counts, deliberately kept apart**: at
+the directory level, 170 entries in the resolved agents home and 97 in `~/.claude/skills`, sharing
+92 directory names; at the level the provider can index, 169 and 94 sharing 91 names, which is what
+the sets above are built from (1 agents entry and 3 `.claude` entries carry a name the provider
+refuses — `editorial-style-design-v1` has no frontmatter at all, `de-ai-writer` declares the
+uppercase `de-AI-writing`, and `efecto-fx` declares nothing indexable). The disjoint remainder that
+made the old test decisive is therefore 78 and 3, not 65 and 5. Counts drift; the root list does
+not. (An earlier hand count of `~/.claude/skills` said 96 — it missed the one entry
+that is a symlink, which is exactly the error the probe now guards against.) Also measured that day,
+by a plain `SKILL.md` file search rather than by the probe: `~/.codex/skills` holds 75, and
+`~/.dsh/skills` (6 entries) is a mix of real directories and **symlinks into `~/.agents/skills`**,
+so it is not an independent catalogue.
+
+🧪 **The invocation policy reads correctly on 0.1.6-alpha.1, verified through the real provider
+again** — the way the bug in the section above was originally caught. Both editions are
+discovered twice (rank 200 project and rank 500 user) and every one reports
+`{"modelInvocable":false,"userInvocable":true}`, which is what the frontmatter says.
 
 > `brainstorming` and others are in neither directory, so a plugin-provided skill root also
 > exists. The table above only covers the filesystem provider.
@@ -331,6 +400,12 @@ Full analysis: `docs/dsh-stop-gate.md`.
   `.claude-plugin/marketplace.json`
 - So the **`SKILL.md` layer is portable across all three hosts**; only the hook config format,
   the host plugin code, and the distribution entry point differ
+- 🧪 Measured 2026-10-09 on the installed harness (0.1.6-alpha.1, `dsh --version`): it bundles
+  **both** `@deepseek-ai/dsh-hooks-claude-code` and a `@deepseek-ai/dsh-hooks-codex`, plus
+  `dsh-skill-filesystem` — all at 0.1.6-alpha.1, nested under `@deepseek-ai/dsh/node_modules`.
+  A Codex hook adapter in the same harness is new since the stop-gate work, so `docs/dsh-stop-gate.md`
+  describes the Claude-Code protocol path only; whether the Codex adapter accepts the same
+  `Stop` shape has **not** been tested here.
 
 **Two skill editions, kept in sync — and CI now checks it.** `.agents/skills/euthyna/` is the
 Chinese original; `.agents/skills/euthyna-en/` is the English mirror (commit `47454ce`). Both
@@ -478,6 +553,7 @@ is faithful — that is a reading job, and a mechanical stand-in would only manu
 | **A "corrupted" test fixture that silently failed to mutate** | The checker correctly reported VERIFIED, because the file was byte-identical to the control. Assert that every negative fixture actually differs from the control before trusting any result that comes out of it |
 | **A control byte in a git argv does not survive the Windows command-line round trip** | Measured while writing the issue #2 regressions: a BEL reached git as `?`, and an ESC-bearing argument got different semantics entirely (exit 0, no error). A hostile-argv test against real git therefore cannot assert the escape form cross-platform — assert the portable property (no raw control byte in the output) against git, and the exact escape form against the pure message builder (`gitFailureMessage`) |
 | **euthyna 的 CLI 在沙箱 pwsh 里跑必失败** | 沙箱拒绝 Node 起 git 子进程（piped stdio 的 EPERM，见上）后，`repoToplevel` 静默返回空，CLI 报 exit 2「不在任何 git 仓库」——看起来像目标仓库问题，其实是沙箱问题。一律用侧边栏嵌入式终端跑 `node D:\euthyna\bin\euthyna.js ...` |
+| **A user-level installed skill silently lags the published version** | 🧪 Measured 2026-10-09: `~/.agents/skills/euthyna/` was still pre-0.6.0 (1 `--source` mention where the shipped tree has 5, no `coverprofile`, missing the rule-5 wording from PR #21), while npm and ClawHub both read 0.6.0. Inside this repository it is invisible — the project root (rank 200) wins — but **outside it the old discipline is what actually runs**. Check with `git diff --no-index --stat ~/.agents/skills/euthyna .agents/skills/euthyna` (empty output = in sync) rather than assuming a release propagated. Use `git`, not `diff`: in PowerShell `diff` is the `Compare-Object` alias and refuses `-rq`. |
 | **Deleting `TEMP` from the env handed to a child does not remove it in the child** | 🧪 Measured while writing the issue #7 regressions: after the parent deleted `TEMP`/`TMP`/`TMPDIR` from the env object passed to `execFileSync`, the child still reported `'TEMP' in process.env === true` and `os.tmpdir()` equal to the real user temp (`TMP`/`TMPDIR` did stay absent). Setting them to `''` **does** propagate, and `os.tmpdir()` skips an empty value and falls back to an absolute default — so a test that needs "no temp variable" must set them empty rather than delete them, or assert the property on a pure helper instead (see `bench/results-dir.js` and its unit test in `test/bench.test.js`) |
 
 ---
@@ -500,6 +576,7 @@ is faithful — that is a reading job, and a mechanical stand-in would only manu
 | `audits/` | **Audit reports, one per run, local-only** (never written into the target repository, and deliberately **not committed** here — the public form is `docs/case-study-*.md`). See `audits/CREWAI_EUTHYNA_AUDIT_2026-09-20.md` (gitignored) |
 | `tools/fetch-references.js` | Fetches upstream sources on demand into `.refs/` (gitignored). **The repo distributes no third-party files** |
 | `tools/check-license-text.mjs` | Verifies `LICENSE` against the canonical Apache-2.0 text, fetched live. **The licence claim is checkable rather than asserted** |
+| `tools/probe-skill-roots.mjs` | Drives the **installed** DSH skill provider and prints the roots it reads plus what it discovers, so the discovery-path facts above stay re-measurable instead of remembered. Read-only; needs the harness's module path as its argument |
 | `.gitattributes` | Pins LF in checkouts so byte-level checks mean the same thing on every platform |
 | `.github/workflows/ci.yml` | CI: test matrix (Linux/Windows × Node 20/22/24), the live licence check, and a `bench-loop` job running the deterministic golden adjudication round (`bench/adjudicate.js --adjudicator golden`). **The exploit ground-truth harness is deliberately not run on Linux** — several cases verify bsdtar-specific semantics that GNU tar does not share (it reports itself as skipped there; Windows jobs run it in full) |
 | `CONTRIBUTING.md` | The house rules in their public form |

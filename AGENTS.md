@@ -277,36 +277,52 @@ the list at any rank**, and the string `claude` does not occur once in the provi
 so the conclusion is now structural rather than inferential.
 
 The same run also re-does the old observational test on live data, and attributes each hit to the
-root the provider actually read it from: of the **5** skill directories that exist only under
-`~/.claude/skills`, **0** were discovered from any root; of the **78** that exist only under the
-resolved agents home, **all 78** were discovered — attributed `user-agents` 78, plus 4 of them
-also reachable as `user-dsh` and 2 as `project-agents`, because some names live in more than one
-root and the sets are not exclusive.
+root the provider actually read it from: of the **3** skills that exist only under
+`~/.claude/skills` and could be indexed at all, **0** were discovered from any root; of the **78**
+that exist only under the resolved agents home, **all 78** were discovered — attributed
+`user-agents` 78, plus 4 of them also reachable as `user-dsh` and 2 as `project-agents`, because
+some names live in more than one root and the sets are not exclusive. `list()` returned 178
+candidates.
 
-Two counting choices had to be corrected to get that, and both came from review. Comparing by
-**directory basename** instead of the name a `SKILL.md` declares reported 62 of 79 discovered.
-Measured: **16** skill folders declare a name different from their directory (e.g.
-`superpowers-brainstorming` declares `brainstorming`, `fretboard-skills` declares
-`guitar-fretboard`), and those are exactly the entries the provider's own output could not be
-matched back to — nothing was refused. With names read from the frontmatter the agents-only set is
-78 and all 78 are discovered. Separately, skipping symlinked skill directories (this machine links
-them between homes) read `.claude` as 96 rather than 97. A probe that counts the wrong thing still
-prints a number, which is the reason it is a measurement and not an `ls`: an unreadable path or a
-provider `error` is now reported under `INCOMPLETE` with a non-zero exit instead of folding into a
-clean count.
-`list()` returned 178 candidates, and one refusal is surfaced rather than dropped — `skill file
-~/.agents/skills/editorial-style-design-v1/SKILL.md ignored: missing YAML frontmatter`.
+Getting the `.claude` side honest took two more corrections, and the first changed what the earlier
+number meant. Entries whose declared name the provider would refuse — no `name:` at all, or one
+outside `^[a-z0-9]+(?:-[a-z0-9]+)*$` — had been counted as `.claude`-only skills that went
+undiscovered, when the reason they never appear is that **the names are invalid**, not that the
+root went unread: `de-AI-writing` carries an uppercase letter and `editorial-style-design-v1` has
+no frontmatter at all. Measured, `~/.claude/skills` holds 97 entries with a `SKILL.md` of which
+**3 the provider cannot index**, so the honest set is 94 and the `.claude`-only remainder is 3, not
+5. Refusals are excluded from the comparison and printed on their own line now, so a refusal can
+never masquerade as a missed root again.
+
+Three counting choices before that also came from review. Comparing by **directory basename**
+instead of the name a `SKILL.md` declares reported 62 of 79 discovered: measured, **16** folders
+declare a name different from their directory (e.g. `superpowers-brainstorming` declares
+`brainstorming`, `fretboard-skills` declares `guitar-fretboard`), and those are exactly the entries
+the provider's own output could not be matched back to. Skipping symlinked skill directories (this
+machine links them between homes) read `.claude` as 96 rather than 97. Comparing the two stability
+passes by **length** missed a rename that keeps the count — the check diffs the name sets now and
+exits non-zero, verified by racing a rename against it (6 attempts, 1 hit between the passes, both
+outcomes recorded). And an empty `DSH_AGENTS_HOME=` is a value the `??` chain honours — it resolves
+agentsHome to the current directory — not an unset one, so the probe reports it as set and quotes
+it. A probe that counts the wrong thing still prints a number, which is the reason it is a
+measurement and not an `ls`: an unreadable path or a provider `error` is reported under `INCOMPLETE`
+with a non-zero exit instead of folding into a clean count.
 
 The earlier basis for this claim was weaker and is kept for the record: *"65 skills present only
 under `~/.agents/skills` appeared in a session's skill catalog, while all 5 present only under
 `~/.claude/skills` were absent."* Those counts no longer reproduce — measured 2026-10-09 with the
-probe, which also follows symlinked skill directories: 170 skills in the resolved agents home,
-97 in `~/.claude/skills`, sharing 92 names, so the disjoint remainder that made the test decisive
-is now 78 and 5. Counts drift; the root list does not. (An earlier hand count of `~/.claude/skills`
-said 96 — it missed the one entry that is a symlink, which is exactly the error the probe now
-guards against.) Also measured that day, by a plain `SKILL.md` file search rather than by the
-probe: `~/.codex/skills` holds 75, and `~/.dsh/skills` (6 entries) is a mix of real directories
-and **symlinks into `~/.agents/skills`**, so it is not an independent catalogue.
+probe, which also follows symlinked skill directories. **Two counts, deliberately kept apart**: at
+the directory level, 170 entries in the resolved agents home and 97 in `~/.claude/skills`, sharing
+92 directory names; at the level the provider can index, 169 and 94 sharing 91 names, which is what
+the sets above are built from (1 agents entry and 3 `.claude` entries carry a name the provider
+refuses — `editorial-style-design-v1` has no frontmatter at all, `de-ai-writer` declares the
+uppercase `de-AI-writing`, and `efecto-fx` declares nothing indexable). The disjoint remainder that
+made the old test decisive is therefore 78 and 3, not 65 and 5. Counts drift; the root list does
+not. (An earlier hand count of `~/.claude/skills` said 96 — it missed the one entry
+that is a symlink, which is exactly the error the probe now guards against.) Also measured that day,
+by a plain `SKILL.md` file search rather than by the probe: `~/.codex/skills` holds 75, and
+`~/.dsh/skills` (6 entries) is a mix of real directories and **symlinks into `~/.agents/skills`**,
+so it is not an independent catalogue.
 
 🧪 **The invocation policy reads correctly on 0.1.6-alpha.1, verified through the real provider
 again** — the way the bug in the section above was originally caught. Both editions are

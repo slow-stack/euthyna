@@ -75,12 +75,13 @@ if (!roots.some((root) => root.path.includes('.claude'))) console.log('  → no 
 async function skillDirs(dir) {
   const names = new Set();
   const problems = [];
+  const refused = [];
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch (error) {
     if (error.code !== 'ENOENT') problems.push(`readdir ${dir}: ${error.code ?? error.message}`);
-    return { names: [...names], problems };
+    return { names: [...names], problems, refused };
   }
   for (const entry of entries) {
     const here = path.join(dir, entry.name);
@@ -100,11 +101,17 @@ async function skillDirs(dir) {
       if (error.code !== 'ENOENT') problems.push(`${marker}: ${error.code ?? error.message}`);
       continue;
     }
-    // A set, because the comparison below is by name: two directories declaring the same name
-    // would otherwise count twice here while the provider reports one candidate.
-    names.add(declaredName(text) ?? entry.name);
+    const name = declaredName(text);
+    // Only names the provider could index enter the comparison. A folder with no `name:`, or one
+    // outside the provider's pattern, is refused outright, and substituting its directory name
+    // would invent a skill the listing can never contain — turning a refusal into a false miss.
+    if (name === undefined || !isSkillName(name)) {
+      refused.push(`${entry.name}${name === undefined ? '' : ` (name: ${name})`}`);
+      continue;
+    }
+    names.add(name);
   }
-  return { names: [...names], problems };
+  return { names: [...names], problems, refused };
 }
 
 /**
@@ -113,6 +120,15 @@ async function skillDirs(dir) {
  * A YAML scalar may carry an inline comment after whitespace (`name: foo # note`), which a real
  * parser drops and a naive match would swallow into the value. Quoted values are left alone:
  * inside quotes the `#` is part of the name.
+ *
+ * Two limits, recorded rather than papered over, because both would need a YAML parser and a
+ * second filesystem pass to close completely:
+ *   - a quoted scalar containing an escape sequence (`"a\tb"`) is taken literally here, not with
+ *     YAML semantics; measured 2026-10-09, none of the 264 skill files in the compared roots
+ *     uses that form;
+ *   - the stability check compares names, so a file edited **in place** between the two scans —
+ *     same name, different content — is not drift. Detecting it means hashing every SKILL.md
+ *     twice, which turns a read-only glance at the roots into a content audit.
  */
 function declaredName(text) {
   const frontmatter = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text)?.[1];
@@ -124,14 +140,20 @@ function declaredName(text) {
   return value.replace(/[ \t]+#.*$/, '').trim() || undefined;
 }
 
+/** The provider's own gate: a name outside this pattern is refused, so it can never be discovered. */
+const isSkillName = (name) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name);
+
 // Read the compared directories off the provider instance. The provider resolves agentsHome as
 // `config.agentsHome ?? DSH_AGENTS_HOME ?? ~/.agents`, so assuming the default would compare a
-// directory the provider never reads whenever that variable is set.
+// directory the provider never reads whenever that variable is set. `??` is a *nullish* check, so
+// an empty `DSH_AGENTS_HOME=` is a value the provider honours (it resolves to the cwd), not an
+// unset one — reported as set, and quoted so the empty case is visible.
 const agentsDir = path.join(provider.agentsHome, 'skills');
 const claudeDir = path.join(os.homedir(), '.claude', 'skills');
+const envSet = 'DSH_AGENTS_HOME' in process.env;
 console.log(
   `\nagentsHome the provider resolved: ${provider.agentsHome}` +
-    (process.env.DSH_AGENTS_HOME ? ` (DSH_AGENTS_HOME=${process.env.DSH_AGENTS_HOME})` : ' (DSH_AGENTS_HOME unset → default)')
+    (envSet ? ` (DSH_AGENTS_HOME=${JSON.stringify(process.env.DSH_AGENTS_HOME)})` : ' (DSH_AGENTS_HOME unset → default)')
 );
 
 const [agentsScan, claudeScan] = await Promise.all([skillDirs(agentsDir), skillDirs(claudeDir)]);
@@ -159,7 +181,13 @@ const bySource = (names) => {
   return JSON.stringify(tally);
 };
 
-console.log(`\ndisk: agents-root ${agents.length} skills at ${agentsDir}, .claude ${claude.length}, overlap ${agents.length - agentsOnly.length}`);
+console.log(
+  `\ndisk: agents-root ${agents.length} indexable skills at ${agentsDir}, .claude ${claude.length}, ` +
+    `overlap ${agents.length - agentsOnly.length}` +
+    ` — excluded (provider would refuse them): agents ${agentsScan.refused.length}, .claude ${claudeScan.refused.length}`
+);
+if (agentsScan.refused.length || claudeScan.refused.length)
+  console.log(`  refused examples: ${[...agentsScan.refused, ...claudeScan.refused].slice(0, 6).join(', ')}`);
 console.log(`discovered ${candidates.length} candidates for cwd=${process.cwd()}`);
 console.log(
   `  .claude-only (${claudeOnly.length}): discovered ${anywhere(claudeOnly)} [${claudeOnly.join(', ')}] ` +

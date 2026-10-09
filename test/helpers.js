@@ -45,3 +45,20 @@ export async function commitFiles(cwd, message, files) {
   await git(cwd, ['commit', '-q', '-m', message]);
   return (await git(cwd, ['rev-parse', 'HEAD'])).trim();
 }
+
+/**
+ * A minimal npm v3 lockfile pinning the given [name, version] pairs.
+ *
+ * Shared because two files need a manifest the deps producer will actually
+ * accept: one dependency fact per entry, and a line number to point at.
+ */
+export function npmLockfile(entries) {
+  return JSON.stringify({
+    name: 'fixture',
+    lockfileVersion: 3,
+    packages: {
+      '': { name: 'fixture' },
+      ...Object.fromEntries(entries.map(([name, version]) => [`node_modules/${name}`, { version }]))
+    }
+  });
+}

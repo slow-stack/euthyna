@@ -21,7 +21,7 @@ import { collectCoverageFacts } from './facts/coverage.js';
 import { collectDependencyFacts, listDependencies, detectManifest, manifestTypeForFile } from './facts/deps.js';
 import { parseGateReport, validateFindings, verifyFinding, renderGateReport } from './gate.js';
 import { makeReport, renderReport, safeTextLines, KIND } from './contract.js';
-import { repoToplevel, revParse } from './git.js';
+import { repoToplevel, revParse, git } from './git.js';
 import { resolveLang, T, isLang, DEFAULT_LANG } from './lang.js';
 
 export const EXIT = Object.freeze({
@@ -409,6 +409,50 @@ async function runDeps(flags, lang) {
  * symbol names only the adjudicator knows, so there is nothing honest to
  * auto-measure there.
  */
+/**
+ * Decide whether the manifest `audit` measured is the manifest --head holds.
+ *
+ * Pure, so that the fail-closed branch — a probe that could not run — is reachable
+ * from a test. Nothing else here can make git fail on demand.
+ */
+export function manifestVersionGap({ probeFailed, existsAtHead, differsFromHead, head, worktree, manifest }, t) {
+  const short = (sha) => (sha ?? '').slice(0, 10);
+  const where = worktree && worktree !== head ? `（工作区检出在 ${short(worktree)}）` : '';
+  const whereEn = worktree && worktree !== head ? ` (the worktree is at ${short(worktree)})` : '';
+
+  if (probeFailed) {
+    return {
+      kind: KIND.DEPENDENCY,
+      code: 'manifest-unverified',
+      reason: t(
+        `无法确认依赖清单 ${manifest} 与 --head ${short(head)} 的关系：git 探测失败，这不是匹配的证据`,
+        `the relationship between the manifest ${manifest} and --head ${short(head)} could not be probed: git failed, which is not evidence of a match`
+      )
+    };
+  }
+  if (!existsAtHead) {
+    return {
+      kind: KIND.DEPENDENCY,
+      code: 'manifest-not-head',
+      reason: t(
+        `测到的依赖清单 ${manifest} 在 --head ${short(head)} 里不存在，它不属于任何被审的提交${where}`,
+        `the dependency manifest ${manifest} measured here does not exist at --head ${short(head)}; it belongs to no reviewed commit${whereEn}`
+      )
+    };
+  }
+  if (differsFromHead) {
+    return {
+      kind: KIND.DEPENDENCY,
+      code: 'manifest-not-head',
+      reason: t(
+        `测到的依赖清单 ${manifest} 与 --head ${short(head)} 那份内容不一致${where}，这些事实不是该提交的声明版本`,
+        `the dependency manifest ${manifest} measured here differs in content from the one at --head ${short(head)}${whereEn}, so these facts are not that commit's declared versions`
+      )
+    };
+  }
+  return null;
+}
+
 async function runAudit(flags, lang) {
   const t = T(lang);
   const cwd = path.resolve(flags.repo ? String(flags.repo) : process.cwd());
@@ -474,6 +518,38 @@ async function runAudit(flags, lang) {
   const depNotEvaluated = depResult.report?.coverage?.notEvaluated ?? [];
   if (depResult.error) {
     depNotEvaluated.push({ kind: KIND.DEPENDENCY, reason: depResult.error });
+  }
+
+  // history takes the commits named by --base/--head; deps takes the manifest
+  // checked out in --repo. The honest question is therefore about CONTENT: is the
+  // file that was measured the file --head holds? Comparing commit shas instead was
+  // measured to be wrong in both directions — it fired on a PR merge commit whose
+  // lockfile is byte-identical to --head's (which, per fact-contract rule 1, forces
+  // every finding citing a dependency fact to not_evaluated), and stayed silent on a
+  // gitignored lockfile that belongs to no commit at all.
+  const manifest = typeof depResult.report?.subject?.lockfile === 'string'
+    ? depResult.report.subject.lockfile
+    : undefined;
+  if (manifest) {
+    const probe = { probeFailed: false, existsAtHead: false, differsFromHead: true };
+    if (path.isAbsolute(manifest)) {
+      const rel = path.relative(toplevel, manifest).split(path.sep).join('/');
+      try {
+        probe.existsAtHead = (await git(['ls-tree', head, '--', rel], { cwd: toplevel })).trim() !== '';
+        probe.differsFromHead = !probe.existsAtHead ||
+          (await git(['diff', '--name-only', head, '--', rel], { cwd: toplevel })).trim() !== '';
+      } catch {
+        // A probe that could not run is not evidence of a match.
+        probe.probeFailed = true;
+      }
+    } else {
+      probe.probeFailed = true;
+    }
+    const versionGap = manifestVersionGap(
+      { ...probe, head, worktree: await revParse(toplevel, 'HEAD'), manifest: path.basename(manifest) },
+      t
+    );
+    if (versionGap) depNotEvaluated.push(versionGap);
   }
 
   const facts = [...history.facts, ...depFacts];

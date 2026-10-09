@@ -15,7 +15,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { parseArgs, EXIT } from '../src/cli.js';
-import { makeRepo, commitFiles, git } from './helpers.js';
+import { makeRepo, commitFiles, git, npmLockfile } from './helpers.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -243,6 +243,164 @@ describe('audit command (history + deps in one run)', () => {
   test('a missing --base is a usage error', async () => {
     const { main } = await import('../src/cli.js');
     assert.equal(await main(['audit', '--json']), EXIT.USAGE);
+  });
+});
+
+describe('audit declares when the manifest it measured is not the --head manifest', () => {
+  // The two halves of audit read from different places: history from the commits
+  // named by --base/--head, deps from the manifest checked out in --repo. A clone
+  // parked elsewhere silently reports facts about a version the caller did not ask
+  // for — measured on a real repository as 284 dependency facts where the tag holds
+  // 366. The criterion is manifest CONTENT, not the checked-out sha: comparing shas
+  // was shown to fire on a PR merge commit whose lockfile is byte-identical to
+  // --head's, and to stay silent on a gitignored lockfile that belongs to no commit.
+  async function repoWithAGrowingLock() {
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, 'chore: pin left-pad', {
+      'package-lock.json': npmLockfile([['left-pad', '1.3.0']]),
+      'src/a.js': 'export const a = 1;\n'
+    });
+    const head = await commitFiles(repo, 'chore: pin alpha', {
+      'package-lock.json': npmLockfile([['left-pad', '1.3.0'], ['alpha', '2.0.0']]),
+      'src/b.js': 'export const b = 2;\n'
+    });
+    return { repo, base, head };
+  }
+
+  async function auditJson(args) {
+    const { main } = await import('../src/cli.js');
+    const chunks = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (chunk) => {
+      chunks.push(String(chunk));
+      return true;
+    };
+    let code;
+    try {
+      code = await main(args);
+    } finally {
+      process.stdout.write = original;
+    }
+    return { code, report: JSON.parse(chunks.join('')) };
+  }
+
+  const declared = (report) => report.coverage.notEvaluated.filter((e) => e.code);
+
+  test('a manifest that differs from --head is declared and does not lose the facts', async () => {
+    const { repo, base, head } = await repoWithAGrowingLock();
+    await git(repo, ['checkout', '-q', '--detach', base]);
+
+    const { code, report } = await auditJson(['audit', '--repo', repo, '--base', base, '--head', head, '--json']);
+
+    const entry = declared(report).find((e) => e.code === 'manifest-not-head');
+    assert.ok(entry, 'content that is not the --head content must be declared');
+    assert.ok(entry.reason.includes(head.slice(0, 10)), `the reason must name --head, got: ${entry.reason}`);
+    assert.ok(
+      report.facts.some((f) => f.kind === 'dependency'),
+      'declaring the gap must not suppress the dependency facts that were measured'
+    );
+    assert.equal(code, EXIT.CLEAN, 'a declared gap cannot fail a run the history half answered');
+  });
+
+  test('a merge commit with lockfile content identical to --head declares nothing', async () => {
+    // actions/checkout leaves a pull_request run on the merge commit. Its lockfile
+    // equals the PR head's, so the dependency facts ARE the --head facts, and
+    // declaring them a gap would force every finding that cites them to
+    // not_evaluated for no reason (fact-contract hard rule 1).
+    const { repo, base, head } = await repoWithAGrowingLock();
+    await git(repo, ['checkout', '-q', '-b', 'other', base]);
+    await commitFiles(repo, 'chore: touch an unrelated file on the other branch', {
+      'src/c.js': 'export const c = 3;\n'
+    });
+    await git(repo, ['merge', '-q', '--no-ff', '-m', `Merge the lockfile change into other`, head]);
+
+    assert.equal(
+      (await git(repo, ['diff', '--name-only', head, '--', 'package-lock.json'])).trim(),
+      '',
+      'the fixture is only worth this test if its manifest content equals --head'
+    );
+    assert.notEqual((await git(repo, ['rev-parse', 'HEAD'])).trim(), head, 'and if the commit itself differs');
+
+    const { report } = await auditJson(['audit', '--repo', repo, '--base', base, '--head', head, '--json']);
+    assert.deepEqual(declared(report), [], 'identical content must not be declared as a gap');
+  });
+
+  test('a manifest that exists only in the working tree is declared', async () => {
+    // The case a commit comparison cannot see at all: the lockfile is gitignored,
+    // so nothing about it belongs to any commit, and the measured facts are the
+    // working tree's by construction.
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, 'chore: ignore the lockfile', {
+      '.gitignore': 'package-lock.json\n',
+      'src/a.js': 'export const a = 1;\n'
+    });
+    const head = await commitFiles(repo, 'chore: touch another file', { 'src/b.js': 'export const b = 2;\n' });
+    await writeFile(path.join(repo, 'package-lock.json'), npmLockfile([['left-pad', '1.3.0']]), 'utf8');
+
+    const { report } = await auditJson(['audit', '--repo', repo, '--base', base, '--head', head, '--json']);
+
+    const entry = declared(report).find((e) => e.code === 'manifest-not-head');
+    assert.ok(entry, 'a manifest absent from --head cannot read as measured-at---head');
+    assert.ok(entry.reason.includes('package-lock.json'), `the reason must name the file, got: ${entry.reason}`);
+  });
+
+  test('a manifest exactly matching --head declares nothing', async () => {
+    const { repo, base, head } = await repoWithAGrowingLock();
+    await git(repo, ['checkout', '-q', '--detach', head]);
+
+    const { report } = await auditJson(['audit', '--repo', repo, '--base', base, '--head', head, '--json']);
+
+    assert.deepEqual(declared(report), [], 'the normal case must not gain a warning line');
+  });
+
+  test('an uncommitted edit away from the --head content is declared', async () => {
+    const { repo, base, head } = await repoWithAGrowingLock();
+    await git(repo, ['checkout', '-q', '--detach', head]);
+    await writeFile(path.join(repo, 'package-lock.json'), npmLockfile([['left-pad', '1.3.0'], ['beta', '3.0.0']]), 'utf8');
+
+    const { report } = await auditJson(['audit', '--repo', repo, '--base', base, '--head', head, '--json']);
+
+    assert.ok(declared(report).some((e) => e.code === 'manifest-not-head'), 'working-tree content belongs to no commit');
+  });
+
+  test('omitting --head declares nothing, because HEAD is the head by definition', async () => {
+    const { repo, base } = await repoWithAGrowingLock();
+
+    const { report } = await auditJson(['audit', '--repo', repo, '--base', base, '--json']);
+
+    assert.deepEqual(declared(report), [], 'the checkout is at the head that was measured against');
+  });
+});
+
+describe('the manifest-version decision table', () => {
+  // The probes that feed the decision run git; the decision itself is pure, and its
+  // fail-closed branch is otherwise unreachable from a test. Missing data must never
+  // read as clean, so an unreadable probe is itself a declared gap.
+  const t = (zh) => zh;
+
+  test('identical content at --head yields no gap', async () => {
+    const { manifestVersionGap } = await import('../src/cli.js');
+    assert.equal(manifestVersionGap({ probeFailed: false, existsAtHead: true, differsFromHead: false, head: 'a'.repeat(40), worktree: 'a'.repeat(40), manifest: 'Cargo.lock' }, t), null);
+  });
+
+  test('content differing from --head is a gap naming that commit', async () => {
+    const { manifestVersionGap } = await import('../src/cli.js');
+    const gap = manifestVersionGap({ probeFailed: false, existsAtHead: true, differsFromHead: true, head: 'b'.repeat(40), worktree: 'c'.repeat(40), manifest: 'Cargo.lock' }, t);
+    assert.equal(gap.code, 'manifest-not-head');
+    assert.ok(gap.reason.includes('b'.repeat(10)), gap.reason);
+  });
+
+  test('a manifest absent at --head is the same gap', async () => {
+    const { manifestVersionGap } = await import('../src/cli.js');
+    const gap = manifestVersionGap({ probeFailed: false, existsAtHead: false, differsFromHead: false, head: 'd'.repeat(40), worktree: 'd'.repeat(40), manifest: 'go.mod' }, t);
+    assert.equal(gap.code, 'manifest-not-head');
+    assert.ok(gap.reason.includes('go.mod'), gap.reason);
+  });
+
+  test('a failed probe is declared, never treated as clean', async () => {
+    const { manifestVersionGap } = await import('../src/cli.js');
+    const gap = manifestVersionGap({ probeFailed: true, existsAtHead: false, differsFromHead: false, head: 'e'.repeat(40), worktree: 'e'.repeat(40), manifest: 'Cargo.lock' }, t);
+    assert.equal(gap.code, 'manifest-unverified', 'a probe that could not run must not read as no gap');
   });
 });
 

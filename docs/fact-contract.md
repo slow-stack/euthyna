@@ -182,6 +182,11 @@ This is where P2 lands, and it is the key to **guarding against false negatives*
    but "which tool, unavailable for what reason").
 3. **Empty results must be explicitly distinguished**: "ran but found nothing" is recorded as `evaluated` + `count: 0`;
    "never ran at all" is recorded as `notEvaluated`. The two must never look the same in any report.
+4. **`code` (optional) is a machine-readable criterion name**, for CI and test assertions: `audit` records
+   `manifest-not-head` when the manifest it measured differs in content from the one at `--head` (or does not
+   exist there at all), and `manifest-unverified` when the probe itself failed. Humans still read `reason` —
+   `code` appears only on the `--json` channel, since the terminal renders `kind: reason`; it answers "which
+   kind of gap", does not replace the reason, and must never be used as a verdict.
 
 ---
 

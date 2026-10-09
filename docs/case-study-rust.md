@@ -1,13 +1,16 @@
 # Case Study #4: rustls (Rust)
 
+English · [中文](case-study-rust-zh.md)
+
 > This is euthyna's fourth validation run against a real repository. The subject is
 > **rustls** (`rustls/rustls`), and the range is a real pair of fix releases:
 > `v/0.23.44` → `v/0.23.45` (RUSTSEC-2026-0285 / GHSA-2mjx-qc3c-rqvc, published 2026-09-14).
 >
 > This is neither a security assessment of rustls nor an audit someone commissioned. It asks two
 > questions: do euthyna's deterministic facts hold up on a Rust repository, and does the six-gate
-> discipline fail when it faces **a genuine vulnerability**? Every candidate in the first three
-> runs was rejected, which leaves open whether that is rigour or a sieve that only ever says no.
+> discipline fail when it faces **a genuine vulnerability**? No candidate in the first three runs
+> cleared all six gates — one of them ended INCONCLUSIVE in the crewAI round — which leaves open
+> whether that is rigour or a sieve that only ever says no.
 >
 > **Result first**: this run produced the project's first TRUE POSITIVE, and its fourth gate is
 > backed by an executable PoC verified in both directions. Meanwhile the candidate that looked
@@ -110,6 +113,14 @@ checking out the tag and re-running the same command, the same measurement yield
 shared-lockfile assumption fails silently, the fact count changes silently too. That is now
 recorded as an observation for the project.
 
+The reason is that the two halves of `audit` do not read the same thing: `history` takes its data
+from the git objects named by `--base` and `--head`, so the checkout is irrelevant, while `deps`
+reads the manifest files **currently checked out in the directory `--repo` points at**. Writing
+`--head v/0.23.45` therefore does not make the dependency facts the facts of that tag. Check the
+working tree out at one end of the range first
+(`git -C .scratch/rustls checkout v/0.23.45`) and confirm it with
+`git -C .scratch/rustls rev-parse HEAD`; otherwise the two halves report two different versions.
+
 ---
 
 ## 4. An independent PoC
@@ -147,8 +158,9 @@ identical bytes are refused with `CipherSuiteDifferedOnRetry`.
 **The two failures of the PoC itself are more instructive than its success**, because both also
 presented as "rejected":
 
-1. the `key_share` entry length was written as `32usize.to_be_bytes()` (4 bytes), so the server
-   read a u16 of 0 → `InvalidMessage(IllegalEmptyValue)`, never reaching the guard at all;
+1. the `key_share` entry length was written as `32usize.to_be_bytes()`. A `usize` is 8 bytes on
+   x86_64, so the bytes on the wire were `00 00 00 00 00 00 00 20`; the protocol field is a u16 and
+   the server took the first two → `InvalidMessage(IllegalEmptyValue)`, never reaching the guard;
 2. in `supported_groups` I put secp256r1 before x25519, so the HRR named secp256r1 while my second
    hello carried only x25519 → v/0.23.44 refused first with
    `PeerMisbehaved(RefusedToFollowHelloRetryRequest)` (`rustls/src/server/tls13.rs:218`).
@@ -234,6 +246,12 @@ claim (`.scratch/advisory-versions.mjs`), and its interpretation rules (arrays a
 commas are conjunctions, two-component versions yield unknown) depend on that implementation. The
 three unknowns exist because of it.
 
+Its first version read the alternatives inside `patched` as a conjunction instead of a
+disjunction, which made the already-fixed `v/0.23.45` itself come out affected — **the patched
+version became the finding**. The rule that was wrong is precisely the one that decides whether
+"has an advisory" turns into "is vulnerable", so getting it wrong raises no error; it just yields
+a plausible-looking list.
+
 ---
 
 ## 7. Coverage on Rust is still a confirmed gap
@@ -258,22 +276,34 @@ PR #21 had just converged, used here for the first time on real data.
 
 ## 8. How to reproduce
 
-```powershell
-# 1. clone and check out both ends of the range (third-party sources stay in .scratch/, gitignored)
-git clone https://github.com/rustls/rustls .scratch/rustls
+Which steps run from a clean checkout: 1 and 2 do. The rustls clone, the PoC crate and the full
+adjudication report are **not distributed with this repository** (third-party sources stay in
+`.scratch/`; verdict reports are never committed), so steps 3 and 4 require the reader to write the
+PoC from the scenario described in section 4 (what each ClientHello offers, and whether it carries
+a key share) and to have that report on hand.
 
-# 2. the deterministic facts
+```powershell
+# 1. clone and check out one end of the range (git clone creates .scratch/ and the
+#    intermediate directories itself, measured; check out --head or deps reads a
+#    different manifest — see section 3)
+git clone https://github.com/rustls/rustls .scratch/rustls
+git -C .scratch/rustls checkout v/0.23.45
+
+# 2. the deterministic facts: runnable from a clean checkout
 node bin/euthyna.js audit --base v/0.23.44 --head v/0.23.45 --repo .scratch/rustls   # exit code 10
 
-# 3. the PoC: the same source run against each tag
+# 3. the PoC: needs your own .scratch/rustls-poc (not distributed); same source per tag
 git -C .scratch/rustls checkout v/0.23.44
 Push-Location .scratch/rustls-poc; cargo run -- v0.23.44; Pop-Location
 git -C .scratch/rustls checkout v/0.23.45
 Push-Location .scratch/rustls-poc; cargo run -- v0.23.45; Pop-Location
 
-# 4. validate the verdict report against the contract
+# 4. validate the verdict report against the contract: needs that local report
 node bin/euthyna.js gate audits/RUSTLS_EUTHYNA_AUDIT_2026-10-09.md                   # exit code 0
 ```
+
+Step 3 moves the working tree back and forth between the two tags; check out `v/0.23.45` again
+before re-running step 2.
 
 The PoC's Cargo.toml uses a path dependency and pins the provider to ring:
 

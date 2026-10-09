@@ -1,12 +1,15 @@
 # 案例研究 #4：rustls（Rust）
 
+[English](case-study-rust.md) · 中文
+
 > 本文是 euthyna 的第四次真实仓库验证运行。被测对象是 **rustls**（`rustls/rustls`），
 > 范围取自一对真实的修复版本：`v/0.23.44` → `v/0.23.45`（对应 RUSTSEC-2026-0285 /
 > GHSA-2mjx-qc3c-rqvc，2026-09-14 发布）。
 >
 > 这不是对 rustls 的整体安全评估，也不是受人委托的审计。它回答两个问题：
 > euthyna 的确定性事实在 Rust 仓库上是否成立；六门禁纪律在面对**一个真漏洞**时会不会失手——
-> 前三轮的粗筛候选全部被驳回，没人知道那是因为纪律严，还是因为筛子只会否。
+> 前三轮的粗筛候选没有一个走完六道门禁（其中 crewAI 那条还停在 INCONCLUSIVE），所以没人知道
+> 那是因为纪律严，还是因为筛子只会否。
 >
 > **结论先行**：本轮第一次判出 TRUE POSITIVE，而且它的第 4 道门禁由一个可执行、双向验证的
 > PoC 供证。同时，看起来更"危险"的那条候选（deframer 对齐）因为拿不出影响与触发证据，
@@ -101,6 +104,12 @@ node bin/euthyna.js audit --base v/0.23.44 --head v/0.23.45 --repo .scratch/rust
 `v/0.23.45`，dependency 事实得数是 284。按 tag 检出后重跑，同样的命令得 366 条。
 同一份 `Cargo.lock` 假设不成立时，事实数会静默变化——这一条已写进项目的观察记录。
 
+原因是 `audit` 的两个半边读的不是同一个东西：`history` 从 `--base` 与 `--head` 这两个 git
+对象里取，与工作区无关；`deps` 读的是 `--repo` 所指目录里**当前检出的那份清单文件**。
+所以命令里写了 `--head v/0.23.45` 并不会让依赖事实变成该 tag 的事实。跑之前先把工作区
+检出到范围的一端（`git -C .scratch/rustls checkout v/0.23.45`），并用
+`git -C .scratch/rustls rev-parse HEAD` 确认检出的确实是它，否则两半边报的是两个版本。
+
 ---
 
 ## 4. 独立 PoC
@@ -134,7 +143,8 @@ HRR 从未承诺过它。修复后同一串字节被 `CipherSuiteDifferedOnRetry
 
 **PoC 自己的两次失败比成功更有教学价值**，因为两次都表现为"被拒绝"：
 
-1. `key_share` 条目的长度字段我写成 `32usize.to_be_bytes()`（4 字节），服务器把 u16 读成 0 →
+1. `key_share` 条目的长度字段我写成 `32usize.to_be_bytes()`。`usize` 在 x86_64 上是 8 字节，
+   于是写出去的是 `00 00 00 00 00 00 00 20`；协议里这个长度是 u16，服务器取前两个字节，读成 0 →
    `InvalidMessage(IllegalEmptyValue)`，根本没走到守卫；
 2. `supported_groups` 里我把 secp256r1 排在 x25519 前面，于是 HRR 点名 secp256r1，而我的第二个
    hello 只带 x25519 → v/0.23.44 用 `PeerMisbehaved(RefusedToFollowHelloRetryRequest)`
@@ -214,6 +224,10 @@ worst verdict per crate: {"unaffected":52,"never-patched":3,"affected":4,"unknow
 **这个比对脚本不是 `euthyna` 的产物**，是我为了裁定临时写的（`.scratch/advisory-versions.mjs`），
 它的解释规则（数组是"或"、逗号是"且"、两段版本判 unknown）会随实现变化；3 个 unknown 就是这么留下的。
 
+它的第一版还把 `patched` 数组的多个区间读成了"且"而不是"或"，于是已修复的 `v/0.23.45`
+自己也被判成 affected——**修好了的版本反而成了发现**。读错的那条规则正好是决定"有公告"能否
+变成"受影响"的那一条，所以这一步错了不会报错，只会多一份看着合理的名单。
+
 ---
 
 ## 7. coverage 在 Rust 上仍是确认缺口
@@ -237,22 +251,31 @@ worst verdict per crate: {"unaffected":52,"never-patched":3,"affected":4,"unknow
 
 ## 8. 怎么复现
 
-```powershell
-# 1. 克隆并检出范围两端（第三方源码只留在 .scratch/，gitignored）
-git clone https://github.com/rustls/rustls .scratch/rustls
+先说清哪几步从一份干净检出就能跑完：第 1、2 步能。rustls 克隆、PoC crate 与完整判定报告
+**不随仓库分发**（第三方源码只留在 `.scratch/`；判定报告按项目惯例不提交），所以第 3、4 步
+要读者自己按第 4 节描述的场景（两个 ClientHello 各自 offer 什么、带不带 key share）把 PoC 写出来，
+并手上有那份报告。
 
-# 2. 确定性事实
+```powershell
+# 1. 克隆并检出范围的一端（git clone 会自建 .scratch/ 及中间目录，实测；
+#    检出到 --head，否则 deps 读的是另一份清单，见第 3 节）
+git clone https://github.com/rustls/rustls .scratch/rustls
+git -C .scratch/rustls checkout v/0.23.45
+
+# 2. 确定性事实：干净检出可直接跑
 node bin/euthyna.js audit --base v/0.23.44 --head v/0.23.45 --repo .scratch/rustls   # 退出码 10
 
-# 3. PoC：分别在两个 tag 上跑同一份源码
+# 3. PoC：需要自备 .scratch/rustls-poc（未分发），同一份源码分别在两个 tag 上跑
 git -C .scratch/rustls checkout v/0.23.44
 Push-Location .scratch/rustls-poc; cargo run -- v0.23.44; Pop-Location
 git -C .scratch/rustls checkout v/0.23.45
 Push-Location .scratch/rustls-poc; cargo run -- v0.23.45; Pop-Location
 
-# 4. 校验裁定报告的契约
+# 4. 校验裁定报告的契约：需要本地那份报告（未分发）
 node bin/euthyna.js gate audits/RUSTLS_EUTHYNA_AUDIT_2026-10-09.md                   # 退出码 0
 ```
+
+第 3 步会把工作区在两个 tag 之间来回切；切完之后若要重跑第 2 步，记得先检回 `v/0.23.45`。
 
 PoC 的 Cargo.toml 用路径依赖并把 provider 限定成 ring：
 

@@ -167,7 +167,8 @@ Not inferred. Do not re-research these.
   temp-prefix install runs `euthyna --lang en` with exit 0, its `src/cli.js` carries the
   `manifest-not-head` declaration from PR #28, and the tarball holds **both**
   `.agents/skills/euthyna` and `.agents/skills/euthyna-en`. Its ClawHub job did not
-  publish — see `### ClawHub registry` below.
+  publish — see `### ClawHub registry` below, where the listing was later brought to 0.7.0
+  from this machine.
 
 ### ClawHub registry
 
@@ -204,8 +205,8 @@ The 0.6.0 listing was restored from this machine with the locally logged-in
 workflow's flag set so the registry entry matches what CI would have produced
 (`--source-commit` = the tag's commit).
 
-🧪 **The 0.7.0 push never landed, and the reason was the registry, not the repository.
-Measured 2026-10-10.** Run `37998801395` failed its `clawhub` job at `Log in` with
+🧪 **The 0.7.0 push failed on the registry side, then landed. Measured 2026-10-10.**
+Run `37998801395` failed its `clawhub` job at `Log in` with
 `{"code":"InternalServerError","message":"Your request couldn't be completed. Try again
 later."}`. Re-running just that job got past login and died in `Publish` with the same 500;
 its fail-closed pre-read printed `euthyna currently lists 0.6.0; candidate 0.7.0 compares:
@@ -214,9 +215,29 @@ machine with the locally logged-in CLI — v0.23.3, the workflow's own pin, the 
 set, `--source-commit 26db136` — timed out twice, once direct and once through
 `HTTPS_PROXY=http://127.0.0.1:7897`, with `too many system operations`. Reads kept working
 through all of it, which is how the state was checked rather than assumed: both slugs still
-report `pass | clean | 0.6.0`, so **`latest` was never moved and no partial submission
-registered**. A retry is scheduled; if it succeeds the listing must be re-read until it
-settles, since one read right after a push is a known false negative here.
+reported `pass | clean | 0.6.0`, so **`latest` had not moved and no partial submission had
+registered**.
+
+A later retry on the same path went through where the two earlier attempts had timed out.
+`bash .scratch/clawhub-repush.sh --publish` printed `Update submitted for euthyna@0.7.0` and
+the same for `euthyna-en` at the **first** attempt, with no flag added and nothing forced;
+the registry-side failure had simply cleared. `bash .scratch/clawhub-verify.sh 0.7.0 8 180`
+then re-read both slugs every three minutes: read 1 still `pass | clean | 0.6.0` (the queue
+settles slower than the CLI returns), reads 2–5 `fail | card.missing` with `euthyna-en`
+additionally `security=suspicious`, and reads 6 and 7 `pass | clean | 0.7.0`. That is the
+"a push is not a listing" fact above measured again with numbers attached — **one read right
+after a successful push reports it as a failure** — and it is why both scripts read, compare,
+and re-read rather than trusting a single reply. Nothing in the repository, the token, or the
+flag set had to change; only the registry had recovered. Both scripts are under `.scratch/`
+(gitignored) and re-runnable: `clawhub-repush.sh` without an argument is the fail-closed
+pre-read, and `clawhub-verify.sh <version> <rounds> <seconds>` is the settle loop.
+
+One attribution limit, recorded rather than smoothed over: a one-shot local re-push was
+scheduled minutes before this retry and has since consumed itself, and listing reads lag a
+queued submission by several minutes — so **which** submission moved `latest` is not
+determinable from the evidence on hand. It does not matter for the invariant that the
+pre-read guard protects: both submitted the same version with the same flags, and the guard
+would have refused anything older.
 
 One thing this did settle: `gh secret list` cannot tell a set secret from an empty one (the
 2026-09-23 entry is the precedent), but the step log masks a received value as

@@ -247,6 +247,61 @@ secret is populated — which the earlier `absent`-in-the-job failure could not 
 npm running ahead of ClawHub is the exact condition PR #23 added this job to detect, so the
 lag is visible as a red job plus these notes rather than silent.
 
+### skills.sh
+
+🧪 **This project is not listed on skills.sh. Measured 2026-10-11 — the README had claimed
+otherwise since `eafd69d` (2026-09-22).**
+
+The badge block carried an `Agent skills installs` image pointing at
+`https://skills.sh/b/slow-stack/euthyna.svg`. The endpoint answers; the resource does not
+exist. Four readings, taken through the local proxy because `curl` cannot build a TLS session
+here:
+
+- `skills.sh/b/slow-stack/euthyna.svg` → `308` to `www.skills.sh`, then HTTP 200 with
+  `aria-label="custom badge: resource not found"` and `fill="#dd4343"` — that red SVG is the
+  badge the README published.
+- Dropping the `.svg` does **not** fix it: `/b/slow-stack/euthyna` answers the same
+  `resource not found`. The suffix is nevertheless wrong on its own terms — measured
+  `/b/obra/superpowers.svg` → `resource not found` while `/b/obra/superpowers` → `Skills /
+  3.4M`. Two GitHub code searches (for `skills.sh/b/`, and for `skills.sh/b/` together with
+  `.svg`) returned no sampled README that puts a `.svg` on that URL — every fragment inspected
+  used the suffix-free form, with a `?style=` query where a variant was wanted. So: one defect
+  of form, and a second defect of substance underneath it. The forms to use if this repository
+  ever does get listed are `https://skills.sh/<owner>/<repo>` for the page and
+  `https://skills.sh/b/<owner>/<repo>` for the badge, both suffix-free.
+- The badge's link target `https://www.skills.sh/slow-stack/euthyna` → **404**, and the
+  repo-scoped skill page `…/slow-stack/euthyna/euthyna` renders *"euthyna isn't available in
+  this repository. It may have been renamed or removed."*
+- The site's own search API is decisive: `GET /api/search?q=euthyna` →
+  `{"skills":[],"count":0}`, while the control `q=superpowers` returns rows carrying
+  `installs`. No index entry exists.
+
+**It is not a layout problem.** `.agents/skills/` is one of the skill containers the
+`skills` CLI discovers (the Skill Discovery list in the `vercel-labs/skills` README — read
+2026-10-11 from the copy fetched to `.scratch/`), so an install from this repository would
+find both editions. What was **not** established, and is not claimed here, is how a
+repository enters the site's index in the first place. Only that this one is absent, and that
+recolouring the badge or correcting its URL would make the claim false in a quieter way.
+
+Two facts worth keeping:
+
+- **A forced `color=` hides the only feedback channel a badge has.** Three tiers sit in this one
+  block. The npm version, download and licence badges compute their value but pin
+  `color=007EC6`, so a wrong number would still render the project's blue. The
+  `npm provenance verified` badge fixes label *and* value, so it asserts something that nothing
+  can contradict. Only the workflow badge and the skills.sh one colour themselves from the
+  answer — which is why the false listing showed up red on a reader's screen and the other false
+  claims never will. A computed badge reports itself to exactly one audience, and this one
+  survived 19 days with nothing in CI, no test, and no note disagreeing.
+- **One sibling claim is still unverified, and stays that way.** The `npm provenance verified`
+  badge links to `search.sigstore.dev/?logIndex=2915999059`. `rekor-server.sigstore.dev` and
+  `rekor.tuf.sigstore.dev` both reset at CONNECT through `127.0.0.1:7897` (measured twice), so
+  the log entry was never read. That badge is static, so it renders as *passing* on the strength
+  of an assertion nobody has checked from outside this machine.
+
+The badge was removed rather than repaired. Seeking a skills.sh listing is an open question,
+not a decision this file makes.
+
 ### Skill contract
 
 Measured against `@deepseek-ai/dsh-skill-filesystem` on this machine — first read at
@@ -611,6 +666,7 @@ is faithful — that is a reading job, and a mechanical stand-in would only manu
 | **A user-level installed skill silently lags the published version** | 🧪 Measured 2026-10-09: `~/.agents/skills/euthyna/` was still pre-0.6.0 (1 `--source` mention where the shipped tree has 5, no `coverprofile`, missing the rule-5 wording from PR #21), while npm and ClawHub both read 0.6.0. Inside this repository it is invisible — the project root (rank 200) wins — but **outside it the old discipline is what actually runs**. Check with `git diff --no-index --stat ~/.agents/skills/euthyna .agents/skills/euthyna` (empty output = in sync) rather than assuming a release propagated. Use `git`, not `diff`: in PowerShell `diff` is the `Compare-Object` alias and refuses `-rq`. |
 | **A workflow that only runs on release day can be broken for days and show nothing but ~0-second red runs** | 🧪 Measured 2026-10-10: `publish.yml` did not parse from `b795569` (PR #23) until the 0.7.0 rehearsal. The cause was `${{ runner.temp }}` in a **job-level `env:`**, where only the `secrets` and `vars` contexts are legal — one illegal reference invalidates the whole file. Every push produced a 0-second failure that no PR check reported, and the reason surfaced only as `HTTP 422 … Unrecognized named-value: 'runner'` from `gh workflow run`. So run the non-publishing rehearsal (`gh workflow run publish.yml --ref <branch> -f publish=false`, or on `main` before the tag) as a standing first step of any release: it costs a minute and is the only exercise that path gets between releases |
 | **Deleting `TEMP` from the env handed to a child does not remove it in the child** | 🧪 Measured while writing the issue #7 regressions: after the parent deleted `TEMP`/`TMP`/`TMPDIR` from the env object passed to `execFileSync`, the child still reported `'TEMP' in process.env === true` and `os.tmpdir()` equal to the real user temp (`TMP`/`TMPDIR` did stay absent). Setting them to `''` **does** propagate, and `os.tmpdir()` skips an empty value and falls back to an absolute default — so a test that needs "no temp variable" must set them empty rather than delete them, or assert the property on a pure helper instead (see `bench/results-dir.js` and its unit test in `test/bench.test.js`) |
+| **A computed README badge can publish a claim with nothing behind it, and no check will notice** | 🧪 Measured 2026-10-11: the `Agent skills installs` badge pointed at `skills.sh/b/slow-stack/euthyna.svg`, which renders `resource not found` in red (`fill="#dd4343"`) while its own link is a `404` and the site's search API answers `{"skills":[],"count":0}` for `euthyna`. The listing never existed, and the badge sat in the README for 19 days from `eafd69d`. When touching the badge block, read each SVG's `aria-label` and each link's status: a badge with a hard-coded `color=` is decoration, not evidence. Full measurement: `### skills.sh` |
 
 ---
 

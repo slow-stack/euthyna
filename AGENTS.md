@@ -281,10 +281,13 @@ recolouring the badge or correcting its URL would make the claim false in a quie
 
 Two facts worth keeping:
 
-- **A badge with a hard-coded colour cannot falsify itself.** The shields badges in this block
-  pass `color=007EC6` and stay that colour whatever the registry does; only the workflow badge
-  and the skills.sh one are computed from data. A computed badge whose resource is missing
-  reports itself to exactly one audience — a person reading the README — which is why this one
+- **A forced `color=` hides the only feedback channel a badge has.** Three tiers sit in this one
+  block. The npm version, download and licence badges compute their value but pin
+  `color=007EC6`, so a wrong number would still render the project's blue. The
+  `npm provenance verified` badge fixes label *and* value, so it asserts something that nothing
+  can contradict. Only the workflow badge and the skills.sh one colour themselves from the
+  answer — which is why the false listing showed up red on a reader's screen and the other false
+  claims never will. A computed badge reports itself to exactly one audience, and this one
   survived 19 days with nothing in CI, no test, and no note disagreeing.
 - **One sibling claim is still unverified, and stays that way.** The `npm provenance verified`
   badge links to `search.sigstore.dev/?logIndex=2915999059`. `rekor-server.sigstore.dev` and

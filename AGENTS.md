@@ -263,8 +263,12 @@ here:
 - Dropping the `.svg` does **not** fix it: `/b/slow-stack/euthyna` answers the same
   `resource not found`. The suffix is nevertheless wrong on its own terms — measured
   `/b/obra/superpowers.svg` → `resource not found` while `/b/obra/superpowers` → `Skills /
-  3.4M`, and the READMEs found in a code search for `skills.sh/b/` all use the suffix-free
-  form. So one defect of form, and a second defect of substance underneath it.
+  3.4M`. Two GitHub code searches (for `skills.sh/b/`, and for `skills.sh/b/` together with
+  `.svg`) returned no sampled README that puts a `.svg` on that URL — every fragment inspected
+  used the suffix-free form, with a `?style=` query where a variant was wanted. So: one defect
+  of form, and a second defect of substance underneath it. The forms to use if this repository
+  ever does get listed are `https://skills.sh/<owner>/<repo>` for the page and
+  `https://skills.sh/b/<owner>/<repo>` for the badge, both suffix-free.
 - The badge's link target `https://www.skills.sh/slow-stack/euthyna` → **404**, and the
   repo-scoped skill page `…/slow-stack/euthyna/euthyna` renders *"euthyna isn't available in
   this repository. It may have been renamed or removed."*

@@ -253,10 +253,16 @@ This project tries to be explicit about the difference. Current state:
   unchanged on a Go repository ([nektos/act](https://github.com/nektos/act), where the deleted
   lines of a security fix were traced back to the commit that introduced them) and on a Rust one
   ([rustls](https://github.com/rustls/rustls), whose fix range yielded 43 provenance facts).
-- **`coverage` on real output in three formats** — c8/V8 JSON, classic istanbul (jest/nyc, same
-  fnMap/f shape) and coverage.py JSON (format 3) — distinguishing all three states correctly, and
-  refusing anything that is not a recognizable coverage report instead of answering "symbol not
-  located" against it.
+- **`coverage` on real output in four formats** — c8/V8 JSON, classic istanbul (jest/nyc, same
+  fnMap/f shape), coverage.py JSON (format 3) and lcov tracefiles (`llvm-cov export --format=lcov`,
+  which is how cargo-llvm-cov and cargo-tarpaulin emit Rust coverage) — distinguishing all three
+  states correctly, and refusing anything that is not a recognizable coverage report instead of
+  answering "symbol not located" against it. The lcov path was measured against a probe crate
+  built with `-C instrument-coverage`: an uncalled function reports a count of 0, a called one
+  reports a count above it, and inlining was measured **not** to flatten a called function to 0.
+  What it cannot do is demangle — this machine has no working demangler, so a query is matched
+  against the `<byte length><name>` tail segments of the mangled name, and a bare `dup` matches
+  every same-named function in the file, each reported separately.
 - **`deps` against real manifests** — resolved versions reported with a line-level evidence
   pointer into the lockfile, and absent dependencies reported as established absences rather
   than silent skips. Verified against a populated npm v3 lockfile, a real `go.mod` (the *declared*

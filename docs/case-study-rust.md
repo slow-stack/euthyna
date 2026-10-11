@@ -278,6 +278,14 @@ So gates 3 and 4 of the fourth verdict are "not evaluated" rather than "fail": *
 fact is missing, that gate is recorded as not evaluated and must not carry a dismissal** — the rule
 PR #21 had just converged, used here for the first time on real data.
 
+> **Follow-up (2026-10-12): that gap has since been closed.** The record above is what was true in
+> that round and is not rewritten; but `src/facts/coverage.js` now reads lcov tracefiles, so this
+> producer's format list has gone from three to four. It was closed with a probe crate (12
+> functions, 2 files) driven through `RUSTFLAGS="-C instrument-coverage"` + `cargo test` +
+> `llvm-cov export --format=lcov`, without depending on `cargo-llvm-cov` (still absent here). **This
+> does not change the "was not there then" conclusion above**: it records what the 0.6.0 round
+> measured on rustls.
+
 ---
 
 ## 8. How to reproduce

@@ -407,7 +407,7 @@ export function parseLcov(raw) {
 }
 
 /**
- * The needle for one query segment: legacy Rust mangling and Itanium both
+ * The needle for one query segment: Rust's v0 mangling and Itanium both
  * encode an identifier as `<decimal length><the identifier>`, so `dup` is
  * looked up as `3dup`.
  */
@@ -432,15 +432,46 @@ function lcovPairEndsAt(name, end) {
 }
 
 /**
+ * True when the identifier `name.slice(idStart, idEnd)` sits strictly inside a
+ * longer, complete `<length><value>` pair — a reading of the name in which the
+ * identifier is part of a *longer* one, so a needle landing there is not
+ * standing at a segment boundary.
+ *
+ * Measured, and the reason this exists: in
+ * `_RNvCsi8SMnIpCoEi_13collide_probe8cfg_3get` the character before `3get` is
+ * `_`, which the separator rule accepts, but `8cfg_3get` is itself a complete
+ * pair (`8` is the length of `cfg_3get`), so `3get` is inside an identifier and
+ * a query for `get` must not answer for it.
+ */
+function lcovInsideLongerPair(name, idStart, idEnd) {
+  for (let k = 0; k < idStart; k++) {
+    if (!/\d/.test(name[k])) continue;
+    if (k > 0 && /\d/.test(name[k - 1])) continue; // only the start of a digit run
+    let digits = k;
+    while (digits < name.length && /\d/.test(name[digits])) digits++;
+    if (digits >= name.length) continue;
+    const start = digits;
+    const end = start + Number(name.slice(k, digits));
+    if (start >= idEnd || end > name.length) continue;
+    if (start < idStart && end >= idEnd) return true;
+  }
+  return false;
+}
+
+/**
  * Does a mangled name answer for the query path `segments`?
  *
  * `true` when every segment appears, in order, each one anchored: at the start
  * of the name, right after the mangling's own separators (`_`, as in
- * `NtB2_7Counter4bump`), or at a proven `<length><value>` pair boundary. The
- * segments are matched independently rather than as one concatenated needle
- * because a mangling may insert a disambiguator between them — a `#[cfg(test)]`
- * module comes out as `...5testss_14exercises_some`, not `...5tests14...`, so a
- * concatenated needle would miss `tests::exercises_some` outright.
+ * `NtB2_7Counter4bump`), or at a proven `<length><value>` pair boundary — and
+ * not strictly inside a longer pair (see lcovInsideLongerPair). The segments are
+ * matched independently rather than as one concatenated needle because a
+ * mangling may insert both a disambiguator and further path components between
+ * them: a `#[cfg(test)]` module comes out as `...5testss_14exercises_some`, and
+ * the path of a trait method carries its `Self` type
+ * (`NtB4_4GearNtB4_6Widget5label`), so a concatenated needle would miss both
+ * `tests::exercises_some` and `Gear::label` outright — measured, by running the
+ * contiguous form against the real tracefiles.
  *
  * What this buys: the digits before an identifier are its *byte* length, so
  * requiring the digits to be there, and to be a real length prefix, is what
@@ -448,11 +479,11 @@ function lcovPairEndsAt(name, end) {
  * with those characters (`7xyz3dup` is one segment, and the character before
  * `3dup` is `z`, which proves no pair ends there).
  *
- * One residual ambiguity, recorded rather than hidden: an identifier that
- * itself ends in `_<digits><name>` can read as a boundary, because `_` is a
- * separator in the scheme and the two are indistinguishable without parsing the
- * mangling's grammar. Qualifying the query with its module path is the way
- * around it.
+ * One residual over-inclusion, recorded rather than hidden: a *qualified* query
+ * is a subsequence test, not a path-exact one, so `lcov_probe::dup` also
+ * answers for `lcov_probe::nested::dup`. Each fact names the symbol it is about
+ * (see collectLcovCoverageFacts), so the reader can tell them apart; narrowing
+ * the match further would need the mangling's grammar.
  *
  * A query that is already mangled (`_R`/`_Z`) is matched exactly and never
  * decoded: this producer has no demangler, and half-decoding one would be a
@@ -465,9 +496,12 @@ export function lcovSymbolMatches(segments, name) {
   let from = 0;
   for (const segment of segments) {
     const needle = lcovSymbolNeedle([segment]);
+    const idDigits = String(Buffer.byteLength(segment, 'utf8')).length;
     let found = -1;
     for (let at = name.indexOf(needle, from); at !== -1; at = name.indexOf(needle, at + 1)) {
-      if (at === 0 || name[at - 1] === '_' || !/[A-Za-z0-9_]/.test(name[at - 1]) || lcovPairEndsAt(name, at)) {
+      const boundary =
+        at === 0 || name[at - 1] === '_' || !/[A-Za-z0-9_]/.test(name[at - 1]) || lcovPairEndsAt(name, at);
+      if (boundary && !lcovInsideLongerPair(name, at + idDigits, at + needle.length)) {
         found = at;
         break;
       }
@@ -593,9 +627,13 @@ async function collectLcovCoverageFacts({ coverage, coverageFile, targets, lang 
 
     // A query can legitimately hit several symbols — a bare name repeated in two
     // modules, or one generic function instantiated twice at the same line. Each
-    // is reported on its own so no fact claims more than the symbol it names.
+    // is reported on its own so no fact claims more than the symbol it names: a
+    // bare name is a symbol name and can be stated as given, while a `::` path is
+    // a pattern, so the statement names the symbol the match actually resolved to.
+    const pathQuery = segments.length > 1;
     for (const hit of matches) {
-      const qualifier = matches.length > 1
+      const subject = pathQuery ? hit.mangled : target.symbol;
+      const qualifier = matches.length > 1 && !pathQuery
         ? t(
             `（本次查询匹配到 ${matches.length} 个符号；本事实针对 ${hit.mangled}）`,
             ` (${matches.length} symbols matched this query; this fact is about ${hit.mangled})`
@@ -608,9 +646,9 @@ async function collectLcovCoverageFacts({ coverage, coverageFile, targets, lang 
             KIND.TEST_COVERAGE,
             t(
               `${hit.mangled} 在 tracefile 里有 FN: 行却没有任何 FNDA: 计数 —— 缺失的计数不是 0，这条记录答不了` +
-                `「${target.symbol} 是否被调用过」`,
+                `「${subject} 是否被调用过」`,
               `${hit.mangled} has an FN: line in the tracefile but no FNDA: count at all — a missing count is not a zero, ` +
-                `so this record cannot answer whether ${target.symbol} was invoked`
+                `so this record cannot answer whether ${subject} was invoked`
             )
           )
         );
@@ -624,14 +662,14 @@ async function collectLcovCoverageFacts({ coverage, coverageFile, targets, lang 
           kind: KIND.TEST_COVERAGE,
           statement: zero
             ? t(
-                `符号 ${target.symbol} 在本次测试运行中一次都没有被调用（调用计数为 0）—— 任何依赖它的行为都没有被执行验证`,
-                `Symbol ${target.symbol} was not invoked even once in this test run (invocation count 0) — ` +
+                `符号 ${subject} 在本次测试运行中一次都没有被调用（调用计数为 0）—— 任何依赖它的行为都没有被执行验证`,
+                `Symbol ${subject} was not invoked even once in this test run (invocation count 0) — ` +
                   'no behaviour depending on it was exercised'
               ) + qualifier
             : t(
-                `符号 ${target.symbol} 在本次测试运行中至少被调用过 ${hit.count} 次，但被调用**不能**证明任何特定调用点执行过 —— ` +
+                `符号 ${subject} 在本次测试运行中至少被调用过 ${hit.count} 次，但被调用**不能**证明任何特定调用点执行过 —— ` +
                   '本事实只能证伪，不能证实',
-                `Symbol ${target.symbol} was invoked at least ${hit.count} time(s) in this test run, but being invoked ` +
+                `Symbol ${subject} was invoked at least ${hit.count} time(s) in this test run, but being invoked ` +
                   '**cannot** prove that any particular call site executed — this fact can refute, not confirm'
               ) + qualifier,
           status: zero ? STATUS.ESTABLISHED : STATUS.UNKNOWN,

@@ -279,6 +279,34 @@ describe('lcov tracefiles', () => {
     assert.equal(fnEntry(twoThenZero, LIB(), symbol).count, 2);
   });
 
+  test('a missing count stays missing when records merge — null is not a zero', () => {
+    const symbol = `_RNv${CRATE_HASH}_10lcov_probe7maybe`;
+    const parsed = parseLcov(
+      [
+        `SF:${LIB()}`,
+        `FN:1,${symbol}`,
+        `FNDA:4,${symbol}`,
+        'end_of_record',
+        `SF:${LIB()}`,
+        `FN:1,${symbol}`,
+        'end_of_record' // no FNDA at all
+      ].join('\n')
+    );
+    // 4 + null must not collapse to 4 (a count from one record is not a count for
+    // the file) and must not become 0 — 0 is the only number this producer draws
+    // a conclusion from, so a wrong zero here would fabricate a real finding.
+    assert.equal(fnEntry(parsed, LIB(), symbol).count, null);
+  });
+
+  test('a duplicate FN line keeps the first line rather than the last', () => {
+    const symbol = `_RNv${CRATE_HASH}_10lcov_probe7twice`;
+    const parsed = parseLcov(
+      [`SF:${LIB()}`, `FN:1,${symbol}`, `FN:9,${symbol}`, `FNDA:0,${symbol}`, 'end_of_record'].join('\n')
+    );
+    // The line ends up in the fact's evidence, so which one wins is not cosmetic.
+    assert.equal(fnEntry(parsed, LIB(), symbol).line, 1);
+  });
+
   test('two FNDA lines for one symbol sum rather than the last one winning', () => {
     const symbol = `_RNv${CRATE_HASH}_10lcov_probe7twice`;
     const parsed = parseLcov(
@@ -298,8 +326,11 @@ describe('lcov tracefiles', () => {
     assert.equal(measured, false);
     assert.equal(notEvaluated.length, 1);
     assert.match(notEvaluated[0].reason, /「未出现」不能当「未执行」/);
-    // Deliberately the opposite of the c8 path, where absence is established.
-    assert.notEqual(notEvaluated[0].status, STATUS.ESTABLISHED);
+    // Deliberately the opposite of the c8 path, where absence is established. A
+    // notEvaluated entry is not a fact and carries no status field at all, so this
+    // asserts that absence — "not established" would hold even for a malformed
+    // entry, because the field does not exist to be compared.
+    assert.equal('status' in notEvaluated[0], false);
   });
 
   test('a symbol that is not in the table is unknown, and says why a mangled name may not match', async () => {
@@ -428,6 +459,25 @@ describe('lcov tracefiles', () => {
     for (const text of bad) assert.equal(parseLcov(text), null, JSON.stringify(text));
   });
 
+  test('a closed record followed by an unclosed one is refused, not half-read', () => {
+    // The lone-unclosed case above is caught by the "no SF: record at all" guard,
+    // so it does not exercise the EOF guard: with one *complete* record already in
+    // hand, dropping the trailing record would look like success. Measured against
+    // the shipped parser — refusing is what keeps the second record's functions
+    // out of the answer instead of silently absent from it.
+    const text = [
+      `SF:${LIB()}`,
+      `FN:1,_RNv${CRATE_HASH}_10lcov_probe5first`,
+      `FNDA:1,_RNv${CRATE_HASH}_10lcov_probe5first`,
+      'end_of_record',
+      `SF:${OTHER()}`,
+      `FN:2,_RNv${CRATE_HASH}_10lcov_probe6second`,
+      `FNDA:0,_RNv${CRATE_HASH}_10lcov_probe6second`
+      // no end_of_record
+    ].join('\n');
+    assert.equal(parseLcov(text), null);
+  });
+
   test('a symbol query needs no --source: the tracefile carries the names', async () => {
     const file = await writeLcov('nosource.info', tracefile());
     const withSource = await collectCoverageFacts({
@@ -452,6 +502,33 @@ describe('lcov tracefiles', () => {
     assert.equal(facts.length, 0);
     assert.equal(measured, false);
     assert.equal(notEvaluated.length, 1);
+  });
+
+  test('a path query states the symbol it resolved to, not the pattern', async () => {
+    const file = await writeLcov(
+      'subject.info',
+      [
+        `SF:${LIB()}`,
+        `FN:28,_RNv${CRATE_HASH}_10lcov_probe3dup`,
+        `FN:23,_RNvNt${CRATE_HASH}_10lcov_probe6nested3dup`,
+        `FNDA:1,_RNv${CRATE_HASH}_10lcov_probe3dup`,
+        `FNDA:0,_RNvNt${CRATE_HASH}_10lcov_probe6nested3dup`,
+        'FNF:2',
+        'FNH:1',
+        'end_of_record'
+      ].join('\n')
+    );
+    const { facts } = await collectCoverageFacts({
+      coverageFile: file,
+      targets: [{ symbol: 'lcov_probe::nested::dup', file: LIB() }]
+    });
+    // A `::` query is a pattern, so the statement names the symbol that matched:
+    // "Symbol lcov_probe::nested::dup was never invoked" would claim something
+    // about a name the tracefile does not carry.
+    assert.equal(facts.length, 1);
+    assert.match(facts[0].statement, /_RNvNt/);
+    assert.doesNotMatch(facts[0].statement, /lcov_probe::nested::dup/);
+    assert.equal(facts[0].detail.mangled, `_RNvNt${CRATE_HASH}_10lcov_probe6nested3dup`);
   });
 });
 
@@ -492,5 +569,52 @@ describe('lcov symbol matching', () => {
 
   test('an empty segment list matches nothing but does not throw', () => {
     assert.equal(lcovSymbolMatches([], `_RNv${CRATE_HASH}_10lcov_probe3dup`), false);
+  });
+
+  test('a query never answers for an identifier that sits inside a longer one', () => {
+    // Measured on a real `llvm-cov export` tracefile: `get` and `cfg_3get` are two
+    // functions, and `8cfg_3get` is itself a complete `<len><value>` pair, so
+    // `3get` sits inside an identifier rather than at a boundary. Before the
+    // containment guard a query for `get` reported "Symbol get was not invoked
+    // even once" about `cfg_3get` — an established fact about a function nobody
+    // asked about, and false about `get`, which had been called once.
+    const get = '_RNvCsi8SMnIpCoEi_13collide_probe3get';
+    const cfg = '_RNvCsi8SMnIpCoEi_13collide_probe8cfg_3get';
+    assert.equal(lcovSymbolMatches(['get'], get), true);
+    assert.equal(lcovSymbolMatches(['get'], cfg), false);
+    assert.equal(lcovSymbolMatches(['collide_probe', 'get'], get), true);
+    assert.equal(lcovSymbolMatches(['collide_probe', 'get'], cfg), false);
+    // The collision name is still reachable on its own — the guard rejects a
+    // needle that lands inside a longer identifier, not the identifier itself.
+    assert.equal(lcovSymbolMatches(['cfg_3get'], cfg), true);
+  });
+
+  test('each repeated segment consumes the name it matched', () => {
+    // The cursor advances past every match, so one identifier cannot satisfy two
+    // segments of the same query.
+    assert.equal(lcovSymbolMatches(['a', 'a'], '1a'), false);
+    assert.equal(lcovSymbolMatches(['a', 'a'], '_RNv__1a1a'), true);
+  });
+
+  test('a qualified query may skip components between its segments', () => {
+    // A trait method's path carries its Self type — `Gear::Widget::label` — so
+    // `Gear::label` names a subsequence. Measured: the contiguous form of this
+    // matcher rejected it against the real tracefiles, which is why the segments
+    // are matched independently rather than as one concatenated needle.
+    const label = `_RNvXs_${CRATE_HASH}_10lcov_probeNtB4_4GearNtB4_6Widget5label`;
+    assert.equal(lcovSymbolMatches(['Gear', 'label'], label), true);
+    assert.equal(lcovSymbolMatches(['Widget', 'label'], label), true);
+    assert.equal(lcovSymbolMatches(['Gear', 'Widget', 'label'], label), true);
+  });
+
+  test('a qualified query is a subsequence test, not a path-exact one', () => {
+    // Recorded rather than hidden: `lcov_probe::dup` also answers for
+    // `lcov_probe::nested::dup`. Each fact names the symbol it is about, so a
+    // reader can tell the two apart; narrowing this further would need the
+    // mangling's grammar.
+    const outer = `_RNv${CRATE_HASH}_10lcov_probe3dup`;
+    const nested = `_RNvNt${CRATE_HASH}_10lcov_probe6nested3dup`;
+    assert.equal(lcovSymbolMatches(['lcov_probe', 'dup'], outer), true);
+    assert.equal(lcovSymbolMatches(['lcov_probe', 'dup'], nested), true);
   });
 });

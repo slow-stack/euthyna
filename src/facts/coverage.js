@@ -63,7 +63,7 @@ function reproduceCommand({ coverageFile, symbol, file, source }) {
 /**
  * Read a coverage report.
  *
- * Three formats are accepted, all identified by shape rather than by filename:
+ * Five formats are accepted, all identified by shape rather than by filename:
  *
  * 1. c8 / v8-to-istanbul `coverage-final.json` — per-file keys are
  *    path/all/statementMap/s/branchMap/b/fnMap/f. There is no istanbul `hash`,
@@ -88,6 +88,12 @@ function reproduceCommand({ coverageFile, symbol, file, source }) {
  *    parsed from the gofmt'd source under --source (module root). A file
  *    absent from the profile is *not* evidence of "never executed" (the
  *    package may not be in the test binary), so absence is notEvaluated.
+ * 5. lcov tracefiles (`llvm-cov export --format=lcov`, gcov `.info`,
+ *    cargo-llvm-cov) — text records, one per source file, opened by `SF:` and
+ *    closed by `end_of_record`, with `FN:<line>,<name>` / `FNDA:<count>,<name>`
+ *    pairs inside. Function names **are** present, but mangled; see
+ *    parseLcov() for how a query is aligned with them and why `--source` is
+ *    not needed on this path.
  *
  * Anything that matches none of these shapes is **not a coverage report this
  * producer can read**, and is reported as notEvaluated — never fed through the
@@ -101,6 +107,17 @@ export async function loadCoverage(coverageFile) {
       throw new Error(
         'the file starts like a Go coverage profile ("mode:" header) but the body has lines that do not match ' +
           '"file:startLine.startCol,endLine.endCol numStatements count" — refusing to interpret it as coverage'
+      );
+    }
+    return parsed;
+  }
+  if (isLcovTracefile(raw)) {
+    const parsed = parseLcov(raw);
+    if (!parsed) {
+      throw new Error(
+        'the file looks like an lcov tracefile ("SF:" records closed by "end_of_record") but holds a line that is not ' +
+          'an lcov "key:value" line, a function line outside any record, an unclosed record, or an FN value that is not ' +
+          '"<line>,<name>" — refusing to interpret it as coverage'
       );
     }
     return parsed;
@@ -250,6 +267,404 @@ export function goFunctionRanges(text) {
 }
 
 /**
+ * lcov tracefiles (`llvm-cov export --format=lcov`, gcov `.info`,
+ * cargo-llvm-cov) are text records, one per source file:
+ *
+ *   SF:<source file>
+ *   FN:<line>,<mangled name>
+ *   FNDA:<count>,<mangled name>
+ *   FNF:12
+ *   FNH:11
+ *   DA:<line>,<count>
+ *   BRF:0
+ *   BRH:0
+ *   LF:52
+ *   LH:46
+ *   end_of_record
+ *
+ * Unlike a Go profile these records **do** carry function names, so a symbol
+ * query needs no source tree — but the names are mangled, which is what
+ * lcovSymbolMatches() is for.
+ *
+ * Two things this reader refuses rather than guesses:
+ *
+ *   - an `FN:` with no matching `FNDA:` is "no count", not "count 0". Defaulting
+ *     it to zero would manufacture a "never invoked" out of a missing line,
+ *     which is the one direction this producer must never get wrong.
+ *   - the newer `FNL:` / `FNA:` / `FNAB:` encodings are recognised and rejected.
+ *     No sample of them could be produced on this machine, and a function table
+ *     read out of a shape nobody has seen is the same failure
+ *     detectCoverageFormat() refuses — half a shape treated as coverage. (Their
+ *     spelling is taken from the lcov specification, not from an observed file.)
+ */
+function isLcovTracefile(raw) {
+  const first = String(raw)
+    .split(/\r?\n/)
+    .find(line => line.trim());
+  return /^(SF|TN):/.test((first ?? '').trim());
+}
+
+const LCOV_ENTRY_RE = /^([A-Za-z_]+):(.*)$/;
+const LCOV_FN_RE = /^(\d+),(.+)$/;
+
+/**
+ * Parse an lcov tracefile into
+ * `{ __lcov, files: Map<path, { functions: Map<mangled, { line, count }> }> }`,
+ * or null if any line is not one this reader can account for.
+ *
+ * `count` is null when a function is declared without an FNDA line: the parser
+ * never substitutes a number for a count that is not in the file.
+ *
+ * Two records for the same `SF:` (a split tracefile, or one file instrumented
+ * twice) are merged by summing counts. Summing is the one merge that cannot
+ * turn a nonzero count into zero, and zero is the only conclusion this producer
+ * draws — so the merge is safe in exactly the direction that matters. A name
+ * whose count is missing on either side stays null.
+ *
+ * DA/BRDA/FNF/FNH/LF/LH/BRF/BRH/TN/VER are recognised and ignored: the fact
+ * model here is function-level, and refusing a file over a line we never read
+ * would refuse files that answer the query correctly.
+ */
+export function parseLcov(raw) {
+  const lines = String(raw).split(/\r?\n/);
+  const files = new Map();
+  let fnLines = null;
+  let fnda = null;
+  let currentPath = null;
+
+  const closeRecord = () => {
+    const functions = new Map();
+    for (const [symbol, line] of fnLines) {
+      functions.set(symbol, { line, count: fnda.has(symbol) ? fnda.get(symbol) : null });
+    }
+    // An FNDA without an FN still carries a count, and a count is enough to say
+    // "never invoked"; only its line is unknown.
+    for (const [symbol, count] of fnda) {
+      if (!functions.has(symbol)) functions.set(symbol, { line: null, count });
+    }
+    const previous = files.get(currentPath);
+    if (previous) {
+      for (const [symbol, fn] of functions) {
+        const prev = previous.functions.get(symbol);
+        if (!prev) {
+          previous.functions.set(symbol, fn);
+          continue;
+        }
+        previous.functions.set(symbol, {
+          line: prev.line ?? fn.line,
+          count: prev.count === null || fn.count === null ? null : prev.count + fn.count
+        });
+      }
+    } else {
+      files.set(currentPath, { functions });
+    }
+    fnLines = null;
+    fnda = null;
+    currentPath = null;
+  };
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (line.trim() === 'end_of_record') {
+      if (currentPath === null) return null;
+      closeRecord();
+      continue;
+    }
+    const entry = LCOV_ENTRY_RE.exec(line);
+    if (!entry) return null;
+    const [, key, value] = entry;
+
+    // `TN:` names the test run and legally precedes a record (it is also what
+    // isLcovTracefile keys on when a file has no SF line yet), so it is ignored
+    // anywhere rather than refused outside a record.
+    if (key === 'TN') continue;
+
+    if (key === 'SF') {
+      if (currentPath !== null) return null; // a record was never closed
+      currentPath = value;
+      fnLines = new Map();
+      fnda = new Map();
+      continue;
+    }
+    if (currentPath === null) return null; // any other key outside a record
+    if (key === 'FN' || key === 'FNDA') {
+      const pair = LCOV_FN_RE.exec(value);
+      if (!pair) return null;
+      const [, first, symbol] = pair;
+      if (key === 'FN') {
+        if (!fnLines.has(symbol)) fnLines.set(symbol, Number(first));
+      } else {
+        fnda.set(symbol, (fnda.get(symbol) ?? 0) + Number(first));
+      }
+      continue;
+    }
+    if (key === 'FNL' || key === 'FNA' || key === 'FNAB') return null;
+  }
+
+  if (currentPath !== null) return null; // unclosed record at end of file
+  if (files.size === 0) return null; // no SF: record at all
+  return { __lcov: true, files };
+}
+
+/**
+ * The needle for one query segment: legacy Rust mangling and Itanium both
+ * encode an identifier as `<decimal length><the identifier>`, so `dup` is
+ * looked up as `3dup`.
+ */
+export function lcovSymbolNeedle(segments) {
+  return segments.map(segment => `${Buffer.byteLength(segment, 'utf8')}${segment}`).join('');
+}
+
+/**
+ * True when `name.slice(k, end)` is a complete `<length><value>` pair — the
+ * proof that `end` is where a fresh path segment begins.
+ */
+function lcovPairEndsAt(name, end) {
+  for (let k = 0; k < end; k++) {
+    if (!/\d/.test(name[k])) continue;
+    if (k > 0 && /\d/.test(name[k - 1])) continue; // only the start of a digit run
+    let digits = k;
+    while (digits < end && /\d/.test(name[digits])) digits++;
+    if (digits >= end) continue;
+    if (digits + Number(name.slice(k, digits)) === end) return true;
+  }
+  return false;
+}
+
+/**
+ * Does a mangled name answer for the query path `segments`?
+ *
+ * `true` when every segment appears, in order, each one anchored: at the start
+ * of the name, right after the mangling's own separators (`_`, as in
+ * `NtB2_7Counter4bump`), or at a proven `<length><value>` pair boundary. The
+ * segments are matched independently rather than as one concatenated needle
+ * because a mangling may insert a disambiguator between them — a `#[cfg(test)]`
+ * module comes out as `...5testss_14exercises_some`, not `...5tests14...`, so a
+ * concatenated needle would miss `tests::exercises_some` outright.
+ *
+ * What this buys: the digits before an identifier are its *byte* length, so
+ * requiring the digits to be there, and to be a real length prefix, is what
+ * keeps a query for `dup` from matching a function whose own name merely ends
+ * with those characters (`7xyz3dup` is one segment, and the character before
+ * `3dup` is `z`, which proves no pair ends there).
+ *
+ * One residual ambiguity, recorded rather than hidden: an identifier that
+ * itself ends in `_<digits><name>` can read as a boundary, because `_` is a
+ * separator in the scheme and the two are indistinguishable without parsing the
+ * mangling's grammar. Qualifying the query with its module path is the way
+ * around it.
+ *
+ * A query that is already mangled (`_R`/`_Z`) is matched exactly and never
+ * decoded: this producer has no demangler, and half-decoding one would be a
+ * guess about which symbol was asked for.
+ */
+export function lcovSymbolMatches(segments, name) {
+  if (segments.length === 0) return false;
+  if (segments.length === 1 && /^_[RZ]/.test(segments[0])) return name === segments[0];
+
+  let from = 0;
+  for (const segment of segments) {
+    const needle = lcovSymbolNeedle([segment]);
+    let found = -1;
+    for (let at = name.indexOf(needle, from); at !== -1; at = name.indexOf(needle, at + 1)) {
+      if (at === 0 || name[at - 1] === '_' || !/[A-Za-z0-9_]/.test(name[at - 1]) || lcovPairEndsAt(name, at)) {
+        found = at;
+        break;
+      }
+    }
+    if (found === -1) return false;
+    from = found + needle.length;
+  }
+  return true;
+}
+
+/**
+ * A query answered from the lcov function table.
+ *
+ * No `--source`: the tracefile carries function names, so this path answers the
+ * question Go's profile cannot answer without the source tree. The trade is
+ * that the names are mangled and the matching is done on the mangled form (see
+ * lcovSymbolMatches), and that a symbol which never made it into the
+ * instrumented build has no source-tree search to fall back on — it comes out
+ * as "not located" (unknown), never as clean.
+ */
+async function collectLcovCoverageFacts({ coverage, coverageFile, targets, lang }) {
+  const t = T(lang);
+  const facts = [];
+  const evaluated = [];
+  const notEvaluated = [];
+  let counter = 0;
+
+  const entries = [...coverage.files.entries()];
+
+  if (!entries.some(([, record]) => record.functions.size > 0)) {
+    // Line coverage cannot answer a symbol question: which lines belong to a
+    // function is in the source, not in the tracefile.
+    notEvaluated.push(
+      notEvaluatedEntry(
+        KIND.TEST_COVERAGE,
+        t(
+          'lcov tracefile 里没有任何 FN: 行 —— 只有文件与行数据，没有函数名。符号级问题（这个符号被调用过吗）' +
+            '需要 FN:/FNDA: 记录才能回答，行覆盖回答不了它',
+          'The lcov tracefile carries no FN: lines — file and line records only, no function names. ' +
+            'A symbol-level question (was this symbol invoked) needs FN:/FNDA: records; line coverage cannot answer it'
+        )
+      )
+    );
+    return { facts, evaluated, notEvaluated, measured: false };
+  }
+
+  if (targets.length === 0) {
+    notEvaluated.push(
+      notEvaluatedEntry(
+        KIND.TEST_COVERAGE,
+        t(
+          '没有指定要查询的符号（--symbol）',
+          'No symbol was given to look up (--symbol)'
+        )
+      )
+    );
+    return { facts, evaluated, notEvaluated, measured: false };
+  }
+
+  for (const target of targets) {
+    const scoped = target.file
+      ? entries.filter(([entryPath]) => matchesTarget(entryPath, target.file))
+      : entries;
+
+    if (target.file && scoped.length === 0) {
+      // Deliberately the opposite of the c8 path above: a c8 report lists the
+      // files it instrumented, so absence there means "not loaded", while
+      // llvm-cov and gcov emit records only for what was instrumented and
+      // --sources filters further — absence here proves nothing about execution.
+      notEvaluated.push(
+        notEvaluatedEntry(
+          KIND.TEST_COVERAGE,
+          t(
+            `${target.file} 没有出现在 lcov tracefile 中 —— llvm-cov/gcov 只为被插桩的目标产记录（--sources 还会再过滤一层），` +
+              '所以「未出现」不能当「未执行」',
+            `${target.file} does not appear in the lcov tracefile — llvm-cov/gcov emit a record only for what was instrumented ` +
+              '(and --sources filters further), so "absent" cannot be read as "never executed"'
+          )
+        )
+      );
+      continue;
+    }
+
+    const segments = target.symbol
+      .split('::')
+      .map(segment => segment.trim())
+      .filter(Boolean);
+    const matches = [];
+    for (const [entryPath, record] of scoped) {
+      for (const [mangled, fn] of record.functions) {
+        if (lcovSymbolMatches(segments, mangled)) matches.push({ entryPath, mangled, ...fn });
+      }
+    }
+
+    if (matches.length === 0) {
+      const needle = lcovSymbolNeedle(segments);
+      facts.push(
+        makeFact({
+          id: `coverage-${++counter}`,
+          kind: KIND.TEST_COVERAGE,
+          statement:
+            t(
+              `未能在覆盖率数据中定位符号 ${target.symbol}`,
+              `Could not locate symbol ${target.symbol} in the coverage data`
+            ) +
+            (target.file ? t(`（限定文件 ${target.file}）`, ` (restricted to file ${target.file})`) : '') +
+            t(
+              ` —— lcov 的 FN: 名是 mangled 的，本产出器按段边界匹配 "${needle}"；` +
+                '泛型实例、被内联的克隆，或写法不同的路径（crate:: 前缀、以 . 分隔）都可能匹配不上，' +
+                '也可能是它根本没被编译进这次插桩构建',
+              ` — lcov FN: names are mangled and this producer matches them by segment boundaries against "${needle}"; ` +
+                'a generic instantiation, an inlined clone, or a differently spelled path (a crate:: prefix, a "." separator) may fail to match, ' +
+                'and the symbol may simply not have been compiled into this instrumented build'
+            ),
+          status: STATUS.UNKNOWN,
+          evidence: { file: target.file ?? t('(未限定文件)', '(unrestricted file)') },
+          method: 'static',
+          detail: { symbol: target.symbol, reason: 'symbol_not_located_in_fnmap' }
+        })
+      );
+      continue;
+    }
+
+    // A query can legitimately hit several symbols — a bare name repeated in two
+    // modules, or one generic function instantiated twice at the same line. Each
+    // is reported on its own so no fact claims more than the symbol it names.
+    for (const hit of matches) {
+      const qualifier = matches.length > 1
+        ? t(
+            `（本次查询匹配到 ${matches.length} 个符号；本事实针对 ${hit.mangled}）`,
+            ` (${matches.length} symbols matched this query; this fact is about ${hit.mangled})`
+          )
+        : '';
+
+      if (hit.count === null) {
+        notEvaluated.push(
+          notEvaluatedEntry(
+            KIND.TEST_COVERAGE,
+            t(
+              `${hit.mangled} 在 tracefile 里有 FN: 行却没有任何 FNDA: 计数 —— 缺失的计数不是 0，这条记录答不了` +
+                `「${target.symbol} 是否被调用过」`,
+              `${hit.mangled} has an FN: line in the tracefile but no FNDA: count at all — a missing count is not a zero, ` +
+                `so this record cannot answer whether ${target.symbol} was invoked`
+            )
+          )
+        );
+        continue;
+      }
+
+      const zero = hit.count === 0;
+      facts.push(
+        makeFact({
+          id: `coverage-${++counter}`,
+          kind: KIND.TEST_COVERAGE,
+          statement: zero
+            ? t(
+                `符号 ${target.symbol} 在本次测试运行中一次都没有被调用（调用计数为 0）—— 任何依赖它的行为都没有被执行验证`,
+                `Symbol ${target.symbol} was not invoked even once in this test run (invocation count 0) — ` +
+                  'no behaviour depending on it was exercised'
+              ) + qualifier
+            : t(
+                `符号 ${target.symbol} 在本次测试运行中至少被调用过 ${hit.count} 次，但被调用**不能**证明任何特定调用点执行过 —— ` +
+                  '本事实只能证伪，不能证实',
+                `Symbol ${target.symbol} was invoked at least ${hit.count} time(s) in this test run, but being invoked ` +
+                  '**cannot** prove that any particular call site executed — this fact can refute, not confirm'
+              ) + qualifier,
+          status: zero ? STATUS.ESTABLISHED : STATUS.UNKNOWN,
+          evidence: hit.line === null ? { file: hit.entryPath } : { file: hit.entryPath, line: hit.line },
+          method: 'command',
+          command: reproduceCommand({ coverageFile, symbol: target.symbol, file: hit.entryPath }),
+          detail: {
+            symbol: target.symbol,
+            mangled: hit.mangled,
+            invocationCount: hit.count,
+            reason: zero ? 'invocation_count_zero' : 'nonzero_count_cannot_prove_call_site_execution'
+          }
+        })
+      );
+    }
+  }
+
+  // Same rule as the Go path: a query answered only by refusals was not answered
+  // at all, and "measured" must not let CI read that as clean.
+  const measured = facts.length > 0;
+  if (measured) {
+    evaluated.push({
+      kind: KIND.TEST_COVERAGE,
+      producer: 'euthyna-coverage',
+      format: 'lcov',
+      count: facts.length
+    });
+  }
+
+  return { facts, evaluated, notEvaluated, measured };
+}
+
+/**
  * True for coverage.py's `{"meta": {...}, "files": {...}}` shape.
  * A c8 report never has a top-level `meta` key.
  */
@@ -273,6 +688,7 @@ function isCoveragePyReport(coverage) {
  */
 export function detectCoverageFormat(coverage) {
   if (coverage && typeof coverage === 'object' && coverage.__go) return 'go';
+  if (coverage && typeof coverage === 'object' && coverage.__lcov) return 'lcov';
   if (isCoveragePyReport(coverage)) return 'coverage.py';
 
   const entries = Object.entries(coverage).filter(([, v]) => v && typeof v === 'object');
@@ -403,6 +819,12 @@ export async function collectCoverageFacts({ coverageFile, targets = [], source,
   // two-state mapping runs through function ranges, not per-file function maps.
   if (coverage.__go) {
     return collectGoCoverageFacts({ coverage, coverageFile, targets, source, lang });
+  }
+
+  // lcov tracefiles carry mangled function names, so symbol location works on
+  // the function table and needs no source tree — the opposite trade from Go.
+  if (coverage.__lcov) {
+    return collectLcovCoverageFacts({ coverage, coverageFile, targets, lang });
   }
 
   // c8: entries are the report's file keys directly.

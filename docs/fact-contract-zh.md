@@ -307,21 +307,32 @@ return checkPermission(user, 'never');     // 从未执行，但 c8 报 hits=1
 
 #### 已实测的 lcov 输出形状（Rust / llvm-cov，2026-10-12）
 
-`llvm-cov export --format=lcov` 的 tracefile 是本产出器读的第四种格式（cargo-llvm-cov、
-cargo-tarpaulin 以及任何 gcov/llvm-cov 目标都产它）。实测样本是一个两文件探针 crate——
+`llvm-cov export --format=lcov` 的 tracefile 是本产出器读的第五种格式——前四种是 c8/V8 JSON、
+classic istanbul、coverage.py 格式 3 与 Go 的文本 profile；cargo-llvm-cov 与 cargo-tarpaulin
+都产它，gcov 与 llvm-cov 也都产这个格式。**格式的覆盖面比符号匹配更宽**：查询只能对上路径段
+按 `<十进制长度><名字>` 编码的名字，所以纯 C 目标的 `FN:10,main` 永远匹配不上——实测
+`--symbol main` 对着 needle `4main` 报 "could not locate"。实测样本是一个两文件探针 crate——
 14 处函数声明、15 条 `FN:`（一个泛型函数在同一行单态化成两个符号，`FNF:` 把它们记作 12 与
 2）——`RUSTFLAGS="-C instrument-coverage"` + `cargo test` + `llvm-cov export`：
 
 - 每条记录以 `SF:<绝对路径>` 开头、`end_of_record` 结束；Windows 上是带反斜杠的绝对路径
 - **`FN:` 与 `FNDA:` 是两段分开的**（先全部 `FN:<行>,<mangled>`，再全部
   `FNDA:<计数>,<mangled>`），不是相邻配对。按行读流时不能假设它们成对出现
-- 符号名是 **legacy mangling**（`_RNvCs…10lcov_probe12never_called`），尾段
+- 符号名是 **Rust v0 mangling**（`_RNvCs…10lcov_probe12never_called`）——`-C instrument-coverage`
+  蕴含的就是它（`rustc -C help`：it "implies -C symbol-mangling-version=v0"）；更老的
+  Itanium 形 `_ZN…17h…E` 是裸 `rustc` 产的名字，不是这条路径实测过的形状。尾段
   `<十进制长度><名字>` 是路径段的编码。**本机没有任何可用 demangler**：`llvm-cov --Xdemangler`
   试过 `rust`/`rustfilt`/`llvm-cxxfilt`/`c++filt` 四个名字，全部报
   `could not find the demangler`。所以对齐只能在产出器侧做：把查询按 `::` 切段，
-  每段按 `<字节长度><段名>` 锚定匹配。`nested::dup` 只命中 `6nested3dup`；
+  每段按 `<字节长度><段名>` 锚定匹配（名字开头、mangling 自己的 `_` 分隔符之后、或已证明的
+  pair 边界），且**绝不落在更长的 pair 内部**——最后这半句就是「查 `get` 不会答到 `cfg_3get`」
+  的原因：`_RNvCsi8SMnIpCoEi_13collide_probe8cfg_3get` 整体读成一个完整的 pair，于是 `3get`
+  落在标识符内部。本分支早先的版本会对 `cfg_3get` 报 "Symbol get was not invoked even once"，
+  而这对真正被调用过的 `get` 来说是假的。`nested::dup` 只命中 `6nested3dup`；
   **裸 `dup` 会同时命中外层模块里的同名函数**——这是刻意镜像 c8 对裸方法名的行为
-  （每个命中各自报一条，各自带自己的 mangled 名），不是缺陷
+  （每个命中各自报一条，各自带自己的 mangled 名），不是缺陷。**带限定**的查询是子序列判定、
+  不是路径精确判定，所以 `lcov_probe::dup` 也会答 `lcov_probe::nested::dup`；每条事实都写明
+  自己针对哪个符号，`::` 查询的语句用那个 mangled 名，而不是把模式当符号来陈述
 - **同一行可以有多条 `FN:`**（泛型单态化：同一个 `generic_fn` 用 `i32` 和 `&str` 各调一次
   就是同一行 48 上的两条）。一个泛型实例化两次 = 两条事实
 - 同一 `SF:` 出现多条记录、或同一符号多条 `FNDA:` 时**计数求和**。求和是唯一不会把非零

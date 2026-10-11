@@ -137,14 +137,15 @@ node <euthyna repo>/bin/euthyna.js coverage `
 `--symbol` is repeatable — query several at once. Add `--file` to restrict to a single file.
 Go profiles additionally need `--source` (see below).
 
-**Four coverage formats are read** (auto-detected, no parameters needed):
+**Five coverage formats are read** (auto-detected, no parameters needed):
 
 | Format | Source | Notes |
 |---|---|---|
 | c8 / v8-to-istanbul `coverage-final.json` | JS projects (c8 lands at `coverage/coverage-final.json` by default) | Per-file `fnMap` + `f` (invocation-count array) |
+| classic istanbul `coverage-final.json` | jest's default provider, nyc | The same `fnMap` + `f` plus a `hash` field (c8 has no `hash`); both resolve through the same code path |
 | coverage.py JSON (format 3) | Python projects (produced by `coverage json`) | Top-level `{meta, files}`; in `functions`, "function name → list of executed lines", **no invocation counts**. Functions never called are still in the list with empty `executed_lines` |
 | Go `-coverprofile` (text) | Go projects (produced by `go test -coverprofile`) | A `mode:` header plus one line per block (`path:startL.startC,endL.endC stmts count`), **no function names**. `--source <module root>` is required: the producer reads top-level `func` declarations in the source to map line ranges back to functions |
-| lcov tracefile (text) | Rust projects (produced by cargo-llvm-cov / cargo-tarpaulin), and any gcov / llvm-cov target | `SF:` opens a record, `end_of_record` closes it; `FN:<line>,<symbol>` plus `FNDA:<count>,<symbol>` give a function name and its invocation count; **the symbol names are mangled**, and the producer matches the `module::function` path you write against the `<decimal length><name>` tail segments of legacy mangling |
+| lcov tracefile (text) | Rust projects (produced by cargo-llvm-cov / cargo-tarpaulin); gcov / llvm-cov produce the format too | `SF:` opens a record, `end_of_record` closes it; `FN:<line>,<symbol>` and `FNDA:<count>,<symbol>` give a function name and its invocation count (**two separate runs, not adjacent pairs**); **the symbol names are mangled**, and the producer anchors the `module::function` path you write against the `<decimal length><name>` tail segments of Rust v0 mangling, never inside a longer `<length><name>` pair — a query for `get` does not answer for `cfg_3get` |
 
 The Go production commands (Go targets):
 
@@ -200,7 +201,7 @@ node <euthyna repo>/bin/euthyna.js coverage `
 ```
 
 > lcov-specific caveats (measured on a probe crate):
-> 1. **The symbol names are mangled and this producer does not demangle them** (no usable demangler on this machine: `llvm-cov --Xdemangler` was tried with `rust` / `rustfilt` / `llvm-cxxfilt` / `c++filt`, and all four report `could not find the demangler`). Matching relies on the `<decimal length><name>` tail segments of legacy mangling, so write the query as `module::function` (split on `::`, matched per segment). `nested::dup` matches only `6nested3dup`, while a bare `dup` also matches the same-named function in an outer module — each hit is reported as its own fact carrying its own mangled name. An already-mangled query (starting with `_R`/`_Z`) is matched exactly and **never half-decoded**.
+> 1. **The symbol names are mangled and this producer does not demangle them** (no usable demangler on this machine: `llvm-cov --Xdemangler` was tried with `rust` / `rustfilt` / `llvm-cxxfilt` / `c++filt`, and all four report `could not find the demangler`). Matching relies on the `<decimal length><name>` tail segments of **Rust v0 mangling** (what `-C instrument-coverage` implies), so write the query as `module::function` (split on `::`, matched per segment). Each segment's name must start at a boundary — the start of the name, right after the mangling's own `_` separator, or at a proven pair boundary — and never strictly inside a longer pair: a query for `get` does not answer for `cfg_3get`. A qualified query is a subsequence test, not a path-exact one. `nested::dup` matches only `6nested3dup`, while a bare `dup` also matches the same-named function in an outer module — each hit is reported as its own fact carrying its own mangled name. An already-mangled query (starting with `_R`/`_Z`) is matched exactly and **never half-decoded**.
 > 2. **One file may carry several `FN:` lines pointing at the same line** (generic monomorphisation, closures). That is not a duplicate record. A generic function instantiated twice yields two facts, each carrying its own mangled name.
 > 3. When an `FN:` line exists and its `FNDA:` is missing, the result is "not evaluated", **never a default of 0** — inventing a "never invoked" out of thin air is the one direction this producer must not fail in.
 > 4. When one `SF:` appears in several records (or several same-named `FNDA:` lines exist), the counts are **summed**; summing can never turn a non-zero into zero, which is what keeps the only actionable conclusion (a count of 0) safe.

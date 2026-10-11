@@ -149,14 +149,15 @@ node <euthyna 仓库>/bin/euthyna.js coverage `
 `--symbol` 可重复，一次查多个。加 `--file` 可限定到某个文件。Go profile 另需 `--source`
 （见下）。
 
-**四种覆盖率格式都读**（自动识别，无需参数）：
+**五种覆盖率格式都读**（自动识别，无需参数）：
 
 | 格式 | 来源 | 说明 |
 |---|---|---|
 | c8 / v8-to-istanbul `coverage-final.json` | JS 项目（c8 默认落在 `coverage/coverage-final.json`） | 每文件有 `fnMap` + `f`（调用计数数组） |
+| classic istanbul `coverage-final.json` | jest 默认 provider、nyc | 同样的 `fnMap` + `f`，另多一个 `hash` 字段（c8 没有 `hash`），两者走同一条代码路径 |
 | coverage.py JSON（format 3） | Python 项目（`coverage json` 产出） | 顶层 `{meta, files}`；`functions` 里「函数名 → 已执行行列表」，**无调用计数**。从未调用的函数仍在列表中且 `executed_lines` 为空 |
 | Go `-coverprofile`（文本） | Go 项目（`go test -coverprofile` 产出） | `mode:` 头 + 每区块一行 `路径:起始行.列,结束行.列 语句数 命中数`，**无函数名**。必须加 `--source <模块根目录>`：产出器读源码里的顶层 `func` 把行区间映射回函数 |
-| lcov tracefile（文本） | Rust 项目（cargo-llvm-cov / cargo-tarpaulin 产出），以及任何 gcov / llvm-cov 目标 | `SF:` 开记录、`end_of_record` 收尾，`FN:<行>,<符号>` + `FNDA:<计数>,<符号>` 成对给出函数名与调用计数；**符号名是 mangled 的**，产出器按 legacy mangling 的 `<十进制长度><名字>` 尾段匹配你写的 `模块::函数` 路径 |
+| lcov tracefile（文本） | Rust 项目（cargo-llvm-cov / cargo-tarpaulin 产出），gcov / llvm-cov 也产这个格式 | `SF:` 开记录、`end_of_record` 收尾，`FN:<行>,<符号>` 与 `FNDA:<计数>,<符号>` 给出函数名与调用计数（**两段分开出现，不是相邻配对**）；**符号名是 mangled 的**，产出器按 Rust v0 mangling 的 `<十进制长度><名字>` 尾段锚定匹配你写的 `模块::函数` 路径，且绝不落在更长的 `<长度><名字>` 对内——查 `get` 不会答到 `cfg_3get` |
 
 Go 的产出命令（Go 目标）：
 ```bash
@@ -211,8 +212,11 @@ node <euthyna 仓库>/bin/euthyna.js coverage `
 > lcov 专属注意事项（在探针 crate 上实测）：
 > 1. **符号名是 mangled 的，本产出器不做 demangle**（本机没有可用的 demangler：
 >    `llvm-cov --Xdemangler` 试过 `rust` / `rustfilt` / `llvm-cxxfilt` / `c++filt`
->    四个名字全部报 `could not find the demangler`）。匹配靠 legacy mangling 的
->    `<十进制长度><名字>` 尾段编码，所以查询写 `模块::函数`（`split('::')` 后逐段匹配）。
+>    四个名字全部报 `could not find the demangler`）。匹配靠 **Rust v0 mangling**
+>    （`-C instrument-coverage` 蕴含的版本）的 `<十进制长度><名字>` 尾段编码，
+>    所以查询写 `模块::函数`（`split('::')` 后逐段匹配）。每段的名字必须从段边界起算——
+>    名字开头、mangling 自己的 `_` 分隔符之后、或已证明的 pair 边界——且绝不落在更长的
+>    pair 内部：查 `get` 不会答到 `cfg_3get`。带限定的查询是子序列判定而非路径精确判定。
 >    `nested::dup` 只命中 `6nested3dup`，裸 `dup` 会同时命中外层模块里的同名函数——
 >    每个命中各自报一条事实并带上自己的 mangled 名。已经 mangled 的查询（`_R`/`_Z` 开头）
 >    只做精确匹配，**绝不半解码**。

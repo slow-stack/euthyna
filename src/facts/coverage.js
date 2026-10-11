@@ -479,6 +479,14 @@ function lcovInsideLongerPair(name, idStart, idEnd) {
  * with those characters (`7xyz3dup` is one segment, and the character before
  * `3dup` is `z`, which proves no pair ends there).
  *
+ * The boundary test's fourth alternative — any character outside `[A-Za-z0-9_]`
+ * — is broader than anything measured needs: every character of the 15 `FN:`
+ * symbols in the probe tracefile is inside that class, so the mangling's own
+ * `_` separator and the length prefixes are the only boundaries the measurement
+ * actually exercises. It stays permissive on purpose: the observed names give no
+ * reason to narrow it, and a narrower rule invented without the mangling's
+ * grammar could reject a legal boundary it cannot recognise.
+ *
  * One residual over-inclusion, recorded rather than hidden: a *qualified* query
  * is a subsequence test, not a path-exact one, so `lcov_probe::dup` also
  * answers for `lcov_probe::nested::dup`. Each fact names the symbol it is about

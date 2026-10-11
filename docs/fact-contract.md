@@ -307,8 +307,12 @@ Hence the hard constraints at the contract level:
 
 #### The measured lcov output shape (Rust / llvm-cov, 2026-10-12)
 
-An `llvm-cov export --format=lcov` tracefile is the fourth format this producer reads
-(cargo-llvm-cov, cargo-tarpaulin and any gcov/llvm-cov target all emit it). The measured
+An `llvm-cov export --format=lcov` tracefile is the fifth format this producer reads — after
+c8/V8 JSON, classic istanbul, coverage.py format 3 and Go's text profile; cargo-llvm-cov and
+cargo-tarpaulin emit it, and gcov and llvm-cov both produce the format. **The format is wider
+than the symbol matching**: a query resolves only against a name whose path segments are encoded
+as `<decimal length><name>`, so a plain C target's `FN:10,main` never matches — measured,
+`--symbol main` answers "could not locate" against the needle `4main`. The measured
 sample is a two-file probe crate — 14 function declarations, 15 `FN:` entries, because one
 generic function is monomorphised onto two symbols at the same line (`FNF:` counts them as 12
 and 2) — built with `RUSTFLAGS="-C instrument-coverage"`, `cargo test`, then `llvm-cov export`:
@@ -317,14 +321,25 @@ and 2) — built with `RUSTFLAGS="-C instrument-coverage"`, `cargo test`, then `
   path is absolute and backslash-separated
 - **`FN:` and `FNDA:` come in two separate runs** (every `FN:<line>,<mangled>` first, then every
   `FNDA:<count>,<mangled>`), not as adjacent pairs. A line-stream parser must not assume pairing
-- The symbol names are **legacy mangling** (`_RNvCs…10lcov_probe12never_called`), whose tail
-  segments encode a path segment as `<decimal length><name>`. **There is no usable demangler on
-  this machine**: `llvm-cov --Xdemangler` was tried with `rust`/`rustfilt`/`llvm-cxxfilt`/`c++filt`
-  and all four report `could not find the demangler`. Alignment therefore happens on the producer
-  side: the query is split on `::` and each segment is matched as `<byte length><segment>`.
+- The symbol names are **Rust v0 mangling** (`_RNvCs…10lcov_probe12never_called`) — which is what
+  `-C instrument-coverage` implies (`rustc -C help`: it "implies -C symbol-mangling-version=v0");
+  the older Itanium-style `_ZN…17h…E` name is what a bare `rustc` emits, and is not the shape this
+  path was measured against. Tail segments encode a path segment as `<decimal length><name>`.
+  **There is no usable demangler on this machine**: `llvm-cov --Xdemangler` was tried with
+  `rust`/`rustfilt`/`llvm-cxxfilt`/`c++filt` and all four report `could not find the demangler`.
+  Alignment therefore happens on the producer side: the query is split on `::` and each segment is
+  matched as `<byte length><segment>`, anchored at the name's start, after the mangling's own `_`
+  separator, or at a proven pair boundary **and never inside a longer pair** — that last clause is
+  what keeps a query for `get` from answering for `cfg_3get`, since
+  `_RNvCsi8SMnIpCoEi_13collide_probe8cfg_3get` reads as one complete pair and `3get` therefore sits
+  inside an identifier. An earlier revision of this branch reported "Symbol get was not invoked
+  even once" about `cfg_3get` — false about `get`, the function that had been called.
   `nested::dup` matches only `6nested3dup`; **a bare `dup` also matches the same-named function in
   an outer module** — deliberately mirroring c8's handling of bare method names (each hit becomes
-  its own fact carrying its own mangled name), not a defect
+  its own fact carrying its own mangled name), not a defect. A **qualified** query is a subsequence
+  test rather than a path-exact one, so `lcov_probe::dup` also answers for `lcov_probe::nested::dup`;
+  every fact names the symbol it is about, and a `::` query states that mangled name rather than
+  the pattern as if it were a symbol
 - **The same line may carry several `FN:` entries** (generic monomorphisation: one `generic_fn`
   called once with `i32` and once with `&str` yields two entries on line 48). One generic function
   instantiated twice is two facts

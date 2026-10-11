@@ -308,8 +308,9 @@ return checkPermission(user, 'never');     // 从未执行，但 c8 报 hits=1
 #### 已实测的 lcov 输出形状（Rust / llvm-cov，2026-10-12）
 
 `llvm-cov export --format=lcov` 的 tracefile 是本产出器读的第四种格式（cargo-llvm-cov、
-cargo-tarpaulin 以及任何 gcov/llvm-cov 目标都产它）。实测样本是一个 12 函数 2 文件的
-探针 crate，`RUSTFLAGS="-C instrument-coverage"` + `cargo test` + `llvm-cov export`：
+cargo-tarpaulin 以及任何 gcov/llvm-cov 目标都产它）。实测样本是一个两文件探针 crate——
+14 处函数声明、15 条 `FN:`（一个泛型函数在同一行单态化成两个符号，`FNF:` 把它们记作 12 与
+2）——`RUSTFLAGS="-C instrument-coverage"` + `cargo test` + `llvm-cov export`：
 
 - 每条记录以 `SF:<绝对路径>` 开头、`end_of_record` 结束；Windows 上是带反斜杠的绝对路径
 - **`FN:` 与 `FNDA:` 是两段分开的**（先全部 `FN:<行>,<mangled>`，再全部

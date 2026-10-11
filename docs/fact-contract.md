@@ -309,8 +309,9 @@ Hence the hard constraints at the contract level:
 
 An `llvm-cov export --format=lcov` tracefile is the fourth format this producer reads
 (cargo-llvm-cov, cargo-tarpaulin and any gcov/llvm-cov target all emit it). The measured
-sample is a 12-function, 2-file probe crate built with
-`RUSTFLAGS="-C instrument-coverage"`, `cargo test`, then `llvm-cov export`:
+sample is a two-file probe crate — 14 function declarations, 15 `FN:` entries, because one
+generic function is monomorphised onto two symbols at the same line (`FNF:` counts them as 12
+and 2) — built with `RUSTFLAGS="-C instrument-coverage"`, `cargo test`, then `llvm-cov export`:
 
 - Each record opens with `SF:<absolute path>` and closes with `end_of_record`; on Windows the
   path is absolute and backslash-separated

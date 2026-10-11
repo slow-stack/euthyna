@@ -149,13 +149,14 @@ node <euthyna 仓库>/bin/euthyna.js coverage `
 `--symbol` 可重复，一次查多个。加 `--file` 可限定到某个文件。Go profile 另需 `--source`
 （见下）。
 
-**三种覆盖率格式都读**（自动识别，无需参数）：
+**四种覆盖率格式都读**（自动识别，无需参数）：
 
 | 格式 | 来源 | 说明 |
 |---|---|---|
 | c8 / v8-to-istanbul `coverage-final.json` | JS 项目（c8 默认落在 `coverage/coverage-final.json`） | 每文件有 `fnMap` + `f`（调用计数数组） |
 | coverage.py JSON（format 3） | Python 项目（`coverage json` 产出） | 顶层 `{meta, files}`；`functions` 里「函数名 → 已执行行列表」，**无调用计数**。从未调用的函数仍在列表中且 `executed_lines` 为空 |
 | Go `-coverprofile`（文本） | Go 项目（`go test -coverprofile` 产出） | `mode:` 头 + 每区块一行 `路径:起始行.列,结束行.列 语句数 命中数`，**无函数名**。必须加 `--source <模块根目录>`：产出器读源码里的顶层 `func` 把行区间映射回函数 |
+| lcov tracefile（文本） | Rust 项目（cargo-llvm-cov / cargo-tarpaulin 产出），以及任何 gcov / llvm-cov 目标 | `SF:` 开记录、`end_of_record` 收尾，`FN:<行>,<符号>` + `FNDA:<计数>,<符号>` 成对给出函数名与调用计数；**符号名是 mangled 的**，产出器按 legacy mangling 的 `<十进制长度><名字>` 尾段匹配你写的 `模块::函数` 路径 |
 
 Go 的产出命令（Go 目标）：
 ```bash
@@ -188,6 +189,43 @@ uv run --with coverage python -m coverage json -o <输出路径>.json
 
 覆盖率文件从哪来：项目自己产出就用它。项目不产出覆盖率时，**要么用项目自己的方式跑一次
 测试产出它，要么把该判据标为「不可评估」**。
+
+lcov 的产出命令（Rust 目标，本机实测）：
+
+```powershell
+# 0. llvm-cov / llvm-profdata 不在 PATH 上，先定位 rustc 自带的那一份
+$bin = (rustc --print sysroot) + "\lib\rustlib\x86_64-pc-windows-msvc\bin"
+# 1. 插桩构建 + 跑测试
+$env:RUSTFLAGS = "-C instrument-coverage"
+$env:LLVM_PROFILE_FILE = "<绝对路径>\prof\probe-%p-%m.profraw"
+cargo test
+# 2. 合并 profraw，再从测试二进制导出 lcov
+& "$bin\llvm-profdata.exe" merge -sparse <绝对路径>\prof\*.profraw -o <绝对路径>\probe.profdata
+& "$bin\llvm-cov.exe" export --format=lcov --instr-profile=<绝对路径>\probe.profdata `
+  "<target\debug\deps\<crate>-<hash>.exe>" --sources src > <绝对路径>\lcov.info
+# 3. 查询（lcov 不需要 --source：函数名就在 FN: 行里）
+node <euthyna 仓库>/bin/euthyna.js coverage `
+  --coverage <绝对路径>\lcov.info --symbol <模块::函数> --file <绝对路径>\src\lib.rs
+```
+
+> lcov 专属注意事项（在探针 crate 上实测）：
+> 1. **符号名是 mangled 的，本产出器不做 demangle**（本机没有可用的 demangler：
+>    `llvm-cov --Xdemangler` 试过 `rust` / `rustfilt` / `llvm-cxxfilt` / `c++filt`
+>    四个名字全部报 `could not find the demangler`）。匹配靠 legacy mangling 的
+>    `<十进制长度><名字>` 尾段编码，所以查询写 `模块::函数`（`split('::')` 后逐段匹配）。
+>    `nested::dup` 只命中 `6nested3dup`，裸 `dup` 会同时命中外层模块里的同名函数——
+>    每个命中各自报一条事实并带上自己的 mangled 名。已经 mangled 的查询（`_R`/`_Z` 开头）
+>    只做精确匹配，**绝不半解码**。
+> 2. **同一个文件可能有多条 `FN:` 指向同一行**（泛型单态化、闭包），这不是重复记录。
+>    一个泛型函数实例化两次就是两条事实，各自带自己的 mangled 名。
+> 3. `FN:` 行存在而 `FNDA:` 缺失时报「未评估」，**不默认成 0**——凭空造出「从未调用」
+>    是这个产出器最不能犯的方向。
+> 4. 同一 `SF:` 出现多条记录（或同名多条 `FNDA:`）时**计数求和**；求和不会把非零变零，
+>    对唯一可行动的结论（计数为 0）安全。
+> 5. 文件不在 tracefile 里报**「未评估」**（llvm-cov / gcov 只为被插桩的目标产记录，
+>    `--sources` 还会再过滤一层）——这与 c8 的「文件不在数据里 = 从未执行」刻意相反。
+> 6. 认较新的 `FNL:`/`FNA:` 编码时会**明确拒绝**而不是按猜的形状读；`SF:` 路径是绝对
+>    路径（Windows 上是带反斜杠的）。
 
 ### 输出长什么样（真实捕获，一次查询命中两种结果）
 

@@ -137,13 +137,14 @@ node <euthyna repo>/bin/euthyna.js coverage `
 `--symbol` is repeatable — query several at once. Add `--file` to restrict to a single file.
 Go profiles additionally need `--source` (see below).
 
-**Three coverage formats are read** (auto-detected, no parameters needed):
+**Four coverage formats are read** (auto-detected, no parameters needed):
 
 | Format | Source | Notes |
 |---|---|---|
 | c8 / v8-to-istanbul `coverage-final.json` | JS projects (c8 lands at `coverage/coverage-final.json` by default) | Per-file `fnMap` + `f` (invocation-count array) |
 | coverage.py JSON (format 3) | Python projects (produced by `coverage json`) | Top-level `{meta, files}`; in `functions`, "function name → list of executed lines", **no invocation counts**. Functions never called are still in the list with empty `executed_lines` |
 | Go `-coverprofile` (text) | Go projects (produced by `go test -coverprofile`) | A `mode:` header plus one line per block (`path:startL.startC,endL.endC stmts count`), **no function names**. `--source <module root>` is required: the producer reads top-level `func` declarations in the source to map line ranges back to functions |
+| lcov tracefile (text) | Rust projects (produced by cargo-llvm-cov / cargo-tarpaulin), and any gcov / llvm-cov target | `SF:` opens a record, `end_of_record` closes it; `FN:<line>,<symbol>` plus `FNDA:<count>,<symbol>` give a function name and its invocation count; **the symbol names are mangled**, and the producer matches the `module::function` path you write against the `<decimal length><name>` tail segments of legacy mangling |
 
 The Go production commands (Go targets):
 
@@ -179,6 +180,32 @@ uv run --with coverage python -m coverage json -o <output path>.json
 >    `module-not-imported`).
 
 Where the coverage file comes from: if the project produces one, use it. When the project does not, **either run its tests once with the project's own tooling to produce it, or mark the criterion as "not evaluable"**.
+
+The lcov production commands (Rust targets, measured on this machine):
+
+```powershell
+# 0. llvm-cov / llvm-profdata are not on PATH; locate rustc's own copies first
+$bin = (rustc --print sysroot) + "\lib\rustlib\x86_64-pc-windows-msvc\bin"
+# 1. instrumented build + run the tests
+$env:RUSTFLAGS = "-C instrument-coverage"
+$env:LLVM_PROFILE_FILE = "<absolute path>\prof\probe-%p-%m.profraw"
+cargo test
+# 2. merge the profraw files, then export lcov from the test binary
+& "$bin\llvm-profdata.exe" merge -sparse <absolute path>\prof\*.profraw -o <absolute path>\probe.profdata
+& "$bin\llvm-cov.exe" export --format=lcov --instr-profile=<absolute path>\probe.profdata `
+  "<target\debug\deps\<crate>-<hash>.exe>" --sources src > <absolute path>\lcov.info
+# 3. query (lcov needs no --source: the function names are in the FN: lines)
+node <euthyna repo>/bin/euthyna.js coverage `
+  --coverage <absolute path>\lcov.info --symbol <module::function> --file <absolute path>\src\lib.rs
+```
+
+> lcov-specific caveats (measured on a probe crate):
+> 1. **The symbol names are mangled and this producer does not demangle them** (no usable demangler on this machine: `llvm-cov --Xdemangler` was tried with `rust` / `rustfilt` / `llvm-cxxfilt` / `c++filt`, and all four report `could not find the demangler`). Matching relies on the `<decimal length><name>` tail segments of legacy mangling, so write the query as `module::function` (split on `::`, matched per segment). `nested::dup` matches only `6nested3dup`, while a bare `dup` also matches the same-named function in an outer module — each hit is reported as its own fact carrying its own mangled name. An already-mangled query (starting with `_R`/`_Z`) is matched exactly and **never half-decoded**.
+> 2. **One file may carry several `FN:` lines pointing at the same line** (generic monomorphisation, closures). That is not a duplicate record. A generic function instantiated twice yields two facts, each carrying its own mangled name.
+> 3. When an `FN:` line exists and its `FNDA:` is missing, the result is "not evaluated", **never a default of 0** — inventing a "never invoked" out of thin air is the one direction this producer must not fail in.
+> 4. When one `SF:` appears in several records (or several same-named `FNDA:` lines exist), the counts are **summed**; summing can never turn a non-zero into zero, which is what keeps the only actionable conclusion (a count of 0) safe.
+> 5. A file absent from the tracefile is reported as **"not evaluated"** (llvm-cov / gcov only emit records for instrumented targets, and `--sources` filters further) — deliberately the opposite of c8's "file absent from the data = never executed".
+> 6. The newer `FNL:`/`FNA:` encoding is **explicitly refused** rather than read out of a guessed shape; `SF:` paths are absolute (backslash-separated on Windows).
 
 ### What the output looks like (real capture; one query hitting both result kinds)
 

@@ -305,6 +305,44 @@ Hence the hard constraints at the contract level:
   — **not istanbul's if/else model**, but V8 block ranges under a different label (`v8-to-istanbul/lib/branch.js:21-27`),
   and it **carries complete start/end line and column**, so genuine range-containment checks are possible
 
+#### The measured lcov output shape (Rust / llvm-cov, 2026-10-12)
+
+An `llvm-cov export --format=lcov` tracefile is the fourth format this producer reads
+(cargo-llvm-cov, cargo-tarpaulin and any gcov/llvm-cov target all emit it). The measured
+sample is a 12-function, 2-file probe crate built with
+`RUSTFLAGS="-C instrument-coverage"`, `cargo test`, then `llvm-cov export`:
+
+- Each record opens with `SF:<absolute path>` and closes with `end_of_record`; on Windows the
+  path is absolute and backslash-separated
+- **`FN:` and `FNDA:` come in two separate runs** (every `FN:<line>,<mangled>` first, then every
+  `FNDA:<count>,<mangled>`), not as adjacent pairs. A line-stream parser must not assume pairing
+- The symbol names are **legacy mangling** (`_RNvCs…10lcov_probe12never_called`), whose tail
+  segments encode a path segment as `<decimal length><name>`. **There is no usable demangler on
+  this machine**: `llvm-cov --Xdemangler` was tried with `rust`/`rustfilt`/`llvm-cxxfilt`/`c++filt`
+  and all four report `could not find the demangler`. Alignment therefore happens on the producer
+  side: the query is split on `::` and each segment is matched as `<byte length><segment>`.
+  `nested::dup` matches only `6nested3dup`; **a bare `dup` also matches the same-named function in
+  an outer module** — deliberately mirroring c8's handling of bare method names (each hit becomes
+  its own fact carrying its own mangled name), not a defect
+- **The same line may carry several `FN:` entries** (generic monomorphisation: one `generic_fn`
+  called once with `i32` and once with `&str` yields two entries on line 48). One generic function
+  instantiated twice is two facts
+- When one `SF:` appears in several records, or one symbol in several `FNDA:` lines, the counts are
+  **summed**. Summing is the only merge that cannot turn a non-zero into zero, which keeps the one
+  actionable conclusion (a count of 0) safe
+- A file absent from the tracefile is reported as **"not evaluated"**, **deliberately the opposite**
+  of c8's "file absent from the data = never executed": llvm-cov/gcov only emit records for
+  instrumented targets, and `--sources` filters again
+- An `FN:` with no `FNDA:` is **"not evaluated", never a default of 0**
+
+**Inlining does not manufacture a false "never invoked" (measured, and verified in both
+directions).** The one fatal counterexample to `count === 0 ⇒ never invoked` would be a function
+that was called but fully inlined, leaving a count of 0. Measured on a dedicated probe crate with a
+release build under `-C instrument-coverage`: an `#[inline(always)]` function that is called still
+reports `FNDA:1` (the `#[inline(never)]` control reports 1 as well), so **no case was observed where
+inlining flattened a called function to 0**. That holds only within this scope — it measures
+llvm-cov-instrumented behaviour, not a universal guarantee across every build configuration.
+
 #### Failure modes a consumer must handle
 
 | Situation | Symptom | Requirement |
@@ -313,7 +351,7 @@ Hence the hard constraints at the contract level:
 | c8's default exclude rules | `test/**`, `**/*.test.js`, `**/__tests__/**` are excluded | Production callers that fall under these globs **silently disappear** |
 | Negative column numbers in V8 block ranges | `L9:-1-L10:0` seen in real testing | Naive column comparison breaks |
 | Module top-level call sites | Present only in `branchMap` (`fnMap` filters out `functionName===""`) | You cannot query `fnMap` alone |
-| A file that is not coverage data at all | Has neither `fnMap`/`f` (c8/istanbul) nor `functions` (coverage.py) | Report as *not evaluated* — feeding it to the locator would answer "symbol not located" with a straight face |
+| A file that is not coverage data at all | Has neither `fnMap`/`f` (c8/istanbul) nor `functions` (coverage.py), and is not a Go profile or an lcov tracefile | Report as *not evaluated* — feeding it to the locator would answer "symbol not located" with a straight face |
 | A symbol that was renamed | Not in `fnMap` under the new name | `unknown`, **never** "established as never invoked" |
 
 #### Other languages: worse than JS — do not extrapolate
@@ -324,7 +362,7 @@ Hence the hard constraints at the contract level:
 | Python (coverage.py) | Lines + arcs | ❌ Short circuits are completely invisible to it |
 | **Go** | Basic blocks | ❌ **Worse than V8** — in testing, `return Strict && Check(...)` never called `Check`;
   Go does not even split the block, **so it cannot even falsify** |
-| Rust (llvm region) | LLVM region | ⚠️ Partial |
+| Rust (llvm region) | LLVM region | ✅ **Function-level falsification works** (lcov's `FN:`/`FNDA:` carry a per-function invocation count; measured 2026-10-12: never-invoked reports 0, invoked reports 1, including `#[inline(always)]`); call-site level remains ⚠️ Partial |
 
 #### Relation to prior art
 

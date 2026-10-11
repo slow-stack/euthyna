@@ -305,6 +305,37 @@ return checkPermission(user, 'never');     // 从未执行，但 c8 报 hits=1
   —— **不是 istanbul 的 if/else 模型**，而是 V8 块范围换了个标签（`v8-to-istanbul/lib/branch.js:21-27`），
   但它**带完整 start/end 行列**，所以能做真正的范围包含判断
 
+#### 已实测的 lcov 输出形状（Rust / llvm-cov，2026-10-12）
+
+`llvm-cov export --format=lcov` 的 tracefile 是本产出器读的第四种格式（cargo-llvm-cov、
+cargo-tarpaulin 以及任何 gcov/llvm-cov 目标都产它）。实测样本是一个 12 函数 2 文件的
+探针 crate，`RUSTFLAGS="-C instrument-coverage"` + `cargo test` + `llvm-cov export`：
+
+- 每条记录以 `SF:<绝对路径>` 开头、`end_of_record` 结束；Windows 上是带反斜杠的绝对路径
+- **`FN:` 与 `FNDA:` 是两段分开的**（先全部 `FN:<行>,<mangled>`，再全部
+  `FNDA:<计数>,<mangled>`），不是相邻配对。按行读流时不能假设它们成对出现
+- 符号名是 **legacy mangling**（`_RNvCs…10lcov_probe12never_called`），尾段
+  `<十进制长度><名字>` 是路径段的编码。**本机没有任何可用 demangler**：`llvm-cov --Xdemangler`
+  试过 `rust`/`rustfilt`/`llvm-cxxfilt`/`c++filt` 四个名字，全部报
+  `could not find the demangler`。所以对齐只能在产出器侧做：把查询按 `::` 切段，
+  每段按 `<字节长度><段名>` 锚定匹配。`nested::dup` 只命中 `6nested3dup`；
+  **裸 `dup` 会同时命中外层模块里的同名函数**——这是刻意镜像 c8 对裸方法名的行为
+  （每个命中各自报一条，各自带自己的 mangled 名），不是缺陷
+- **同一行可以有多条 `FN:`**（泛型单态化：同一个 `generic_fn` 用 `i32` 和 `&str` 各调一次
+  就是同一行 48 上的两条）。一个泛型实例化两次 = 两条事实
+- 同一 `SF:` 出现多条记录、或同一符号多条 `FNDA:` 时**计数求和**。求和是唯一不会把非零
+  变零的合并方式，对唯一可行动的结论（计数为 0）安全
+- 文件不在 tracefile 里报**「未评估」**，与 c8 的「文件不在数据里 = 从未执行」**刻意相反**：
+  llvm-cov/gcov 只为被插桩的目标产记录，`--sources` 还会再过滤一层
+- `FN:` 有而 `FNDA:` 无 → **「未评估」，绝不默认成 0**
+
+**内联不会制造假的「从未调用」（实测，反向验证过）。** `count === 0 ⇒ 从未调用` 这条
+唯一可行动的推论，唯一的致命反例是「函数被调用了、但被完全内联掉、于是计数为 0」。
+在一个专门的探针 crate 上实测 release 构建 + `-C instrument-coverage`：
+`#[inline(always)]` 的函数被调用时仍报 `FNDA:1`（`#[inline(never)]` 的对照同样报 1），
+即**没有观测到内联把已调用的函数压成 0**。这条只在这个范围内成立——它测的是
+llvm-cov 插桩下的行为，不是「任何构建配置下都安全」的普遍保证。
+
 #### 消费端必须处理的失败模式
 
 | 情况 | 表现 | 要求 |
@@ -313,7 +344,7 @@ return checkPermission(user, 'never');     // 从未执行，但 c8 报 hits=1
 | c8 默认排除规则 | `test/**`、`**/*.test.js`、`**/__tests__/**` 被排掉 | 生产调用方落这些 glob 会**静默消失** |
 | V8 块范围负列号 | 实测出现 `L9:-1-L10:0` | 朴素列比较会崩 |
 | 模块顶层调用点 | 只在 `branchMap` 里（`fnMap` 过滤掉 `functionName===""`） | 不能只查 `fnMap` |
-| 根本不是覆盖率文件 | 既无 `fnMap`/`f`（c8/istanbul）也无 `functions`（coverage.py） | 报 **notEvaluated**——喂给定位器会一本正经地答"符号未定位" |
+| 根本不是覆盖率文件 | 既无 `fnMap`/`f`（c8/istanbul）也无 `functions`（coverage.py），也不是 Go profile 或 lcov tracefile | 报 **notEvaluated**——喂给定位器会一本正经地答"符号未定位" |
 | 符号被改名 | 新名字不在 `fnMap` 里 | `unknown`，**绝不**「已确证从未被调用」 |
 
 #### 其他语言：比 JS 更差，不要外推
@@ -324,7 +355,7 @@ return checkPermission(user, 'never');     // 从未执行，但 c8 报 hits=1
 | Python (coverage.py) | 行 + 分支弧 | ❌ 短路对它完全隐形 |
 | **Go** | 基本块 | ❌ **比 V8 更差**——实测 `return Strict && Check(...)` 里 `Check` 从未被调用，
   Go 连块都没切，**连证伪都做不到** |
-| Rust (llvm region) | LLVM region | ⚠️ 部分 |
+| Rust (llvm region) | LLVM region | ✅ 能**证伪函数级**（lcov 的 `FN:`/`FNDA:` 给每函数的调用计数，2026-10-12 实测：从未调用的报 0、被调用的报 1，含 `#[inline(always)]`）；调用点级仍是 ⚠️ 部分 |
 
 #### 与 prior art 的关系
 

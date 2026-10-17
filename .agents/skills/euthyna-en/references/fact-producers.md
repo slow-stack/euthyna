@@ -207,6 +207,7 @@ node <euthyna repo>/bin/euthyna.js coverage `
 > 4. When one `SF:` appears in several records (or several same-named `FNDA:` lines exist), the counts are **summed**; summing can never turn a non-zero into zero, which is what keeps the only actionable conclusion (a count of 0) safe.
 > 5. A file absent from the tracefile is reported as **"not evaluated"** (llvm-cov / gcov only emit records for instrumented targets, and `--sources` filters further) — deliberately the opposite of c8's "file absent from the data = never executed".
 > 6. The newer `FNL:`/`FNA:` encoding is **explicitly refused** rather than read out of a guessed shape; `SF:` paths are absolute (backslash-separated on Windows).
+> 7. Three spellings the specification allows are read rather than refused: **comment records** (`#` in column 0) may appear anywhere, and `geninfo --comment` writes one at the top by default; **`KF:` is a synonym for `SF:`**; and **`FN:<start>,<end>,<name>`** is the shape gcc 9+ emits — the end line is discarded but must be *consumed*, or `14,` sticks to the symbol name and splits one function into a record with a line and no count plus one with a count and no line, the first of which then reports a spurious not-evaluated. An indented `#` is still refused.
 
 ### What the output looks like (real capture; one query hitting both result kinds)
 

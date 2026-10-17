@@ -296,16 +296,43 @@ export function goFunctionRanges(text) {
  *     read out of a shape nobody has seen is the same failure
  *     detectCoverageFormat() refuses — half a shape treated as coverage. (Their
  *     spelling is taken from the lcov specification, not from an observed file.)
+ *
+ * Three spellings the specification allows beyond the shape measured above, and
+ * that are therefore read instead of refused:
+ *
+ *   - **comment records** (`#…` in column 0) may appear "anywhere — inside a
+ *     section or outside one" and are ignored when a tracefile is read.
+ *     `geninfo --comment` writes one at the very top by default, so refusing them
+ *     refused a whole class of real files — and, because the first line was then
+ *     not an SF/TN line, reported the file as "not valid JSON", which points the
+ *     reader at the wrong problem entirely. The `#` must be in column 0: that is
+ *     the spec's comment form, and an indented `#` stays an unaccounted-for line.
+ *   - **`KF:` is a synonym for `SF:`** — stated outright in the specification,
+ *     and lcov's own reader matches `/^[SK]F:/`.
+ *   - **`FN:<start>,<end>,<name>`**: the end line is optional and is emitted by
+ *     gcc 9+ and other recent toolchains, which puts it inside the range this
+ *     path advertises (gcov `.info` files). The end line is discarded — the fact
+ *     model is function-level and evidence quotes the start line — but it must be
+ *     *consumed*: otherwise `14,` becomes part of the symbol name, the one
+ *     function splits into two records (one with a line and no count, one with a
+ *     count and no line), and the count-less twin reads as "an FN: with no FNDA:"
+ *     and manufactures a not-evaluated for a function whose count is right there.
  */
 function isLcovTracefile(raw) {
   const first = String(raw)
     .split(/\r?\n/)
-    .find(line => line.trim());
-  return /^(SF|TN):/.test((first ?? '').trim());
+    .map(line => line.trim())
+    .find(line => line && !line.startsWith('#'));
+  return /^(SF|KF|TN):/.test(first ?? '');
 }
 
 const LCOV_ENTRY_RE = /^([A-Za-z_]+):(.*)$/;
-const LCOV_FN_RE = /^(\d+),(.+)$/;
+// FN alone takes the optional end line, mirroring lcovutil.pm's
+// /^FN:(\d+),((\d+),)?(.+)$/. FNDA keeps `<count>,<name>` — a name is free to
+// contain a comma, so letting FNDA accept the wider shape would eat the first
+// segment of such a name as an "end line" that means nothing there.
+const LCOV_FN_RE = /^(\d+),((\d+),)?(.+)$/;
+const LCOV_FNDA_RE = /^(\d+),(.+)$/;
 
 /**
  * Parse an lcov tracefile into
@@ -365,6 +392,9 @@ export function parseLcov(raw) {
 
   for (const line of lines) {
     if (!line.trim()) continue;
+    // Comment records are legal anywhere and mean nothing, so they are dropped
+    // before the key:value test rather than counted as an unknown key.
+    if (line.startsWith('#')) continue;
     if (line.trim() === 'end_of_record') {
       if (currentPath === null) return null;
       closeRecord();
@@ -379,7 +409,8 @@ export function parseLcov(raw) {
     // anywhere rather than refused outside a record.
     if (key === 'TN') continue;
 
-    if (key === 'SF') {
+    // KF: is the specification's synonym for SF:, not a second record type.
+    if (key === 'SF' || key === 'KF') {
       if (currentPath !== null) return null; // a record was never closed
       currentPath = value;
       fnLines = new Map();
@@ -387,15 +418,19 @@ export function parseLcov(raw) {
       continue;
     }
     if (currentPath === null) return null; // any other key outside a record
-    if (key === 'FN' || key === 'FNDA') {
+    if (key === 'FN') {
       const pair = LCOV_FN_RE.exec(value);
       if (!pair) return null;
-      const [, first, symbol] = pair;
-      if (key === 'FN') {
-        if (!fnLines.has(symbol)) fnLines.set(symbol, Number(first));
-      } else {
-        fnda.set(symbol, (fnda.get(symbol) ?? 0) + Number(first));
-      }
+      // Group 2 is the end line when present; it is deliberately dropped.
+      const [, start, , , symbol] = pair;
+      if (!fnLines.has(symbol)) fnLines.set(symbol, Number(start));
+      continue;
+    }
+    if (key === 'FNDA') {
+      const pair = LCOV_FNDA_RE.exec(value);
+      if (!pair) return null;
+      const [, count, symbol] = pair;
+      fnda.set(symbol, (fnda.get(symbol) ?? 0) + Number(count));
       continue;
     }
     if (key === 'FNL' || key === 'FNA' || key === 'FNAB') return null;

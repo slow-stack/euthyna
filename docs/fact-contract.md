@@ -350,6 +350,18 @@ and 2) — built with `RUSTFLAGS="-C instrument-coverage"`, `cargo test`, then `
   of c8's "file absent from the data = never executed": llvm-cov/gcov only emit records for
   instrumented targets, and `--sources` filters again
 - An `FN:` with no `FNDA:` is **"not evaluated", never a default of 0**
+- **Three spellings the specification allows beyond the shape measured above are read, not
+  refused.** Comment records (`#…` in column 0) may appear "anywhere — inside a section or outside
+  one"; `geninfo --comment` writes one at the top by default, so a detector keyed on the first
+  non-blank line reported those files as *not valid JSON* — a reason pointing at the wrong problem.
+  `KF:` is a synonym for `SF:` (lcov's own reader matches `/^[SK]F:/`). And `FN:<start>,<end>,<name>`
+  is the shape gcc 9+ emits: the end line is discarded — the fact model is function-level and
+  evidence quotes the start line — but it is *consumed*, because reading `14,` as part of the name
+  split one function into two records (one with a line and no count, one with a count and no line),
+  and the count-less twin then produced a not-evaluated for a function whose count was in the same
+  record. An **indented** `#` is still not a comment record and is still refused: the spec's comment
+  form puts `#` in column 0, and swallowing lines of unknown meaning is the failure this parser
+  exists to avoid.
 
 **Inlining does not manufacture a false "never invoked" (measured, and verified in both
 directions).** The one fatal counterexample to `count === 0 ⇒ never invoked` would be a function

@@ -252,6 +252,13 @@ worst verdict per crate: {"unaffected":52,"never-patched":3,"affected":4,"unknow
 因此第 4 条裁定的第 3、4 道门禁是"未评估"而不是"fail"：**缺覆盖率事实时，那道门禁记未评估，
 不得当作驳回的承担者**——这是上一轮 PR #21 刚收敛的规则，本轮第一次在真实数据上用到它。
 
+> **后续（2026-10-12）：这个缺口已经补上了。** 上面的记录是本轮当时的实况，不改写；
+> 但 `src/facts/coverage.js` 现在认识 lcov tracefile 了，本产出器的格式清单从三种变成四种。
+> 补的时候用的正是一个探针 crate（12 个函数、2 个文件）走
+> `RUSTFLAGS="-C instrument-coverage"` + `cargo test` + `llvm-cov export --format=lcov` 这条路，
+> 而没有依赖 `cargo-llvm-cov`（本机仍然没有）。**本条不影响上面那条"当时没有"的结论**：
+> 它记录的是 0.6.0 那一轮在 rustls 上跑出来的结果。
+
 ---
 
 ## 8. 怎么复现

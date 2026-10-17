@@ -89,11 +89,12 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
              --no-origins  关闭来源追溯；默认用 git log -S 把删除行归属到「最初引入」
                            该内容的提交（有探针上限，比纯 blame 慢）
   coverage   某个符号在测试运行中到底有没有被调用过
-             --coverage  覆盖率数据文件，c8 的 coverage-final.json
+             --coverage  覆盖率数据文件，按形状自动识别 c8 / istanbul、
+                         coverage.py JSON、Go -coverprofile 文本、lcov tracefile
              --symbol    要查询的符号名，可重复
              --file      可选，限定到某个文件
              --source    可选，Go profile（go test -coverprofile）必需：模块根目录，
-                         用于把行区间映射回函数（profile 不含函数名）
+                         用于把行区间映射回函数（profile 不含函数名）；其余格式不需要
   deps       某个依赖在 lockfile 里被锁定/声明成什么版本（供应链声明的裁决依据）
              --repo      可选，依赖清单所在目录（默认当前目录，自动检测）
              --lockfile  可选，显式指定清单文件（支持 package-lock.json / Cargo.lock / go.mod）
@@ -146,12 +147,14 @@ Commands:
                            lines to the commit that FIRST introduced their content
                            (probe-capped, slower than plain blame)
   coverage   was this symbol ever actually invoked by a test run?
-             --coverage  the coverage data file, c8's coverage-final.json
+             --coverage  the coverage data file; identified by shape as c8 / istanbul,
+                         coverage.py JSON, a Go -coverprofile, or an lcov tracefile
              --symbol    symbol name(s) to query, repeatable
              --file      optional, restrict to one file
              --source    optional, required for Go profiles (go test -coverprofile):
                          the module root, used to map line ranges back to
-                         functions (the profile carries no function names)
+                         functions (the profile carries no function names); other
+                         formats do not need it
   deps       what version does the lockfile pin or declare for a dependency? (the basis for supply-chain claims)
              --repo      optional, directory containing the manifest (default cwd, auto-detected)
              --lockfile  optional, explicit manifest path (package-lock.json / Cargo.lock / go.mod)

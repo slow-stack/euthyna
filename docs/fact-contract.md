@@ -305,6 +305,72 @@ Hence the hard constraints at the contract level:
   — **not istanbul's if/else model**, but V8 block ranges under a different label (`v8-to-istanbul/lib/branch.js:21-27`),
   and it **carries complete start/end line and column**, so genuine range-containment checks are possible
 
+#### The measured lcov output shape (Rust / llvm-cov, 2026-10-12)
+
+An `llvm-cov export --format=lcov` tracefile is the fifth format this producer reads — after
+c8/V8 JSON, classic istanbul, coverage.py format 3 and Go's text profile; cargo-llvm-cov and
+cargo-tarpaulin emit it, and gcov and llvm-cov both produce the format. **The format is wider
+than the symbol matching**: a query resolves only against a name whose path segments are encoded
+as `<decimal length><name>`, so a plain C target's `FN:10,main` never matches — measured,
+`--symbol main` answers "could not locate" against the needle `4main`. The measured
+sample is a two-file probe crate — 14 function declarations, 15 `FN:` entries, because one
+generic function is monomorphised onto two symbols at the same line (`FNF:` counts them as 12
+and 2) — built with `RUSTFLAGS="-C instrument-coverage"`, `cargo test`, then `llvm-cov export`:
+
+- Each record opens with `SF:<absolute path>` and closes with `end_of_record`; on Windows the
+  path is absolute and backslash-separated
+- **`FN:` and `FNDA:` come in two separate runs** (every `FN:<line>,<mangled>` first, then every
+  `FNDA:<count>,<mangled>`), not as adjacent pairs. A line-stream parser must not assume pairing
+- The symbol names are **Rust v0 mangling** (`_RNvCs…10lcov_probe12never_called`) — which is what
+  `-C instrument-coverage` implies (`rustc -C help`: it "implies -C symbol-mangling-version=v0");
+  the older Itanium-style `_ZN…17h…E` name is what a bare `rustc` emits, and is not the shape this
+  path was measured against. Tail segments encode a path segment as `<decimal length><name>`.
+  **There is no usable demangler on this machine**: `llvm-cov --Xdemangler` was tried with
+  `rust`/`rustfilt`/`llvm-cxxfilt`/`c++filt` and all four report `could not find the demangler`.
+  Alignment therefore happens on the producer side: the query is split on `::` and each segment is
+  matched as `<byte length><segment>`, anchored at the name's start, after the mangling's own `_`
+  separator, or at a proven pair boundary **and never inside a longer pair** — that last clause is
+  what keeps a query for `get` from answering for `cfg_3get`, since
+  `_RNvCsi8SMnIpCoEi_13collide_probe8cfg_3get` reads as one complete pair and `3get` therefore sits
+  inside an identifier. An earlier revision of this branch reported "Symbol get was not invoked
+  even once" about `cfg_3get` — false about `get`, the function that had been called.
+  `nested::dup` matches only `6nested3dup`; **a bare `dup` also matches the same-named function in
+  an outer module** — deliberately mirroring c8's handling of bare method names (each hit becomes
+  its own fact carrying its own mangled name), not a defect. A **qualified** query is a subsequence
+  test rather than a path-exact one, so `lcov_probe::dup` also answers for `lcov_probe::nested::dup`;
+  every fact names the symbol it is about, and a `::` query states that mangled name rather than
+  the pattern as if it were a symbol
+- **The same line may carry several `FN:` entries** (generic monomorphisation: one `generic_fn`
+  called once with `i32` and once with `&str` yields two entries on line 48). One generic function
+  instantiated twice is two facts
+- When one `SF:` appears in several records, or one symbol in several `FNDA:` lines, the counts are
+  **summed**. Summing is the only merge that cannot turn a non-zero into zero, which keeps the one
+  actionable conclusion (a count of 0) safe
+- A file absent from the tracefile is reported as **"not evaluated"**, **deliberately the opposite**
+  of c8's "file absent from the data = never executed": llvm-cov/gcov only emit records for
+  instrumented targets, and `--sources` filters again
+- An `FN:` with no `FNDA:` is **"not evaluated", never a default of 0**
+- **Three spellings the specification allows beyond the shape measured above are read, not
+  refused.** Comment records (`#…` in column 0) may appear "anywhere — inside a section or outside
+  one"; `geninfo --comment` writes one at the top by default, so a detector keyed on the first
+  non-blank line reported those files as *not valid JSON* — a reason pointing at the wrong problem.
+  `KF:` is a synonym for `SF:` (lcov's own reader matches `/^[SK]F:/`). And `FN:<start>,<end>,<name>`
+  is the shape gcc 9+ emits: the end line is discarded — the fact model is function-level and
+  evidence quotes the start line — but it is *consumed*, because reading `14,` as part of the name
+  split one function into two records (one with a line and no count, one with a count and no line),
+  and the count-less twin then produced a not-evaluated for a function whose count was in the same
+  record. An **indented** `#` is still not a comment record and is still refused: the spec's comment
+  form puts `#` in column 0, and swallowing lines of unknown meaning is the failure this parser
+  exists to avoid.
+
+**Inlining does not manufacture a false "never invoked" (measured, and verified in both
+directions).** The one fatal counterexample to `count === 0 ⇒ never invoked` would be a function
+that was called but fully inlined, leaving a count of 0. Measured on a dedicated probe crate with a
+release build under `-C instrument-coverage`: an `#[inline(always)]` function that is called still
+reports `FNDA:1` (the `#[inline(never)]` control reports 1 as well), so **no case was observed where
+inlining flattened a called function to 0**. That holds only within this scope — it measures
+llvm-cov-instrumented behaviour, not a universal guarantee across every build configuration.
+
 #### Failure modes a consumer must handle
 
 | Situation | Symptom | Requirement |
@@ -313,7 +379,7 @@ Hence the hard constraints at the contract level:
 | c8's default exclude rules | `test/**`, `**/*.test.js`, `**/__tests__/**` are excluded | Production callers that fall under these globs **silently disappear** |
 | Negative column numbers in V8 block ranges | `L9:-1-L10:0` seen in real testing | Naive column comparison breaks |
 | Module top-level call sites | Present only in `branchMap` (`fnMap` filters out `functionName===""`) | You cannot query `fnMap` alone |
-| A file that is not coverage data at all | Has neither `fnMap`/`f` (c8/istanbul) nor `functions` (coverage.py) | Report as *not evaluated* — feeding it to the locator would answer "symbol not located" with a straight face |
+| A file that is not coverage data at all | Has neither `fnMap`/`f` (c8/istanbul) nor `functions` (coverage.py), and is not a Go profile or an lcov tracefile | Report as *not evaluated* — feeding it to the locator would answer "symbol not located" with a straight face |
 | A symbol that was renamed | Not in `fnMap` under the new name | `unknown`, **never** "established as never invoked" |
 
 #### Other languages: worse than JS — do not extrapolate
@@ -324,7 +390,7 @@ Hence the hard constraints at the contract level:
 | Python (coverage.py) | Lines + arcs | ❌ Short circuits are completely invisible to it |
 | **Go** | Basic blocks | ❌ **Worse than V8** — in testing, `return Strict && Check(...)` never called `Check`;
   Go does not even split the block, **so it cannot even falsify** |
-| Rust (llvm region) | LLVM region | ⚠️ Partial |
+| Rust (llvm region) | LLVM region | ✅ **Function-level falsification works** (lcov's `FN:`/`FNDA:` carry a per-function invocation count; measured 2026-10-12: never-invoked reports 0, invoked reports 1, including `#[inline(always)]`); call-site level remains ⚠️ Partial |
 
 #### Relation to prior art
 

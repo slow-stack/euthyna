@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { satisfies } from './semver-range.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const read = (rel) => readFile(path.join(ROOT, rel), 'utf8');
@@ -87,5 +88,50 @@ describe('the declared peer stays resolvable on prerelease harness builds', () =
     const range = peerDependencies?.['@deepseek-ai/dsh-skill-filesystem'];
     assert.ok(/[><]=\s*0\.2\./.test(range), `the 0.2.x harness line must have its own branch: ${range}`);
     assert.ok(range.length < 256, `the market drops ranges this long: ${range.length} chars`);
+  });
+
+  test('the range actually admits the harness versions it claims, not just their text', async () => {
+    // The text assertions above are necessary and not sufficient. A range can
+    // carry "0.2." and be short and still reject every 0.2.x prerelease:
+    // `>=0.2.0-0 <0.2.1-0` passes both checks and refuses 0.2.1-rc.2. The
+    // property that matters is admission, so it is asserted directly.
+    //
+    // Both admission rules are checked because the plugin meets both. The host
+    // compares with includePrerelease:true (app-boot's unmetRequirements), which
+    // is how a mount is allowed at startup; plain `npm install` uses the default
+    // rule, which is how the install either resolves or throws ERESOLVE. A
+    // range that satisfies only the first is a package that installs nowhere.
+    const { peerDependencies } = await pkg();
+    const range = peerDependencies?.['@deepseek-ai/dsh-skill-filesystem'];
+    for (const version of ['0.1.6-rc.0', '0.1.7-rc.1', '0.2.0-rc.1', '0.2.1-rc.1', '0.2.1-rc.2', '0.2.1', '0.2.5']) {
+      assert.ok(satisfies(version, range, { includePrerelease: true }),
+        `the harness at ${version} must be admitted: ${range}`);
+    }
+    // The default rule has to admit the plain releases and the prereleases whose
+    // tuple has its own branch. This is the rule `npm install` applies.
+    for (const version of ['0.1.6-0', '0.1.7-0', '0.2.0-0', '0.2.1-0', '0.2.1-rc.2', '0.2.1']) {
+      assert.ok(satisfies(version, range, { includePrerelease: false }),
+        `npm's own rule must admit ${version}, or the install fails with ERESOLVE: ${range}`);
+    }
+    for (const version of ['0.0.9', '0.1.1', '0.3.0-0', '0.3.0', '1.0.0']) {
+      assert.ok(!satisfies(version, range, { includePrerelease: true }),
+        `${version} was never checked and must stay out: ${range}`);
+    }
+  });
+
+  test('a -0 floor covers its own tuple only, and the suite states that boundary', async () => {
+    // Regression lock on the wording in AGENTS.md. `-0` sorts below every
+    // prerelease of ITS tuple, so `>=0.2.1-0 <0.3.0-0` admits 0.2.1-alpha.1
+    // without a new branch. It does NOT reach the next tuple's prereleases: the
+    // host's includePrerelease rule admits 0.2.2-alpha.1, npm's default rule
+    // does not. Writing the second half as if it also held is what an earlier
+    // draft of the AGENTS.md note did, so the true boundary is pinned here.
+    const branch = '>=0.2.1-0 <0.3.0-0';
+    for (const version of ['0.2.1-0', '0.2.1-alpha.1', '0.2.1-rc.1', '0.2.1', '0.2.2']) {
+      assert.ok(satisfies(version, branch, { includePrerelease: false }), `${version} shares the tuple and must be admitted`);
+    }
+    assert.ok(satisfies('0.2.2-alpha.1', branch, { includePrerelease: true }), 'the host rule reaches the next tuple');
+    assert.ok(!satisfies('0.2.2-alpha.1', branch, { includePrerelease: false }),
+      'the npm rule does not: a later tuple needs its own branch');
   });
 });

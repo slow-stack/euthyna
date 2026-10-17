@@ -74,4 +74,18 @@ describe('the declared peer stays resolvable on prerelease harness builds', () =
     assert.ok((range.match(/-(rc|alpha|beta)\./g) ?? []).length >= 2, `each covered tuple needs its own prerelease comparator: ${range}`);
     assert.equal(peerDependenciesMeta?.['@deepseek-ai/dsh-skill-filesystem']?.optional, true, 'the CLI install must not pull the harness in');
   });
+
+  test('the range reaches the 0.2.x harness line and stays readable by the market', async () => {
+    // Two separate ceilings bit this package on the 0.2.0 release of the harness.
+    // The host checks the peer range against its OWN version (app-boot's
+    // unmetRequirements), so a range that stopped at 0.1.x denied the plugin at
+    // install time; and the plugin market's discovery cache refuses a range over
+    // MAX_RANGE_LENGTH = 256 characters outright (dshmarket's
+    // discovery-compatibility.js), so widening past that trades one silent
+    // rejection for another. Neither failure shows up as a test elsewhere.
+    const { peerDependencies } = await pkg();
+    const range = peerDependencies?.['@deepseek-ai/dsh-skill-filesystem'];
+    assert.ok(/[><]=\s*0\.2\./.test(range), `the 0.2.x harness line must have its own branch: ${range}`);
+    assert.ok(range.length < 256, `the market drops ranges this long: ${range.length} chars`);
+  });
 });

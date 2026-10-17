@@ -633,6 +633,12 @@ is faithful — that is a reading job, and a mechanical stand-in would only manu
   >=0.1.6-0 <0.2.0` is the convention in `dsh-skill-pack-security`. node-semver admits a
   prerelease only when some comparator shares its tuple *and* itself carries a prerelease tag,
   so a single `^0.1.5-rc.2` silently excludes `0.1.6-rc.*` and the user meets an `ERESOLVE`.
+  The 0.2.x tuples are covered with `-0` floors rather than a named tag
+  (`>=0.2.0-0 <0.2.1-0 || >=0.2.1-0 <0.3.0-0`): `-0` sorts below every prerelease of its
+  tuple, so a later `0.2.2-alpha.1` needs no new branch, and `<0.3.0-0` keeps the next minor
+  out until it is actually checked. Keep the whole range under 256 characters — the plugin
+  market's discovery cache rejects longer ones outright (`MAX_RANGE_LENGTH` in
+  `dshmarket/lib/discovery-compatibility.js`).
 - 🧪 Reproduce the mount without installing a profile: `node .scratch/probe-plugin.mjs` (needs
   an installed DSH — reach it by junctioning the app's `node_modules` into the repo, which
   `.gitignore` already covers). It calls `apply()` with a minimal ctx and drives the **real**

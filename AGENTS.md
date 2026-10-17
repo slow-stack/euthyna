@@ -638,11 +638,12 @@ is faithful — that is a reading job, and a mechanical stand-in would only manu
   **of its own tuple**, so `>=0.2.1-0` admits `0.2.1-alpha.1` without a named tag — that is
   the whole benefit, and it stops at the tuple boundary. It does **not** reach the next
   tuple's prereleases: under the default rule `0.2.2-alpha.1` is still refused, because the
-  comparator that would admit it must share the 0.2.2 tuple. Only the host's
-  `includePrerelease: true` check admits it, and npm does not use that rule — so shipping a
-  range on that basis alone means it installs under the host and throws `ERESOLVE` for the
-  user. Give a new tuple its own `-0` branch. `<0.3.0-0` keeps the next minor out until it
-  is actually checked. Keep the whole range under 256 characters — the plugin market's
+  comparator that would admit it must share the 0.2.2 tuple. A check that passes
+  `includePrerelease: true` — the host's `unmetRequirements`, the market's range check — admits it;
+  npm's default rule, the one `npm install` actually uses, does not, and a range shipped on that
+  basis alone means it installs under the host and throws `ERESOLVE` for the user. Give a new tuple
+  its own `-0` branch. `<0.3.0-0` keeps the next minor out until it is
+  actually checked. Keep the whole range under 256 characters — the plugin market's
   discovery cache rejects longer ones outright (`MAX_RANGE_LENGTH` in
   `dshmarket/lib/discovery-compatibility.js`).
 - 🧪 Reproduce the mount without installing a profile: `node .scratch/probe-plugin.mjs` (needs

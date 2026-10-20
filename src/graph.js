@@ -1,4 +1,4 @@
-import { safeText } from './contract.js';
+import { KIND, safeText } from './contract.js';
 
 /**
  * A Mermaid view over the provenance facts `euthyna history` already emits.
@@ -18,15 +18,17 @@ export function provenanceGraph(report) {
   // The id is the full hash: two commits that share a prefix are two commits,
   // and a merged node would say otherwise without saying anything.
   const id = (hash) => `C_${hash ?? ''}`;
-  // `&` first, so the entities added next are not doubled into nothing.
+  // `&` first, so the entities added next are not doubled into nothing; then `#`,
+  // because Mermaid reads `#123;` and `#name;` inside a label as an entity.
   const escapeLabel = (text) =>
-    text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    text.replace(/&/g, '&amp;').replace(/#/g, '#35;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   // `detail.commitSubject` belongs to `evidence.commit`, which is the origin
-  // commit on a pickaxe fact and the owning commit on a blame fact.
+  // commit on a pickaxe fact and the owning commit on a blame fact. Only
+  // deleted-line attribution counts: `audit` merges dependency facts in here too.
   const subjects = new Map();
   for (const fact of facts) {
-    if (fact.detail?.commitSubject) subjects.set(fact.evidence?.commit, fact.detail.commitSubject);
+    if (fact.kind === KIND.HISTORY && fact.detail?.commitSubject) subjects.set(fact.evidence?.commit, fact.detail.commitSubject);
   }
 
   const declared = new Set(['R']);
@@ -34,16 +36,21 @@ export function provenanceGraph(report) {
     const key = id(hash);
     if (declared.has(key)) return key;
     declared.add(key);
-    const text = escapeLabel(safeText(subjects.get(hash) ?? ''));
+    const text = subjects.get(hash) ?? '';
     const rest = byFile.length > 1 ? ` +${byFile.length - 1}` : '';
     const where = byFile.length ? ` ${byFile[0].file}${rest}` : '';
-    return `${key}["${escapeLabel(safeText(short(hash)))}${where}${text ? ` ${text}` : ''}"]`;
+    // One pass over the whole label: the path is as much the repository's own
+    // text as the commit subject is, and it may contain `"` or a control byte.
+    return `${key}["${escapeLabel(safeText(`${short(hash)}${where}${text ? ` ${text}` : ''}`))}"]`;
   };
 
   const range = `${subject.base ?? '?'}..${subject.head ?? 'HEAD'}`;
   const out = ['graph TD', `  R["${escapeLabel(safeText(range))}"]`];
 
   for (const fact of facts) {
+    // A dependency fact has no commit: drawing it would emit a node with an empty
+    // id that reads as "a commit with no lines".
+    if (fact.kind !== KIND.HISTORY) continue;
     const detail = fact.detail ?? {};
     const origin = detail.originMethod === 'pickaxe' ? detail.originCommit : null;
     // The deleted lines hang off whoever last touched them inside the audited

@@ -19,6 +19,23 @@ import { makeRepo, commitFiles, git, npmLockfile, edgeTargets } from './helpers.
 
 const execFileAsync = promisify(execFile);
 
+/** Run the CLI in-process, capturing stdout alongside the exit code it returns. */
+async function capture(argv) {
+  const { main } = await import('../src/cli.js');
+  const chunks = [];
+  const original = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    chunks.push(String(chunk));
+    return true;
+  };
+  try {
+    const code = await main(argv);
+    return { code, out: chunks.join('') };
+  } finally {
+    process.stdout.write = original;
+  }
+}
+
 describe('parseArgs', () => {
   test('separates positional arguments from flags', () => {
     const { positional, flags } = parseArgs(['history', '--base', 'main']);
@@ -479,22 +496,6 @@ describe('crash path (bin entry)', () => {
 });
 
 describe('--graph', () => {
-  async function capture(argv) {
-    const { main } = await import('../src/cli.js');
-    const chunks = [];
-    const original = process.stdout.write.bind(process.stdout);
-    process.stdout.write = (chunk) => {
-      chunks.push(String(chunk));
-      return true;
-    };
-    try {
-      const code = await main(argv);
-      return { code, out: chunks.join('') };
-    } finally {
-      process.stdout.write = original;
-    }
-  }
-
   async function securityDeletionRepo() {
     const repo = await makeRepo();
     const base = await commitFiles(repo, 'fix: prevent authentication bypass (CVE-2024-1111)', {
@@ -561,5 +562,34 @@ describe('--graph', () => {
       true,
       `the moved line must trace back to the commit that introduced it:\n${out}`
     );
+  });
+});
+
+describe('--graph scope', () => {
+  test('audit --graph draws only the provenance half of the merged report', async () => {
+    // `audit` merges history + deps facts into one report. Dependency facts carry
+    // no commit, so the first run of this command drew `R --> C_[""]` — an empty
+    // node presented as a commit, twice, once per dependency fact.
+    const repo = await makeRepo();
+    await commitFiles(repo, 'chore: seed', {
+      'package-lock.json': npmLockfile([['left-pad', '1.3.0']]),
+      'src/a.js': 'export const a = 1;\n'
+    });
+    await commitFiles(repo, 'fix: reject expired tokens', {
+      'src/a.js': 'export const a = 1;\n  if (Date.now() > token.expiresAt) throw new Error("expired token here");\n'
+    });
+    const base = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+    await commitFiles(repo, 'chore: drop the check', {
+      'package-lock.json': npmLockfile([['left-pad', '1.3.0'], ['alpha', '2.0.0']]),
+      'src/a.js': 'export const a = 1;\n'
+    });
+
+    const plain = await capture(['audit', '--repo', repo, '--base', base, '--json']);
+    const { code, out } = await capture(['audit', '--repo', repo, '--base', base, '--graph']);
+
+    assert.match(out, /^graph TD$/m, `audit is a supported --graph command:\n${out}`);
+    assert.doesNotMatch(out, /C_\[|C_\s/, 'no node stands in for a missing commit');
+    // The exit code is the published contract; a render mode may not move it.
+    assert.equal(code, plain.code, '--graph draws the same run the JSON channel reports');
   });
 });

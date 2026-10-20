@@ -241,6 +241,78 @@ describe('one commit attributed twice keeps both counts', () => {
   });
 });
 
+describe('only deleted-line attribution is drawn', () => {
+  // `audit` merges dependency facts into the same report, and a dependency fact
+  // has no `evidence.commit`. Drawing them produced `R --> C_[""]` edges: an
+  // empty node claiming to be a commit. Reproduced on `euthyna audit --graph`.
+  test('a dependency fact and a reintroduction fact are not drawn', () => {
+    const dependency = makeFact({
+      id: 'deps-1',
+      kind: KIND.DEPENDENCY,
+      statement: 'left-pad is locked at 1.3.0',
+      status: STATUS.ESTABLISHED,
+      evidence: { file: 'package-lock.json' },
+      detail: { name: 'left-pad', resolvedVersions: ['1.3.0'] }
+    });
+    const reintroduction = makeFact({
+      id: 'history-2',
+      kind: KIND.REINTRODUCTION,
+      statement: 'this line was removed once and has returned',
+      status: STATUS.ESTABLISHED,
+      evidence: { file: 'src/a.js', commit: 'bbbb1111cccc2222' },
+      detail: { commitSubject: 're-add the guard', byFile: [{ file: 'src/a.js', lines: 1, ranges: [{ start: 3, end: 3 }] }], blamedLines: 1 }
+    });
+
+    const graph = provenanceGraph(
+      historyReport({ facts: [blameFact({ id: 'history-1', commit: 'cafe1234beef5678' }), dependency, reintroduction] })
+    );
+
+    assert.doesNotMatch(graph, /C_\[|C_\s|\bC_$/, 'no node with an empty commit id');
+    assert.doesNotMatch(graph, /bbbb1111/, 'a reintroduced line is not a deleted-line attribution');
+    assert.doesNotMatch(graph, /package-lock\.json/, 'a dependency fact is not provenance');
+    assert.match(graph, /cafe1234/, 'the history fact is still drawn');
+  });
+});
+
+describe('repo-controlled text in the label is neutralised wherever it appears', () => {
+  // The commit subject was escaped; the file path next to it was not. Git allows
+  // `"` and control bytes in a path, and a path is as much the repository's
+  // content as its messages are.
+  test('a double quote in a path cannot end the label early', () => {
+    const fact = blameFact({ id: 'history-1', commit: 'cafe1234beef5678' });
+    fact.detail.byFile = [{ file: 'src/we"ird.js', lines: 3, ranges: [{ start: 10, end: 12 }] }];
+    fact.evidence.file = 'src/we"ird.js';
+
+    const graph = provenanceGraph(historyReport({ facts: [fact] }));
+
+    assert.match(graph, /we&quot;ird\.js/, 'the path is escaped the same way the subject is');
+    for (const line of graph.split('\n')) {
+      assert.equal((line.match(/"/g) ?? []).length % 2, 0, `no line may open more quotes than it closes: ${line}`);
+    }
+  });
+
+  test('a control byte in a path does not reach the output', () => {
+    const fact = blameFact({ id: 'history-1', commit: 'cafe1234beef5678' });
+    fact.detail.byFile = [{ file: 'src/bel' + String.fromCharCode(7) + '.js', lines: 3, ranges: [{ start: 10, end: 12 }] }];
+
+    const graph = provenanceGraph(historyReport({ facts: [fact] }));
+
+    assert.doesNotMatch(graph, new RegExp(String.fromCharCode(7)), 'the graph is terminal output too');
+  });
+
+  test('a hash in the subject cannot spell a Mermaid entity', () => {
+    // Mermaid reads `#123;` and `#name;` inside a label as an entity, so a subject
+    // like `fix #123; the parser` would display a character nobody wrote. Not
+    // measured against a Mermaid renderer here — the escape costs nothing.
+    const graph = provenanceGraph(
+      historyReport({ facts: [blameFact({ id: 'history-1', commit: 'cafe1234beef5678', subject: 'fix #123; the parser' })] })
+    );
+
+    assert.doesNotMatch(graph, /#123;/, 'the raw numeric entity must not appear');
+    assert.match(graph, /#35;123;/, 'the hash arrives in the form Mermaid decodes back to a hash');
+  });
+});
+
 describe('the graph carries states, not verdicts', () => {
   // A lock, not a discovery: the fact contract reserves severity, score and risk
   // for the adjudication layer (docs/fact-contract.md §3.3, enforced on facts by

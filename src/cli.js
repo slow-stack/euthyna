@@ -797,7 +797,9 @@ export async function main(argv = process.argv.slice(2)) {
   if (flags.json) {
     process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
   } else if (flags.graph && result.report) {
-    process.stdout.write(`${provenanceGraph(result.report)}\n`);
+    // The graph is terminal output like every other render: safeTextLines keeps
+    // its line structure and neutralises control bytes a repo path could carry.
+    process.stdout.write(safeTextLines(`${provenanceGraph(result.report)}\n`));
   } else if (result.report) {
     renderReport(result.report, { lang });
   }

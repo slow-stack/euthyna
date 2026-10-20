@@ -146,10 +146,12 @@ Organized by which step of the adjudication layer consumes each one:
 > the contract must enforce the distinction in the data structure, not rely on a prompt to remember it.
 > No existing tool produces this field (all eight measurement tools look only at "whether one exists", never at "how much it actually prevents").
 > **Measured 2026-10-20, and this repository included:** no producer here emits it either, and `euthyna gate`
-> does not check it — `src/gate.js` validates only the per-gate status (`PASS` / `FAIL` / `NOT EVALUATED`), so a
-> report can pass Gate 5 or Gate 6 without ever drawing the distinction. The requirement therefore binds the
-> engine, not the tooling. Closing that gap (a producer, or a validator that refuses a Gate 5/6 `PASS` with no
-> `effect`) is an open item.
+> reads it in no Gate 5 or Gate 6 check. `src/gate.js` does enforce structure — the gate number must fall in
+> 1..6, a `FAIL` or `NOT EVALUATED` gate must carry a reason, and a TRUE POSITIVE must carry evidence in
+> `path:L123` form, a reproduce command and an impact statement — but not one item on that list reads an
+> `effect` value, so a report can pass Gate 5 or Gate 6 without ever drawing the distinction. The requirement
+> therefore binds the engine, not the tooling. Closing that gap (a producer, or a check that refuses a
+> Gate 5/6 pass carrying no `effect`) is an open item.
 
 ### 3.3 ⛔ What must **not** appear in the contract
 

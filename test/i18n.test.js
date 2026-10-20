@@ -75,6 +75,17 @@ describe('renderReport language', () => {
     return lines.join('\n');
   }
 
+  test('the title line is the producer name and purpose, in either language', () => {
+    // The producer name already carries the `euthyna-` prefix, so a literal
+    // `euthyna ` in front of it renders `euthyna euthyna-audit` on every run —
+    // the shipped 0.9.0 header. The name is printed as the contract emits it,
+    // which also keeps the human line and the `--json` `producer` field equal.
+    const zh = render(sampleReport('测试'), 'zh');
+    assert.match(zh, /^euthyna-test — 测试$/m, 'the Chinese title names the producer once');
+    const en = render(sampleReport('test'), 'en');
+    assert.match(en, /^euthyna-test — test$/m, 'the English title names the producer once');
+  });
+
   test('Chinese by default', () => {
     const out = render(sampleReport('测试'), 'zh');
     assert.match(out, /目标: \/tmp\/repo/);

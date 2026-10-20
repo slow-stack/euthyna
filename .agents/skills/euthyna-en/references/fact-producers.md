@@ -89,7 +89,7 @@ When the fork point is uncertain, use the result of `git merge-base <target bran
 ### What the output looks like (real capture)
 
 ```
-euthyna euthyna-history — attribution and security classification of deleted code
+euthyna-history — attribution and security classification of deleted code
 Target: D:/axe-core/axe-core
 Range: 8390a5a9…..397f5fce…
 
@@ -217,7 +217,7 @@ node <euthyna repo>/bin/euthyna.js coverage `
 ### What the output looks like (real capture; one query hitting both result kinds)
 
 ```
-euthyna euthyna-coverage — symbol invocation counts (can only falsify)
+euthyna-coverage — symbol invocation counts (can only falsify)
 
 Established (1)
   • Symbol cleanup was never invoked in this test run (invocation count 0) — any behavior depending on it was never exercised

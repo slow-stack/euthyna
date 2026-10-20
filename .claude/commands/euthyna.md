@@ -11,7 +11,7 @@ allowed-tools: Read, Grep, Glob, Bash, Task
 按 euthyna 技能执行一次完整审计：
 
 1. **先加载纪律**：找到 euthyna 技能目录（`~/.claude/skills/euthyna/`、项目 `.claude/skills/euthyna/` 或 `.agents/skills/euthyna/`），读 `SKILL.md`，需要时再读 `references/`。找不到就明说「技能缺失」，不要凭印象执行。
-2. **按入口决策树走**：单条漏洞结论 → 阶段 C；一次变更 → 阶段 B；依赖面 → 阶段 A；整体审计 → 阶段 B 为主。用户以模式词进来时（参数命中技能的模式词表），先按 `SKILL.md` 的「模式词（斜杠命令）」一节映射出阶段与第一条命令，再往下走；其余文字按审计目标处理。
+2. **按入口决策树走**：单条漏洞结论 → 阶段 C；一次变更 → 阶段 B；依赖面 → 阶段 A；整体审计 → 阶段 B 为主。**模式词优先于下面全部步骤**：参数命中 `SKILL.md`「模式词（斜杠命令）」表里的模式时，只执行该模式映射的那一条命令并按其结果收口——`help` 只打印那张表，不跑任何命令、不做审计、不写报告；未命中模式词时，才走下面的通用审计步骤，其余文字按审计目标处理。
 3. **先测量再读码**：diff 有删除行先跑 `history`；谈测试覆盖先跑 `coverage`；依赖声明先跑 `deps`（操作手册在 `references/fact-producers.md`）。
 4. **每条结论过六道门禁**：证据到 `文件:行号`、可复现命令、影响说明；拿不出证据的降级为「观察」。
 5. **三态裁定**：`BUG #N TRUE POSITIVE / FALSE POSITIVE / INCONCLUSIVE`。

@@ -111,8 +111,8 @@ own copy.
 
 | You type | Which branch | First command |
 |---|---|---|
-| `/euthyna pr` | Stage B, the change surface | `euthyna audit --base <fork point>` |
-| `/euthyna graph` | Stage B, the provenance view | `euthyna audit --graph` |
+| `/euthyna pr` | Stage B, the change surface | `euthyna audit` (omit `--base` and the fork point is inferred and declared) |
+| `/euthyna graph` | Stage B, the provenance view | `euthyna audit --graph` (`--base` may be omitted here too) |
 | `/euthyna repo` | Stage A, the dependency surface | `euthyna deps --all` |
 | `/euthyna claim <assertion>` | Stage C, the claim surface | `euthyna coverage --symbol <name>` |
 | `/euthyna gate <report>` | Validating a written report | `euthyna gate <report>` |

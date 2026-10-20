@@ -99,8 +99,8 @@ license: Apache-2.0
 
 | 你打 | 走哪条支路 | 第一条命令 |
 |---|---|---|
-| `/euthyna pr` | 阶段 B 变更面 | `euthyna audit --base <分叉点>` |
-| `/euthyna graph` | 阶段 B 的来源谱系视图 | `euthyna audit --graph` |
+| `/euthyna pr` | 阶段 B 变更面 | `euthyna audit`（省略 `--base` 即按分叉点推断并声明） |
+| `/euthyna graph` | 阶段 B 的来源谱系视图 | `euthyna audit --graph`（同样可省略 `--base`） |
 | `/euthyna repo` | 阶段 A 依赖面 | `euthyna deps --all` |
 | `/euthyna claim <结论>` | 阶段 C 结论面 | `euthyna coverage --symbol <名>` |
 | `/euthyna gate <报告>` | 校验一份已写的报告 | `euthyna gate <报告>` |

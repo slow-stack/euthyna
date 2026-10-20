@@ -168,6 +168,10 @@ describe('stderr boundary', () => {
   test('a usage error embedding a hostile flag value reaches stderr sanitized', async () => {
     const { main } = await import('../src/cli.js');
     const repo = await makeRepo();
+    // The range is resolved against the head, so --head is resolved first; an
+    // empty repository would stop there and the hostile --base would never be
+    // reached. One commit is enough to keep this about the flag value.
+    await commitFiles(repo, 'chore: seed', { 'src/a.js': 'export const a = 1;\n' });
 
     const chunks = [];
     const original = process.stderr.write.bind(process.stderr);
@@ -571,6 +575,34 @@ describe('--base inference', () => {
     assert.equal(code, explicit.code, 'the merged run answers the same question either way');
     assert.equal(report.subject.base, fork, 'audit infers the same fork point');
     assert.match(out, /"code": "range-inferred"/, 'and declares it on the JSON channel');
+  });
+
+  test('the inference is anchored on the --head that was asked for', async () => {
+    // origin/main advanced past the fork while the checkout sits on an older
+    // branch. Asking about `--head origin/main` must infer the base from *that*
+    // commit; computing it from the checked-out HEAD measures a range nobody
+    // asked for — here, it would drag in the very changes under review.
+    const origin = await makeRepo();
+    const seed = await commitFiles(origin, 'chore: seed', { 'src/a.js': 'export const a = 1;\n' });
+    await commitFiles(origin, 'fix: reject expired tokens', {
+      'src/a.js': 'export const a = 1;\n  if (Date.now() > token.expiresAt) throw new Error("expired token here");\n'
+    });
+    const dir = await mkdtemp(path.join(tmpdir(), 'euthyna-clone-'));
+    await execFileAsync('git', ['clone', '-q', origin, dir]);
+    await git(dir, ['config', 'user.email', 'test@example.com']);
+    await git(dir, ['config', 'user.name', 'Test Author']);
+    const target = (await git(dir, ['rev-parse', 'origin/main'])).trim();
+    await git(dir, ['checkout', '-q', '-b', 'older', seed]);
+    await commitFiles(dir, 'chore: unrelated work here', { 'src/other.js': 'export const other = 1;\n' });
+
+    const { out } = await capture(['history', '--repo', dir, '--head', 'origin/main', '--json']);
+    const report = JSON.parse(out);
+
+    assert.equal(
+      report.subject.base,
+      target,
+      'merge-base is taken against the resolved --head, not the checked-out commit'
+    );
   });
 
   test('the declaration is a pure decision, in both languages', async () => {

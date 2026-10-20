@@ -270,12 +270,6 @@ async function runHistory(flags, lang) {
     };
   }
 
-  const range = await resolveRangeBase({ flags, cwd: toplevel, t });
-  if (range.error) {
-    return { exit: EXIT.USAGE, error: range.error };
-  }
-  const base = range.base;
-
   const head = await revParse(toplevel, String(flags.head ?? 'HEAD'));
   if (!head) {
     return {
@@ -283,6 +277,12 @@ async function runHistory(flags, lang) {
       error: t(`无法解析 --head "${flags.head ?? 'HEAD'}" 为一个提交`, `cannot resolve --head "${flags.head ?? 'HEAD'}" to a commit`)
     };
   }
+
+  const range = await resolveRangeBase({ flags, cwd: toplevel, head, t });
+  if (range.error) {
+    return { exit: EXIT.USAGE, error: range.error };
+  }
+  const base = range.base;
 
   // Origin tracing is the default (see runAudit); --no-origins opts out.
   const origins = flags['no-origins'] !== true;
@@ -439,8 +439,8 @@ export function rangeInferenceDeclaration({ ref, head }, t) {
     kind: KIND.HISTORY,
     code: 'range-inferred',
     reason: t(
-      `未给 --base，比较范围按 merge-base(HEAD, ${ref}) 推断到 ${short(head)} 的分叉点——这不是被审历史的全貌，换范围请显式传 --base <rev>`,
-      `no --base given: the range was inferred as merge-base(HEAD, ${ref}) against ${short(head)}. That is not the whole history under review — pass --base <rev> to audit another range`
+      `未给 --base，比较范围按 merge-base(${short(head)}, ${ref}) 推断——这不是被审历史的全貌，换范围请显式传 --base <rev>`,
+      `no --base given: the range was inferred as merge-base(${short(head)}, ${ref}). That is not the whole history under review — pass --base <rev> to audit another range`
     )
   };
 }
@@ -450,11 +450,13 @@ export function rangeInferenceDeclaration({ ref, head }, t) {
  *
  * The inference is where an argument-free run could quietly narrow what is
  * audited — a smaller range deletes edges and reads as cleaner — so the rule used
- * comes back with the value and the caller must declare it. There is no fallback
- * to HEAD~1: with no remote-tracking branch to fork from, this says so and the run
- * does not happen.
+ * comes back with the value and the caller must declare it. It forks from the
+ * resolved `--head`, not from whatever happens to be checked out: asking about
+ * another commit and getting this commit's ancestor would report a range nobody
+ * requested. There is no fallback to HEAD~1: with no remote-tracking branch to
+ * fork from, this says so and the run does not happen.
  */
-export async function resolveRangeBase({ flags, cwd, t }) {
+export async function resolveRangeBase({ flags, cwd, head, t }) {
   if (flags.base !== undefined) {
     const base = await revParse(cwd, String(flags.base));
     if (!base) {
@@ -463,7 +465,7 @@ export async function resolveRangeBase({ flags, cwd, t }) {
     return { base };
   }
   for (const ref of ['origin/main', 'origin/HEAD']) {
-    const base = await mergeBase(cwd, ref);
+    const base = await mergeBase(cwd, head, ref);
     if (base) return { base, ref };
   }
   return {
@@ -544,12 +546,6 @@ async function runAudit(flags, lang) {
     };
   }
 
-  const range = await resolveRangeBase({ flags, cwd: toplevel, t });
-  if (range.error) {
-    return { exit: EXIT.USAGE, error: range.error };
-  }
-  const base = range.base;
-
   const head = await revParse(toplevel, String(flags.head ?? 'HEAD'));
   if (!head) {
     return {
@@ -557,6 +553,12 @@ async function runAudit(flags, lang) {
       error: t(`无法解析 --head "${flags.head ?? 'HEAD'}" 为一个提交`, `cannot resolve --head "${flags.head ?? 'HEAD'}" to a commit`)
     };
   }
+
+  const range = await resolveRangeBase({ flags, cwd: toplevel, head, t });
+  if (range.error) {
+    return { exit: EXIT.USAGE, error: range.error };
+  }
+  const base = range.base;
 
   const origins = flags['no-origins'] !== true;
   const history = await collectHistoryFacts({

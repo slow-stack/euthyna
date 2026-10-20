@@ -217,7 +217,7 @@ falls back to blame's last-modifier attribution, which is faster.
 that last modified each deleted line, and the commit that first introduced its content — as
 Mermaid source, renderable straight into a GitHub comment. It measures nothing new and never
 colours a node by risk; a missing second edge is a neutral fact, not a clearance. `--base` may
-be left out entirely: the fork point is then inferred as `merge-base(HEAD, origin/main)` and
+be left out entirely: the fork point is then inferred as `merge-base(<the audited head>, origin/main)` and
 said three times over — on the range line, among the criteria not evaluated (`range-inferred`),
 and as a `code` on the `--json` channel — because an inferred range reaches the fork point only,
 and a quietly smaller history is the one thing this output must not be able to imply.

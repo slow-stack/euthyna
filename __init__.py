@@ -2,7 +2,7 @@
 
 The CLI (``bin/euthyna.js``, installed by ``npm install -g euthyna``) produces
 the deterministic facts; this plugin registers ``/euthyna`` so a user can invoke
-the four CLI subcommands from inside a Hermes session without leaving chat. The
+the CLI's subcommands from inside a Hermes session without leaving chat. The
 handler shells out to the real CLI and returns its output verbatim — it does not
 reimplement any measurement, and it injects nothing into the conversation.
 
@@ -15,17 +15,25 @@ CLI prints comes back as the command result.
 import shutil
 import subprocess
 
-# Ponytail: one flat dict, not a command framework — there are exactly four
-# subcommands and the CLI already owns usage/exit codes.
+# The subcommands /euthyna reaches. This is the single source the guard in
+# test/hermes-plugin.test.js compares against the CLI's own dispatch, so a new
+# command there is red here until it is wired — which is how `audit` (the
+# entry point since 0.4.0) went seven releases unnoticed behind a hand-written
+# list of four.
+_FORWARDS = ("audit", "coverage", "deps", "gate", "help", "history")
+
 _USAGE = """euthyna slash command — usage:
 
+  /euthyna audit <path> [<path>...]            history + dependency surface in one run
   /euthyna history <path> [<path> <rev>...]   deleted-code provenance & security classification
   /euthyna coverage <path>                    symbol invocation counts from a coverage run
   /euthyna deps <path>                        dependency pinned versions from lockfiles
   /euthyna gate <report> [--verify]           validate an audit report against the six gates
+  /euthyna help                               the CLI's own usage, with every flag
 
 Args after the subcommand are passed to the CLI unchanged. Requires the CLI:
 npm install -g euthyna (Node >= 20)."""
+
 
 
 def _find_cli():
@@ -40,10 +48,13 @@ def _find_cli():
 def _run(raw_args: str):
     """Handle /euthyna: forward <subcommand> <args...> to the CLI, return its output."""
     argv = raw_args.split()
-    if not argv or argv[0] in ("help", "-h", "--help"):
+    # `-h`/`--help` print this command's own quick usage; bare `help` is forwarded
+    # so the flag list has exactly one owner — the CLI's help, which the skill and
+    # the docs both quote.
+    if not argv or argv[0] in ("-h", "--help"):
         return _USAGE
     sub, rest = argv[0], argv[1:]
-    if sub not in ("history", "coverage", "deps", "gate"):
+    if sub not in _FORWARDS:
         return f"unknown subcommand: {sub}\n\n{_USAGE}"
 
     cli = _find_cli()
@@ -73,8 +84,8 @@ def register(ctx):
     ctx.register_command(
         "euthyna",
         handler=_run,
-        description="euthyna security audit: run history/coverage/deps/gate fact producers",
-        args_hint="<history|coverage|deps|gate> <args…>",
+        description="euthyna security audit: drive the fact-producing CLI (audit is the single entry point)",
+        args_hint="<audit|history|coverage|deps|gate|help> <args…>",
     )
 
 

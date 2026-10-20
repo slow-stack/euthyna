@@ -72,6 +72,11 @@ node <euthyna repo>/bin/euthyna.js history --base <pre-change revision> --no-ori
 ```
 
 `--base` is the **pre-change revision** (the PR's fork point); `--head` defaults to `HEAD`.
+Omitting `--base` infers it as `merge-base(HEAD, origin/main)`, marks the range line as inferred
+and adds a `range-inferred` entry to the criteria not evaluated. An inferred range reaches **the
+fork point only** — nothing earlier; when neither ref resolves the run stops with a usage error
+instead of guessing `HEAD~1`. This is what lets a slash command arrive with no arguments, so
+**the first thing to do with `range-inferred` is check the fork point**, not accept it.
 When the fork point is uncertain, use the result of `git merge-base <target branch> HEAD`.
 
 ### Attribution semantics (two inherent approximations; established ≠ exact)

@@ -206,7 +206,12 @@ export function renderReport(report, { write: rawWrite = console.log, lang = DEF
   write(`euthyna ${producer.name} — ${producer.purpose || ''}`.trim());
   write(`${t('目标: ', 'Target: ')}${subject.repo ?? subject.coverageFile ?? t('(未指定)', '(unspecified)')}`);
   if (subject.base || subject.head) {
-    write(`${t('范围: ', 'Range: ')}${subject.base ?? '?'}..${subject.head ?? 'HEAD'}`);
+    write(
+      `${t('范围: ', 'Range: ')}${subject.base ?? '?'}..${subject.head ?? 'HEAD'}` +
+        // An inferred range is a decision the tool made on the reader's behalf, so
+        // it is said on the line that states the range — not only in the caveat list.
+        (subject.rangeSource ? t(`（推断：与 ${subject.rangeSource} 的分叉点）`, ` (inferred: the fork point from ${subject.rangeSource})`) : '')
+    );
   }
   write('');
 

@@ -22,7 +22,7 @@ import { collectDependencyFacts, listDependencies, detectManifest, manifestTypeF
 import { parseGateReport, validateFindings, verifyFinding, renderGateReport } from './gate.js';
 import { makeReport, renderReport, safeTextLines, KIND } from './contract.js';
 import { provenanceGraph } from './graph.js';
-import { repoToplevel, revParse, git } from './git.js';
+import { repoToplevel, revParse, mergeBase, git } from './git.js';
 import { resolveLang, T, isLang, DEFAULT_LANG } from './lang.js';
 
 export const EXIT = Object.freeze({
@@ -72,8 +72,8 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
 它不是扫描器。它只回答两个模型算不准的问题，并把答案写成带证据的事实。
 
 用法:
-  euthyna audit    --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
-  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
+  euthyna audit    [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
+  euthyna history  [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
   euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--source <dir>] [--json]
   euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json]
   euthyna gate     <报告文件> [--verify] [--cwd <dir>] [--json]
@@ -84,7 +84,10 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
   audit      一次跑完变更面审计：history + deps（枚举 lockfile 全部依赖），合并报告
              这是技能文档默认推荐入口；coverage 因需要覆盖率文件和符号名不在其中
   history    本次变更删掉了哪些代码、它们分别由哪个提交引入、该提交是不是安全修复
-             --base        必填，比较的基线版本（如 main、HEAD~5、某个 commit）
+             --base        可选：省略时按 merge-base(HEAD, origin/main) 推断分叉点。
+                           推断会写在「范围」那一行，并在「未评估的判据」里加一条 range-inferred：
+                           推断出的范围只到分叉点，不是被审历史的全貌。两个引用都解析不出来时报错，
+                           不退回去猜 HEAD~1
              --head        可选，默认 HEAD
              --pickaxe     额外检查「曾被移除又加回来」的新增行（有探针上限）
              --no-origins  关闭来源追溯；默认用 git log -S 把删除行归属到「最初引入」
@@ -128,8 +131,8 @@ It is not a scanner. It answers only the two questions a model cannot compute
 reliably, and writes the answers as facts with evidence.
 
 Usage:
-  euthyna audit    --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
-  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
+  euthyna audit    [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
+  euthyna history  [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
   euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--source <dir>] [--json]
   euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json]
   euthyna gate     <report file> [--verify] [--cwd <dir>] [--json]
@@ -144,7 +147,11 @@ Commands:
              and symbol names only the adjudicator knows)
   history    which lines did this change delete, which commit introduced them,
              and was that commit a security fix?
-             --base        required, the baseline revision to compare against
+             --base        optional: omitted means the fork point is inferred as
+                           merge-base(HEAD, origin/main). The inference is stated on the range
+                           line and declared as range-inferred among the criteria not evaluated —
+                           an inferred range reaches the fork point, not the whole history. When
+                           neither ref resolves the run stops rather than guessing HEAD~1
              --head        optional, defaults to HEAD
              --pickaxe     also check added lines that were once removed and now return (probe-capped)
              --no-origins  disable origin tracing; by default git log -S attributes deleted
@@ -263,17 +270,11 @@ async function runHistory(flags, lang) {
     };
   }
 
-  if (!flags.base) {
-    return { exit: EXIT.USAGE, error: t('history 需要 --base <rev>', 'history requires --base <rev>') };
+  const range = await resolveRangeBase({ flags, cwd: toplevel, t });
+  if (range.error) {
+    return { exit: EXIT.USAGE, error: range.error };
   }
-
-  const base = await revParse(toplevel, String(flags.base));
-  if (!base) {
-    return {
-      exit: EXIT.USAGE,
-      error: t(`无法解析 --base "${flags.base}" 为一个提交`, `cannot resolve --base "${flags.base}" to a commit`)
-    };
-  }
+  const base = range.base;
 
   const head = await revParse(toplevel, String(flags.head ?? 'HEAD'));
   if (!head) {
@@ -295,9 +296,13 @@ async function runHistory(flags, lang) {
     lang
   });
 
+  if (range.ref) {
+    notEvaluated.push(rangeInferenceDeclaration({ ref: range.ref, head }, t));
+  }
+
   const report = makeReport({
     producer: producerFor(HISTORY_PRODUCER, lang),
-    subject: { repo: toplevel, base, head },
+    subject: { repo: toplevel, base, head, ...(range.ref ? { rangeSource: range.ref } : {}) },
     facts,
     evaluated,
     notEvaluated
@@ -422,6 +427,54 @@ async function runDeps(flags, lang) {
  * auto-measure there.
  */
 /**
+ * Declare the range the run inferred, in the shape every other declaration uses:
+ * a `notEvaluated` entry with a `code`, so the JSON channel carries it and a
+ * reader of the terminal output meets it in the caveat list.
+ *
+ * Pure, so the wording is testable in both languages without building a repository.
+ */
+export function rangeInferenceDeclaration({ ref, head }, t) {
+  const short = (sha) => (sha ?? '').slice(0, 10);
+  return {
+    kind: KIND.HISTORY,
+    code: 'range-inferred',
+    reason: t(
+      `未给 --base，比较范围按 merge-base(HEAD, ${ref}) 推断到 ${short(head)} 的分叉点——这不是被审历史的全貌，换范围请显式传 --base <rev>`,
+      `no --base given: the range was inferred as merge-base(HEAD, ${ref}) against ${short(head)}. That is not the whole history under review — pass --base <rev> to audit another range`
+    )
+  };
+}
+
+/**
+ * Resolve `--base`, or infer the fork point when the caller gave none.
+ *
+ * The inference is where an argument-free run could quietly narrow what is
+ * audited — a smaller range deletes edges and reads as cleaner — so the rule used
+ * comes back with the value and the caller must declare it. There is no fallback
+ * to HEAD~1: with no remote-tracking branch to fork from, this says so and the run
+ * does not happen.
+ */
+export async function resolveRangeBase({ flags, cwd, t }) {
+  if (flags.base !== undefined) {
+    const base = await revParse(cwd, String(flags.base));
+    if (!base) {
+      return { error: t(`无法解析 --base "${flags.base}" 为一个提交`, `cannot resolve --base "${flags.base}" to a commit`) };
+    }
+    return { base };
+  }
+  for (const ref of ['origin/main', 'origin/HEAD']) {
+    const base = await mergeBase(cwd, ref);
+    if (base) return { base, ref };
+  }
+  return {
+    error: t(
+      '未给 --base，且 origin/main 与 origin/HEAD 都无法解析出分叉点——请显式传 --base <rev>',
+      'no --base given, and neither origin/main nor origin/HEAD resolves to a fork point — pass --base <rev>'
+    )
+  };
+}
+
+/**
  * Decide whether the manifest `audit` measured is the manifest --head holds.
  *
  * Pure, so that the fail-closed branch — a probe that could not run — is reachable
@@ -469,10 +522,6 @@ async function runAudit(flags, lang) {
   const t = T(lang);
   const cwd = path.resolve(flags.repo ? String(flags.repo) : process.cwd());
 
-  if (!flags.base) {
-    return { exit: EXIT.USAGE, error: t('audit 需要 --base <rev>', 'audit requires --base <rev>') };
-  }
-
   // --- history half (mirrors runHistory's repo/base/head resolution) ---
   const toplevel = await repoToplevel(cwd);
   if (!toplevel) {
@@ -495,13 +544,11 @@ async function runAudit(flags, lang) {
     };
   }
 
-  const base = await revParse(toplevel, String(flags.base));
-  if (!base) {
-    return {
-      exit: EXIT.USAGE,
-      error: t(`无法解析 --base "${flags.base}" 为一个提交`, `cannot resolve --base "${flags.base}" to a commit`)
-    };
+  const range = await resolveRangeBase({ flags, cwd: toplevel, t });
+  if (range.error) {
+    return { exit: EXIT.USAGE, error: range.error };
   }
+  const base = range.base;
 
   const head = await revParse(toplevel, String(flags.head ?? 'HEAD'));
   if (!head) {
@@ -567,10 +614,13 @@ async function runAudit(flags, lang) {
   const facts = [...history.facts, ...depFacts];
   const evaluated = [...history.evaluated, ...depEvaluated];
   const notEvaluated = [...history.notEvaluated, ...depNotEvaluated];
+  if (range.ref) {
+    notEvaluated.push(rangeInferenceDeclaration({ ref: range.ref, head }, t));
+  }
 
   const report = makeReport({
     producer: producerFor(AUDIT_PRODUCER, lang),
-    subject: { repo: toplevel, base, head },
+    subject: { repo: toplevel, base, head, ...(range.ref ? { rangeSource: range.ref } : {}) },
     facts,
     evaluated,
     notEvaluated

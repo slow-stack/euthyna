@@ -9,6 +9,10 @@
 > **局限**：history 生产者读 git，所以需要 `fetch-depth: 0`（或至少 `--base` 可达）。
 > dependency 生产者读 lockfile；它回答的是 manifest 锁定了什么，而不是被锁版本有没有
 > CVE——那个裁定按设计留给 agent 层（见 [`fact-contract-zh.md`](fact-contract-zh.md) §6.3）。
+>
+> **`--base` 现在可以省略**——CLI 会按 `merge-base(HEAD, origin/main)` 推断，并把这件事声明成
+> `range-inferred`。本配方仍然显式传 `--base`：在 CI 里 `github.base_ref` 就是权威分叉点，
+> 推断是给不带参数就进来的人用的，不是给工作流用的。
 
 ## 门禁，一步版
 

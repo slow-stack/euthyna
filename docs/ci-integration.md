@@ -10,6 +10,11 @@ English · [中文](ci-integration-zh.md)
 > `--base` reachable). The dependency producer reads lockfiles; it answers what the manifest
 > pins, not whether a pinned version has a CVE — that adjudication is left to the agent layer,
 > by design (see [`fact-contract.md`](fact-contract.md) §6.3).
+>
+> **`--base` may now be omitted** — the CLI infers it as `merge-base(HEAD, origin/main)` and
+> declares the inference as `range-inferred`. This recipe still passes `--base` explicitly: in CI
+> `github.base_ref` is the authoritative fork point, and the inference exists for a person
+> arriving with no arguments, not for a workflow.
 
 ## The gate, one step
 

@@ -81,6 +81,15 @@ export async function revParse(cwd, rev) {
   return out.trim() || null;
 }
 
+/** The fork point between HEAD and a revision, or null when git cannot name one. */
+export async function mergeBase(cwd, rev) {
+  const out = await git(['merge-base', 'HEAD', rev], { cwd, allowFailure: true });
+  const sha = out.trim();
+  // git prints the hash alone on success; anything else (an error text that got
+  // past allowFailure, an empty result) is not a fork point.
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+}
+
 /**
  * One-line summaries for a set of commits, as a Map of hash -> {subject, author, date}.
  * Uses a single `git log` invocation so the cost does not scale per commit.

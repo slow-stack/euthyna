@@ -62,3 +62,19 @@ export function npmLockfile(entries) {
     }
   });
 }
+/**
+ * The target of every edge leaving a node whose id contains `sourceFragment`.
+ *
+ * Parsed rather than substring-matched: a labelled edge is `A -->|3| B[...]` in
+ * canonical Mermaid, and splitting on `' --> '` makes a reader blind to every edge
+ * that carries a label. Shared by `graph.test.js` and `cli.test.js` because two
+ * hand-written versions disagree about what an edge is.
+ */
+export function edgeTargets(graph, sourceFragment) {
+  const found = [];
+  for (const line of graph.split('\n')) {
+    const match = line.match(/^\s*(\S+)\s+-->(?:\s*\|[^|]*\|)?\s*(\S+)/);
+    if (match && match[1].includes(sourceFragment)) found.push(match[2]);
+  }
+  return found;
+}

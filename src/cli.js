@@ -21,6 +21,7 @@ import { collectCoverageFacts } from './facts/coverage.js';
 import { collectDependencyFacts, listDependencies, detectManifest, manifestTypeForFile } from './facts/deps.js';
 import { parseGateReport, validateFindings, verifyFinding, renderGateReport } from './gate.js';
 import { makeReport, renderReport, safeTextLines, KIND } from './contract.js';
+import { provenanceGraph } from './graph.js';
 import { repoToplevel, revParse, git } from './git.js';
 import { resolveLang, T, isLang, DEFAULT_LANG } from './lang.js';
 
@@ -71,8 +72,8 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
 它不是扫描器。它只回答两个模型算不准的问题，并把答案写成带证据的事实。
 
 用法:
-  euthyna audit    --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
-  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
+  euthyna audit    --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
+  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
   euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--source <dir>] [--json]
   euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json]
   euthyna gate     <报告文件> [--verify] [--cwd <dir>] [--json]
@@ -88,6 +89,9 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
              --pickaxe     额外检查「曾被移除又加回来」的新增行（有探针上限）
              --no-origins  关闭来源追溯；默认用 git log -S 把删除行归属到「最初引入」
                            该内容的提交（有探针上限，比纯 blame 慢）
+             --graph     输出 Mermaid 来源谱系图：范围 → 最后修改这些行的提交 → 最初引入
+                           其内容的提交（第二条边来自 -S 追溯，--no-origins 时没有）。
+                           图只画测到的状态与行数，不画严重性；与 --json 互斥，只适用于 history 与 audit
   coverage   某个符号在测试运行中到底有没有被调用过
              --coverage  覆盖率数据文件，按形状自动识别 c8 / istanbul、
                          coverage.py JSON、Go -coverprofile 文本、lcov tracefile
@@ -124,8 +128,8 @@ It is not a scanner. It answers only the two questions a model cannot compute
 reliably, and writes the answers as facts with evidence.
 
 Usage:
-  euthyna audit    --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
-  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json]
+  euthyna audit    --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
+  euthyna history  --base <rev> [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
   euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--source <dir>] [--json]
   euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json]
   euthyna gate     <report file> [--verify] [--cwd <dir>] [--json]
@@ -146,6 +150,11 @@ Commands:
              --no-origins  disable origin tracing; by default git log -S attributes deleted
                            lines to the commit that FIRST introduced their content
                            (probe-capped, slower than plain blame)
+             --graph     print a Mermaid provenance graph: the range → the commit that last
+                           modified the deleted lines → the commit that first introduced their
+                           content (the second edge comes from -S tracing; --no-origins has
+                           none). It draws measured states and line counts, never severity;
+                           mutually exclusive with --json, history and audit only
   coverage   was this symbol ever actually invoked by a test run?
              --coverage  the coverage data file; identified by shape as c8 / istanbul,
                          coverage.py JSON, a Go -coverprofile, or an lcov tracefile
@@ -729,9 +738,29 @@ export async function main(argv = process.argv.slice(2)) {
   const lang = resolveLang({ flag: flagLang });
   const t = T(lang);
 
+  // `--graph` is a render mode, not an extra channel: a graph with a JSON
+  // document glued to it on one stdout makes a CI step that parses either one
+  // fail without saying which.
+  if (flags.graph && flags.json) {
+    process.stderr.write(
+      safeTextLines(t('--graph 与 --json 互斥，一次只选一种输出', '--graph and --json are mutually exclusive; choose one output') + '\n')
+    );
+    return EXIT.USAGE;
+  }
+
   if (!command || command === 'help' || flags.help) {
     process.stdout.write(helpText(lang));
     return EXIT.CLEAN;
+  }
+
+  // Only `history` and `audit` produce deleted-line attribution. Drawing the
+  // provenance graph for another command prints a range node with no edges, which
+  // reads as "no provenance found" — the one thing this must not imply.
+  if (flags.graph && command !== 'history' && command !== 'audit') {
+    process.stderr.write(
+      safeTextLines(t('--graph 只适用于 history 与 audit', '--graph applies to history and audit only') + '\n')
+    );
+    return EXIT.USAGE;
   }
 
   let result;
@@ -767,6 +796,10 @@ export async function main(argv = process.argv.slice(2)) {
 
   if (flags.json) {
     process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
+  } else if (flags.graph && result.report) {
+    // The graph is terminal output like every other render: safeTextLines keeps
+    // its line structure and neutralises control bytes a repo path could carry.
+    process.stdout.write(safeTextLines(`${provenanceGraph(result.report)}\n`));
   } else if (result.report) {
     renderReport(result.report, { lang });
   }

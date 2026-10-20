@@ -169,6 +169,29 @@ Not inferred. Do not re-research these.
   `.agents/skills/euthyna` and `.agents/skills/euthyna-en`. Its ClawHub job did not
   publish — see `### ClawHub registry` below, where the listing was later brought to 0.7.0
   from this machine.
+- 🧪 `euthyna@0.8.0` published 2026-10-17 by the same workflow: the tag points at `7f6aaa4`,
+  and run `39069623839` took `preflight`, `publish` **and `clawhub`** green — the first
+  release whose ClawHub listing was moved by CI rather than rescued from this machine. GitHub
+  release `euthyna 0.8.0`, `publishedAt 2026-10-17T21:08:08Z`, author `github-actions[bot]`;
+  the attestations endpoint returns 200 for `euthyna@0.8.0` (15,086 bytes). This bullet was
+  written 2026-10-21: the release itself went four days without a record here, which is the
+  reason the 0.9.0 record is written in the same pass as the tag rather than after it.
+- 🧪 `euthyna@0.9.0` published 2026-10-20 by the same workflow: tag `v0.9.0` → `af4aa79`
+  (the merge of the bump PR #41), run `39477379456` took `preflight` and `publish` green and
+  cut the GitHub release `euthyna 0.9.0` (`publishedAt 2026-10-20T18:44:47Z`, author
+  `github-actions[bot]`). Checked from outside: `npm view euthyna dist-tags` → `latest: 0.9.0`;
+  shasum `3242f13aaead91f480dae7ad0d5adc695444ed61`, 833,248 unpacked bytes; the attestations
+  endpoint returns 200 (15,039 bytes). A temp-prefix install from the registry carries
+  `src/graph.js` and both skill editions, its English help renders `--base` as optional and
+  `--graph`, and `euthyna audit --base v0.8.0 --head v0.9.0 --graph` draws the provenance
+  graph from the published binary — exit 10, which is `FLAGGED` in the published contract, not
+  an error. **Its `clawhub` job failed** — see `### ClawHub registry` below.
+
+One CI-reading fact from the same release: the bump PR's `node 24 on windows-latest` check
+reported `fail` after 15m1s, and `gh run view --json jobs` called the same job `cancelled` with
+an empty log — the job sat queued and was cancelled, it never ran. The same commit's push run on
+`main` (run `39476543157`) is 8 jobs green including that cell. So read a red Windows check as
+suspicious until the job log exists; a cancelled queue slot is not a test failure.
 
 ### ClawHub registry
 

@@ -5,7 +5,11 @@ English · [中文](fact-contract-zh.md)
 > This is euthyna's **core asset**: it defines what exactly the "measurement layer" hands over to the "adjudication layer".
 > The positioning analysis concluded that euthyna does not rebuild measurement; it must therefore define the **interface** — and this document is that interface.
 >
-> Status: **design draft, not yet validated by a real run**. Fields will be revised after the first real run in quick mode.
+> Status: **v0.1, revised against four real validation runs** (axe-core, crewAI, act, rustls). The line
+> that stood here — "design draft, not yet validated by a real run" — was written before the first of
+> them and is kept in that commit as the record of the state it was written in. Two things are still
+> open: §6 records the producer boundaries that have not been closed, and one field the contract
+> mandates is produced and checked by nothing (§3.2).
 
 ---
 
@@ -141,6 +145,13 @@ Organized by which step of the adjudication layer consumes each one:
 > This is the core of methodology M6, and the thing an LLM most easily conflates —
 > the contract must enforce the distinction in the data structure, not rely on a prompt to remember it.
 > No existing tool produces this field (all eight measurement tools look only at "whether one exists", never at "how much it actually prevents").
+> **Measured 2026-10-20, and this repository included:** no producer here emits it either, and `euthyna gate`
+> reads it in no Gate 5 or Gate 6 check. `src/gate.js` does enforce structure — the gate number must fall in
+> 1..6, a `FAIL` or `NOT EVALUATED` gate must carry a reason, and a TRUE POSITIVE must carry evidence in
+> `path:L123` form, a reproduce command and an impact statement — but not one item on that list reads an
+> `effect` value, so a report can pass Gate 5 or Gate 6 without ever drawing the distinction. The requirement
+> therefore binds the engine, not the tooling. Closing that gap (a producer, or a check that refuses a
+> Gate 5/6 pass carrying no `effect`) is an open item.
 
 ### 3.3 ⛔ What must **not** appear in the contract
 

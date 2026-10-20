@@ -102,6 +102,26 @@ facts from the producers decide where the manual reading must be directed.
 In particular: every suspected finding reported by Stage B must go through Stage C one by
 one — never write it straight into the report as a conclusion.
 
+### Modes (slash commands)
+
+When a user arrives through a slash command, map the mode to the stage and the first
+command using this table. **The table is maintained only here**; the host command files
+(Cursor / OpenCode / Copilot / Hermes) point at this section instead of each keeping their
+own copy.
+
+| You type | Which branch | First command |
+|---|---|---|
+| `/euthyna pr` | Stage B, the change surface | `euthyna audit --base <fork point>` |
+| `/euthyna graph` | Stage B, the provenance view | `euthyna audit --graph` |
+| `/euthyna repo` | Stage A, the dependency surface | `euthyna deps --all` |
+| `/euthyna claim <assertion>` | Stage C, the claim surface | `euthyna coverage --symbol <name>` |
+| `/euthyna gate <report>` | Validating a written report | `euthyna gate <report>` |
+| `/euthyna help` | Print this table only | run nothing, change no state |
+
+`/euthyna graph` is not a new measurement: `--graph` only draws the attribution `history`
+already emits, as Mermaid. **A missing second edge does not mean the content never moved** —
+the boundaries are in references/fact-producers.md.
+
 ---
 
 ## The two deterministic measurements this skill ships

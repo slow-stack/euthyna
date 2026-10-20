@@ -1,7 +1,9 @@
 ---
 description: Run the euthyna code security audit CLI
 ---
-Run the euthyna CLI with these arguments and report the measured result:
+If the arguments match a mode word in the euthyna skill’s "Modes (slash commands)" table,
+translate them per that table and run the mapped command; the table is maintained in the
+skill, not here. Otherwise run the CLI with the arguments as given:
 
     euthyna $ARGUMENTS
 

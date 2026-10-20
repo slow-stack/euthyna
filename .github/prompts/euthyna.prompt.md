@@ -7,7 +7,7 @@ description: 代码安全审计：按 euthyna 纪律审一段代码、一次变�
 按 euthyna 技能执行一次完整审计：
 
 1. **先加载纪律**：找到 euthyna 技能目录（项目 `.github/skills/euthyna/` 或 `.agents/skills/euthyna/`，个人 `~/.copilot/skills/euthyna/`），读 `SKILL.md`，需要时再读 `references/`。找不到就明说「技能缺失」，不要凭印象执行。
-2. **按入口决策树走**：单条漏洞结论 → 阶段 C；一次变更 → 阶段 B；依赖面 → 阶段 A；整体审计 → 阶段 B 为主。
+2. **按入口决策树走**：单条漏洞结论 → 阶段 C；一次变更 → 阶段 B；依赖面 → 阶段 A；整体审计 → 阶段 B 为主。用户以模式词进来时（参数命中技能的模式词表），先按 `SKILL.md` 的「模式词（斜杠命令）」一节映射出阶段与第一条命令，再往下走；其余文字按审计目标处理。
 3. **先测量再读码**：第一条命令跑 `euthyna audit --base <分叉点> --repo <被审计仓库>`（history + deps 一次跑完）；谈测试覆盖再跑 `coverage`（操作手册在 `references/fact-producers.md`）。
 4. **每条结论过六道门禁**：证据到 `文件:行号`、可复现命令、影响说明；拿不出证据的降级为「观察」。复现命令执行前须向用户报备（见技能「执行纪律」节）。
 5. **三态裁定**：`BUG #N TRUE POSITIVE / FALSE POSITIVE / INCONCLUSIVE`。

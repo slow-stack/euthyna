@@ -15,7 +15,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { parseArgs, EXIT } from '../src/cli.js';
-import { makeRepo, commitFiles, git, npmLockfile } from './helpers.js';
+import { makeRepo, commitFiles, git, npmLockfile, edgeTargets } from './helpers.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -552,10 +552,10 @@ describe('--graph', () => {
     await commitFiles(repo, 'refactor: drop the guard', { 'src/svc.js': [...filler, ''].join('\n') });
 
     const { out } = await capture(['history', '--repo', repo, '--base', moved, '--head', 'HEAD', '--graph']);
-    const short = (sha) => sha.slice(0, 8);
 
-    assert.match(out, new RegExp(`--> C_${short(moved)}`), 'blame names the commit that moved the line');
-    const tracedToFirst = edgeTargetsOf(out, short(moved)).some((target) => target.includes(`C_${short(first)}`));
+    const hangsOffTheMover = edgeTargets(out, 'R').some((target) => target.includes(`C_${moved}`));
+    assert.equal(hangsOffTheMover, true, `the deleted lines must hang off the commit that moved them:\n${out}`);
+    const tracedToFirst = edgeTargets(out, moved).some((target) => target.includes(`C_${first}`));
     assert.equal(
       tracedToFirst,
       true,
@@ -563,11 +563,3 @@ describe('--graph', () => {
     );
   });
 });
-
-/** The node each `A --> B` edge points at, for edges leaving the node with this id. */
-function edgeTargetsOf(graph, sourceFragment) {
-  return graph
-    .split('\n')
-    .filter((line) => line.includes(' --> ') && line.split(' --> ')[0].includes(sourceFragment))
-    .map((line) => line.split(' --> ')[1]);
-}

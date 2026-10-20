@@ -6,6 +6,11 @@ import { safeText } from './contract.js';
  * It measures nothing. A commit subject is whatever an author wrote, and it
  * lands inside a `"..."` label, so every label goes through the same control-byte
  * escape the terminal boundary uses before it reaches the graph source.
+ *
+ * Line counts live on the edges: one commit can be attributed twice (the last
+ * modifier of some lines, the origin of others), and a Mermaid node keeps only
+ * the last label written for an id — a count in the node label would silently
+ * delete the other one.
  */
 export function provenanceGraph(report) {
   const { subject, facts } = report;
@@ -23,16 +28,20 @@ export function provenanceGraph(report) {
   for (const fact of facts) {
     if (fact.detail?.commitSubject) subjects.set(fact.evidence?.commit, fact.detail.commitSubject);
   }
-  const label = (hash, count, fact) => {
+
+  const declared = new Set(['R']);
+  const node = (hash, byFile) => {
+    const key = id(hash);
+    if (declared.has(key)) return key;
+    declared.add(key);
     const text = escapeLabel(safeText(subjects.get(hash) ?? ''));
-    const byFile = fact?.detail?.byFile ?? [];
     const rest = byFile.length > 1 ? ` +${byFile.length - 1}` : '';
     const where = byFile.length ? ` ${byFile[0].file}${rest}` : '';
-    return `"${short(hash)} (${count})${where}${text ? ` ${text}` : ''}"`;
+    return `${key}["${escapeLabel(safeText(short(hash)))}${where}${text ? ` ${text}` : ''}"]`;
   };
 
   const range = `${subject.base ?? '?'}..${subject.head ?? 'HEAD'}`;
-  const out = ['graph TD', `  R["${range}"]`];
+  const out = ['graph TD', `  R["${escapeLabel(safeText(range))}"]`];
 
   for (const fact of facts) {
     const detail = fact.detail ?? {};
@@ -40,10 +49,11 @@ export function provenanceGraph(report) {
     // The deleted lines hang off whoever last touched them inside the audited
     // range; the origin commit is where the content came from.
     const blamed = origin ? detail.blameCommit : fact.evidence?.commit;
+    const byFile = detail.byFile ?? [];
     const count = detail.blamedLines ?? 0;
 
-    out.push(`  R --> ${id(blamed)}[${label(blamed, count, fact)}]`);
-    if (origin) out.push(`  ${id(blamed)} --> ${id(origin)}[${label(origin, count, fact)}]`);
+    out.push(`  R -->|${count}| ${node(blamed, byFile)}`);
+    if (origin) out.push(`  ${id(blamed)} -->|${count}| ${node(origin, byFile)}`);
   }
 
   // Dotted, and named by kind: `nothing here was deleted` and `this could not be

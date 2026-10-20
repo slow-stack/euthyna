@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 
 import { KIND, STATUS, makeFact, makeReport, notEvaluated } from '../src/contract.js';
 import { provenanceGraph } from '../src/graph.js';
+import { edgeTargets } from './helpers.js';
 
 function historyReport({ facts = [], notEvaluated: unevaluated = [] } = {}) {
   return makeReport({
@@ -41,13 +42,28 @@ function blameFact({ id, commit, lines = 3, classification = 'none', subject = '
   });
 }
 
-/** Node ids Mermaid was told about, keyed by what a reader can match: a hash prefix. */
-function edgeTargets(graph, sourceFragment) {
-  return graph
-    .split('\n')
-    .filter((line) => line.includes(' --> '))
-    .filter((line) => line.split(' --> ')[0].includes(sourceFragment))
-    .map((line) => line.split(' --> ')[1]);
+function originFact({ id, blameCommit, originCommit, lines = 2 }) {
+  return makeFact({
+    id,
+    kind: KIND.HISTORY,
+    statement: `This change deleted ${lines} lines whose content was first introduced by commit ${originCommit}`,
+    status: STATUS.ESTABLISHED,
+    evidence: { file: 'src/a.js', commit: originCommit, files: ['src/a.js'] },
+    method: 'command',
+    command: `git log --format=%H -S"if (x < 0) {" one -- src/a.js`,
+    detail: {
+      classification: 'security',
+      classificationBasis: 'deleted-line',
+      originMethod: 'pickaxe',
+      blameCommit,
+      originCommit,
+      commitSubject: 'harden the bound',
+      commitAuthor: 'a',
+      commitDate: '2025-11-02',
+      blamedLines: lines,
+      byFile: [{ file: 'src/a.js', lines, ranges: [{ start: 10, end: 10 + lines - 1 }] }]
+    }
+  });
 }
 
 describe('a blame attribution becomes one edge from the range', () => {
@@ -67,30 +83,6 @@ describe('an origin fact becomes the lineage edge', () => {
   // last touched the deleted line, and the -S probe says who put that content
   // there. A list of facts shows both; only an edge shows that they are the
   // same line travelling from one commit to the other.
-  function originFact({ id, blameCommit, originCommit, lines = 2 }) {
-    return makeFact({
-      id,
-      kind: KIND.HISTORY,
-      statement: `This change deleted ${lines} lines whose content was first introduced by commit ${originCommit}`,
-      status: STATUS.ESTABLISHED,
-      evidence: { file: 'src/a.js', commit: originCommit, files: ['src/a.js'] },
-      method: 'command',
-      command: `git log --format=%H -S"if (x < 0) {" one -- src/a.js`,
-      detail: {
-        classification: 'security',
-        classificationBasis: 'deleted-line',
-        originMethod: 'pickaxe',
-        blameCommit,
-        originCommit,
-        commitSubject: 'harden the bound',
-        commitAuthor: 'a',
-        commitDate: '2025-11-02',
-        blamedLines: lines,
-        byFile: [{ file: 'src/a.js', lines, ranges: [{ start: 10, end: 10 + lines - 1 }] }]
-      }
-    });
-  }
-
   test('the last modifier points at the commit that first introduced the content', () => {
     const graph = provenanceGraph(
       historyReport({ facts: [originFact({ id: 'history-1', blameCommit: 'aaaa1111bbbb2222', originCommit: 'cccc3333dddd4444' })] })
@@ -221,6 +213,31 @@ describe('the graph says where the lines are', () => {
 
     assert.match(graph, /src\/a\.js/, 'the file the pasted command reproduces');
     assert.match(graph, /\+1/, 'and how many more files the reader still has to look at');
+  });
+});
+
+describe('one commit attributed twice keeps both counts', () => {
+  // Found on real data, not on a fixture: a commit can be the last modifier of
+  // several deleted lines in one fact and the origin of one more line in another.
+  // When the count lives in the node label, Mermaid keeps the label from the last
+  // declaration and silently drops the other count.
+  test('the counts live on the edges and each node is declared once', () => {
+    const graph = provenanceGraph(
+      historyReport({
+        facts: [
+          blameFact({ id: 'history-1', commit: 'cafe1234beef5678', lines: 3 }),
+          originFact({ id: 'history-2', blameCommit: 'ffff9999aaaa8888', originCommit: 'cafe1234beef5678', lines: 1 })
+        ]
+      })
+    );
+
+    assert.equal(
+      (graph.match(/C_cafe1234beef5678\[/g) ?? []).length,
+      1,
+      `a node is declared once:\n${graph}`
+    );
+    assert.match(graph, /\|3\|/, 'the blame attribution carries its own count on its edge');
+    assert.match(graph, /\|1\|/, 'and so does the lineage edge');
   });
 });
 

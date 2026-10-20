@@ -137,7 +137,8 @@ reliably — are shipped by this skill as a zero-dependency CLI:
 | `coverage` | Was this symbol **ever actually invoked** by a test run? | when the report claims "tested / not tested" (Stage B / C) |
 
 ```powershell
-# the only required argument is --base (pre-change revision / PR fork point):
+# --base may be omitted: then the fork point is inferred as merge-base(HEAD, origin/main) and
+# declared as range-inferred in the report. When given, it is used exactly as given:
 node <euthyna repo>/bin/euthyna.js audit --base <pre-change revision> --repo <audited repo>
 
 # history / coverage run alone when needed:

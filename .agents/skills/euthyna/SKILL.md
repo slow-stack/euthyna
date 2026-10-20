@@ -123,7 +123,7 @@ license: Apache-2.0
 | `coverage` | 某个符号在测试运行中**到底有没有被调用过**？ | 报告里要说「测过 / 没测过」时（阶段 B / C） |
 
 ```powershell
-# 唯一必需的参数是 --base（改前版本 / PR 分叉点）：
+# --base 可以省略：省略时按 merge-base(HEAD, origin/main) 推断，并在报告里声明为 range-inferred
 node <euthyna 仓库>/bin/euthyna.js audit --base <改前版本> --repo <被审计的仓库>
 
 # history / coverage 按需单独跑：

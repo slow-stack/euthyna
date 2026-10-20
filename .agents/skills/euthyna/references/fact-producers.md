@@ -72,6 +72,10 @@ node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --no-origins 
 ```
 
 `--base` 是**改前版本**（PR 的分叉点），`--head` 默认 `HEAD`。
+省略 `--base` 时按 `merge-base(<被审的 head>, origin/main)` 推断，并在「范围」那一行标出「推断」、在
+「未评估的判据」里加一条 `range-inferred`。推断出的范围**只到分叉点**，看不到更早的历史；
+两个引用都解析不出来时报用法错误，不猜 `HEAD~1`。斜杠命令免参数进来靠的就是这条，所以
+**看到 `range-inferred` 第一步是确认分叉点对不对**，而不是接受它。
 分叉点不确定时用 `git merge-base <目标分支> HEAD` 的结果。
 
 ### 归属语义（两个固有近似，已确证≠精确）

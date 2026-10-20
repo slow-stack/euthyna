@@ -14,7 +14,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
-import { parseArgs, EXIT } from '../src/cli.js';
+import { parseArgs, EXIT, rangeInferenceDeclaration } from '../src/cli.js';
 import { makeRepo, commitFiles, git, npmLockfile, edgeTargets } from './helpers.js';
 
 const execFileAsync = promisify(execFile);
@@ -23,16 +23,23 @@ const execFileAsync = promisify(execFile);
 async function capture(argv) {
   const { main } = await import('../src/cli.js');
   const chunks = [];
+  const errors = [];
   const original = process.stdout.write.bind(process.stdout);
+  const originalError = process.stderr.write.bind(process.stderr);
   process.stdout.write = (chunk) => {
     chunks.push(String(chunk));
     return true;
   };
+  process.stderr.write = (chunk) => {
+    errors.push(String(chunk));
+    return true;
+  };
   try {
     const code = await main(argv);
-    return { code, out: chunks.join('') };
+    return { code, out: chunks.join(''), err: errors.join('') };
   } finally {
     process.stdout.write = original;
+    process.stderr.write = originalError;
   }
 }
 
@@ -107,9 +114,9 @@ describe('exit code contract', () => {
     assert.equal(code, EXIT.FLAGGED);
   });
 
-  test('a missing --base is a usage error', async () => {
+  test('an unresolvable --base is a usage error', async () => {
     const { main } = await import('../src/cli.js');
-    assert.equal(await main(['history', '--json']), EXIT.USAGE);
+    assert.equal(await main(['history', '--base', 'no-such-rev', '--json']), EXIT.USAGE);
   });
 
   test('an unreadable coverage file exits 2, which must not read as clean', async () => {
@@ -161,6 +168,10 @@ describe('stderr boundary', () => {
   test('a usage error embedding a hostile flag value reaches stderr sanitized', async () => {
     const { main } = await import('../src/cli.js');
     const repo = await makeRepo();
+    // The range is resolved against the head, so --head is resolved first; an
+    // empty repository would stop there and the hostile --base would never be
+    // reached. One commit is enough to keep this about the flag value.
+    await commitFiles(repo, 'chore: seed', { 'src/a.js': 'export const a = 1;\n' });
 
     const chunks = [];
     const original = process.stderr.write.bind(process.stderr);
@@ -257,9 +268,9 @@ describe('audit command (history + deps in one run)', () => {
     assert.equal(code, EXIT.CLEAN);
   });
 
-  test('a missing --base is a usage error', async () => {
+  test('an unresolvable --base is a usage error', async () => {
     const { main } = await import('../src/cli.js');
-    assert.equal(await main(['audit', '--json']), EXIT.USAGE);
+    assert.equal(await main(['audit', '--base', 'no-such-rev', '--json']), EXIT.USAGE);
   });
 });
 
@@ -492,6 +503,116 @@ describe('crash path (bin entry)', () => {
         return true;
       }
     );
+  });
+});
+
+describe('--base inference', () => {
+  // Omitting --base is the whole point of the slash-command surface, and the risk
+  // it carries is that a guessed range silently narrows what is audited. So the
+  // range must be declared, and a range that cannot be inferred must fail loudly
+  // rather than fall back to HEAD~1.
+  async function repoWithOrigin() {
+    const origin = await makeRepo();
+    await commitFiles(origin, 'feat: add the file', { 'src/a.js': 'export const a = 1;\n' });
+    const dir = await mkdtemp(path.join(tmpdir(), 'euthyna-clone-'));
+    await execFileAsync('git', ['clone', '-q', origin, dir]);
+    await git(dir, ['config', 'user.email', 'test@example.com']);
+    await git(dir, ['config', 'user.name', 'Test Author']);
+    await git(dir, ['config', 'commit.gpgsign', 'false']);
+    const fork = (await git(dir, ['rev-parse', 'origin/main'])).trim();
+    await commitFiles(dir, 'fix: reject expired tokens', {
+      'src/a.js': 'export const a = 1;\n  if (Date.now() > token.expiresAt) throw new Error("expired token here");\n'
+    });
+    await commitFiles(dir, 'refactor: drop the check', { 'src/a.js': 'export const a = 1;\n' });
+    return { dir, fork };
+  }
+
+  test('an omitted --base infers the fork point and says so', async () => {
+    const { dir, fork } = await repoWithOrigin();
+    const explicit = await capture(['history', '--repo', dir, '--base', fork, '--json']);
+    const { code, out } = await capture(['history', '--repo', dir, '--json']);
+    const report = JSON.parse(out);
+
+    // Asserted as equality with the explicit run, not as a guessed classification:
+    // whether this range flags anything is the producer's business, and the
+    // inference must not answer it differently.
+    assert.equal(code, explicit.code, 'inferring the range changes nothing but the declaration');
+    assert.equal(report.subject.base, fork, 'the inferred base is the merge-base with origin/main');
+    const declared = report.coverage.notEvaluated.filter((n) => n.code === 'range-inferred');
+    assert.equal(declared.length, 1, `the inference is declared: ${JSON.stringify(report.coverage.notEvaluated)}`);
+    assert.match(declared[0].reason, /origin\/main/, 'and names the rule it used');
+  });
+
+  test('the terminal render marks the inferred range', async () => {
+    const { dir } = await repoWithOrigin();
+    const { out } = await capture(['history', '--repo', dir]);
+
+    assert.match(out, /范围: .*（推断/, `the reader sees the inference without --json:\n${out.split('\n').slice(0, 5).join('\n')}`);
+  });
+
+  test('no origin/main is a usage error, never a guess', async () => {
+    const repo = await makeRepo();
+    const fork = await commitFiles(repo, 'feat: add the file', { 'src/a.js': 'export const a = 1;\n' });
+    await commitFiles(repo, 'refactor: change it', { 'src/a.js': 'export const a = 2;\n' });
+
+    const { code, out, err } = await capture(['history', '--repo', repo]);
+
+    assert.equal(code, EXIT.USAGE, 'a range that cannot be established must not be invented');
+    assert.match(err, /--base/, 'the error tells the caller what to pass');
+    assert.match(err, /origin\/main/, 'and names the refs it looked for, so the failure is not a mystery');
+    assert.doesNotMatch(out, /范围:/, 'and nothing is reported as measured');
+    assert.notEqual(code, EXIT.CLEAN, `${fork.slice(0, 8)}: falling back to HEAD~1 would exit like a clean audit`);
+  });
+
+  test('audit infers and declares the same way', async () => {
+    // The audit command resolves the range in its own code path, so "shared helper"
+    // is a claim that needs its own case.
+    const { dir, fork } = await repoWithOrigin();
+    const explicit = await capture(['audit', '--repo', dir, '--base', fork, '--json']);
+    const { code, out } = await capture(['audit', '--repo', dir, '--json']);
+    const report = JSON.parse(out);
+
+    assert.equal(code, explicit.code, 'the merged run answers the same question either way');
+    assert.equal(report.subject.base, fork, 'audit infers the same fork point');
+    assert.match(out, /"code": "range-inferred"/, 'and declares it on the JSON channel');
+  });
+
+  test('the inference is anchored on the --head that was asked for', async () => {
+    // origin/main advanced past the fork while the checkout sits on an older
+    // branch. Asking about `--head origin/main` must infer the base from *that*
+    // commit; computing it from the checked-out HEAD measures a range nobody
+    // asked for — here, it would drag in the very changes under review.
+    const origin = await makeRepo();
+    const seed = await commitFiles(origin, 'chore: seed', { 'src/a.js': 'export const a = 1;\n' });
+    await commitFiles(origin, 'fix: reject expired tokens', {
+      'src/a.js': 'export const a = 1;\n  if (Date.now() > token.expiresAt) throw new Error("expired token here");\n'
+    });
+    const dir = await mkdtemp(path.join(tmpdir(), 'euthyna-clone-'));
+    await execFileAsync('git', ['clone', '-q', origin, dir]);
+    await git(dir, ['config', 'user.email', 'test@example.com']);
+    await git(dir, ['config', 'user.name', 'Test Author']);
+    const target = (await git(dir, ['rev-parse', 'origin/main'])).trim();
+    await git(dir, ['checkout', '-q', '-b', 'older', seed]);
+    await commitFiles(dir, 'chore: unrelated work here', { 'src/other.js': 'export const other = 1;\n' });
+
+    const { out } = await capture(['history', '--repo', dir, '--head', 'origin/main', '--json']);
+    const report = JSON.parse(out);
+
+    assert.equal(
+      report.subject.base,
+      target,
+      'merge-base is taken against the resolved --head, not the checked-out commit'
+    );
+  });
+
+  test('the declaration is a pure decision, in both languages', async () => {
+    const zh = rangeInferenceDeclaration({ ref: 'origin/main', head: 'a'.repeat(40) }, (zhText, enText) => zhText);
+    const en = rangeInferenceDeclaration({ ref: 'origin/main', head: 'a'.repeat(40) }, (zhText, enText) => enText);
+
+    assert.equal(zh.code, 'range-inferred');
+    assert.match(zh.reason, /origin\/main/);
+    assert.match(en.reason, /origin\/main/);
+    assert.notEqual(zh.reason, en.reason, 'the two languages are written, not copied');
   });
 });
 

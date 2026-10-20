@@ -10,8 +10,11 @@
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
-import { git, gitFailureMessage } from '../src/git.js';
+import { git, gitFailureMessage, mergeBase } from '../src/git.js';
 import { makeRepo, commitFiles } from './helpers.js';
 
 describe('gitFailureMessage', () => {
@@ -93,5 +96,31 @@ describe('git() error path (real git)', () => {
     const repo = await makeRepo();
     const out = await git(['log', 'nonexistent-plain'], { cwd: repo, allowFailure: true });
     assert.equal(out, '');
+  });
+});
+
+describe('mergeBase', () => {
+  const BS = String.fromCharCode(92);
+
+  test('a sha256 repository still yields a merge base', async () => {
+    // The audited repository chooses its own object format. Accepting only a
+    // 40-char id reads a valid 64-char fork point as "nothing resolved", which
+    // turns a working inference into a usage error.
+    const dir = await mkdtemp(path.join(tmpdir(), 'euthyna-sha256-'));
+    await git(['init', '-q', '--object-format=sha256', '.'], { cwd: dir });
+    await git(['config', 'user.email', 'test@example.com'], { cwd: dir });
+    await git(['config', 'user.name', 'Test Author'], { cwd: dir });
+    await git(['config', 'commit.gpgsign', 'false'], { cwd: dir });
+    await writeFile(path.join(dir, 'a.txt'), 'one' + BS + 'n');
+    await git(['add', '-A'], { cwd: dir });
+    await git(['commit', '-q', '-m', 'seed'], { cwd: dir });
+    const seed = (await git(['rev-parse', 'HEAD'], { cwd: dir })).trim();
+    await git(['branch', 'side'], { cwd: dir });
+    await writeFile(path.join(dir, 'b.txt'), 'two' + BS + 'n');
+    await git(['add', '-A'], { cwd: dir });
+    await git(['commit', '-q', '-m', 'main moves on'], { cwd: dir });
+
+    assert.equal(seed.length, 64, 'the repository really is sha256 here');
+    assert.equal(await mergeBase(dir, 'HEAD', 'side'), seed, 'the fork point is returned, not rejected as unparseable');
   });
 });

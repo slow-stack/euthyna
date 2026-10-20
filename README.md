@@ -180,6 +180,7 @@ replying in chat.
 ```sh
 npm install -g euthyna
 euthyna audit --repo <path> --base main --head HEAD            # history + deps in one run
+euthyna audit --graph                                          # the same attribution, drawn (see below)
 euthyna coverage --coverage coverage/coverage-final.json --symbol <name>
 euthyna deps --repo <path> --all                               # or --dep <name> for a single dep
 euthyna gate <adjudication-report.md> --verify --cwd <repo>    # mechanically check the six gates
@@ -211,6 +212,15 @@ Add `--json` for the structured fact report and `--pickaxe` to detect lines that
 removed and are now being added back. Origin tracing is on by default (deleted lines
 are attributed to the commit that first introduced their content); `--no-origins`
 falls back to blame's last-modifier attribution, which is faster.
+
+`--graph` on `audit` or `history` draws what `history` already computed — the range, the commit
+that last modified each deleted line, and the commit that first introduced its content — as
+Mermaid source, renderable straight into a GitHub comment. It measures nothing new and never
+colours a node by risk; a missing second edge is a neutral fact, not a clearance. `--base` may
+be left out entirely: the fork point is then inferred as `merge-base(<the audited head>, origin/main)` and
+said three times over — on the range line, among the criteria not evaluated (`range-inferred`),
+and as a `code` on the `--json` channel — because an inferred range reaches the fork point only,
+and a quietly smaller history is the one thing this output must not be able to imply.
 
 ### Exit codes are part of the contract
 

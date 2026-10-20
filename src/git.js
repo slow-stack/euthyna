@@ -82,6 +82,22 @@ export async function revParse(cwd, rev) {
 }
 
 /**
+ * The fork point between two revisions, or null when git cannot name one.
+ *
+ * `from` is passed in rather than assumed to be the checked-out HEAD: a run that
+ * was asked about another commit must fork from *that* commit, or the range it
+ * reports was never the one requested.
+ */
+export async function mergeBase(cwd, from, rev) {
+  const out = await git(['merge-base', from, rev], { cwd, allowFailure: true });
+  const sha = out.trim();
+  // git prints the hash alone on success; anything else (an error text that got
+  // past allowFailure, an empty result) is not a fork point. A repository picks
+  // its own object format, so both the 40-char and the 64-char id are valid.
+  return /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha) ? sha : null;
+}
+
+/**
  * One-line summaries for a set of commits, as a Map of hash -> {subject, author, date}.
  * Uses a single `git log` invocation so the cost does not scale per commit.
  */

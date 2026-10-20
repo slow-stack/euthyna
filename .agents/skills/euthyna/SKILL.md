@@ -92,6 +92,23 @@ license: Apache-2.0
 **可以做多个阶段，但阶段之间不许互相替代。**
 特别是：**阶段 B 报出的疑似发现，必须逐个走阶段 C 验证**，不许直接写进报告当结论。
 
+### 模式词（斜杠命令）
+
+用户用斜杠命令进来时，按下表把模式映射到阶段与第一条命令。**词表只在这里维护**，
+各宿主命令文件（Cursor / OpenCode / Copilot / Hermes）指向本节，不各自重抄一份。
+
+| 你打 | 走哪条支路 | 第一条命令 |
+|---|---|---|
+| `/euthyna pr` | 阶段 B 变更面 | `euthyna audit`（省略 `--base` 即按分叉点推断并声明） |
+| `/euthyna graph` | 阶段 B 的来源谱系视图 | `euthyna audit --graph`（同样可省略 `--base`） |
+| `/euthyna repo` | 阶段 A 依赖面 | `euthyna deps --all` |
+| `/euthyna claim <结论>` | 阶段 C 结论面 | `euthyna coverage --symbol <名>` |
+| `/euthyna gate <报告>` | 校验一份已写的报告 | `euthyna gate <报告>` |
+| `/euthyna help` | 只打印这张表 | 不跑命令，不改变状态 |
+
+`/euthyna graph` 不是新测量：`--graph` 只是把 `history` 已经给出的归属画成 Mermaid。
+**图上没有第二条边不等于内容没被移过**，边界见 references/fact-producers.md。
+
 ---
 
 ## 本技能自带的两个确定性测量
@@ -106,7 +123,7 @@ license: Apache-2.0
 | `coverage` | 某个符号在测试运行中**到底有没有被调用过**？ | 报告里要说「测过 / 没测过」时（阶段 B / C） |
 
 ```powershell
-# 唯一必需的参数是 --base（改前版本 / PR 分叉点）：
+# --base 可以省略：省略时按 merge-base(HEAD, origin/main) 推断，并在报告里声明为 range-inferred
 node <euthyna 仓库>/bin/euthyna.js audit --base <改前版本> --repo <被审计的仓库>
 
 # history / coverage 按需单独跑：

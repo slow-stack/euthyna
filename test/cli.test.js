@@ -15,9 +15,26 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import { parseArgs, EXIT } from '../src/cli.js';
-import { makeRepo, commitFiles, git, npmLockfile } from './helpers.js';
+import { makeRepo, commitFiles, git, npmLockfile, edgeTargets } from './helpers.js';
 
 const execFileAsync = promisify(execFile);
+
+/** Run the CLI in-process, capturing stdout alongside the exit code it returns. */
+async function capture(argv) {
+  const { main } = await import('../src/cli.js');
+  const chunks = [];
+  const original = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => {
+    chunks.push(String(chunk));
+    return true;
+  };
+  try {
+    const code = await main(argv);
+    return { code, out: chunks.join('') };
+  } finally {
+    process.stdout.write = original;
+  }
+}
 
 describe('parseArgs', () => {
   test('separates positional arguments from flags', () => {
@@ -475,5 +492,104 @@ describe('crash path (bin entry)', () => {
         return true;
       }
     );
+  });
+});
+
+describe('--graph', () => {
+  async function securityDeletionRepo() {
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, 'fix: prevent authentication bypass (CVE-2024-1111)', {
+      'src/a.js': 'if (!ok) throw new Error("denied");\n'
+    });
+    await commitFiles(repo, 'refactor: drop the check', { 'src/a.js': 'doIt();\n' });
+    return { repo, base };
+  }
+
+  test('history --graph prints the mermaid source without changing the exit code', async () => {
+    const { repo, base } = await securityDeletionRepo();
+    const { code, out } = await capture(['history', '--repo', repo, '--base', base, '--graph']);
+
+    assert.match(out, /^graph TD$/m, 'the graph reaches stdout');
+    assert.equal(code, EXIT.FLAGGED, 'a render mode must not change what the exit code means');
+  });
+
+  test('--graph with --json is a usage error', async () => {
+    const { repo, base } = await securityDeletionRepo();
+    const { code } = await capture(['history', '--repo', repo, '--base', base, '--graph', '--json']);
+
+    // Two channels on one stdout would emit a graph with a JSON document glued to
+    // it, and a CI step that parses either would fail without saying which.
+    assert.equal(code, EXIT.USAGE, 'the two render modes are mutually exclusive');
+  });
+
+  test('deps --graph is a usage error, not a picture of nothing', async () => {
+    const repo = await makeRepo();
+    await commitFiles(repo, 'chore: pin left-pad', { 'package-lock.json': npmLockfile([['left-pad', '1.3.0']]) });
+
+    const { code, out } = await capture(['deps', '--repo', repo, '--all', '--graph']);
+
+    // The provenance graph reads deleted-line attribution, which deps does not
+    // produce. Rendering it anyway prints a range node and no edges, which looks
+    // exactly like "no provenance found" — the one thing this tool must not imply.
+    assert.equal(code, EXIT.USAGE, '--graph belongs to history and audit only');
+    assert.doesNotMatch(out, /graph TD/, 'nothing is printed as if it were a graph');
+  });
+
+  test('a real repository produces the lineage edge, not only the fixture', async () => {
+    // The unit tests hand the graph a fact with blameCommit and originCommit
+    // already filled in. That proves the view reads those fields; it does not
+    // prove the producer ever writes them. This is a three-commit repository
+    // where a line is introduced by a security commit, moved (so `git blame`
+    // names the mover), and then deleted — the shape where -S tracing and blame
+    // disagree. The origin has to read as a security commit: `history` keeps a
+    // traced origin only when its own classification is not `none`
+    // (src/facts/history.js:360), which is why the message below says `fix:`.
+    const repo = await makeRepo();
+    const guard = '  if (Date.now() > token.expiresAt && !token.refreshable) throw new Error("expired");';
+    const filler = ['export function svc(token) {', '  return token.scoped;', '}'];
+
+    const first = await commitFiles(repo, 'fix: reject expired refreshable tokens', { 'src/svc.js': [...filler.slice(0, 1), guard, ...filler.slice(1)].join('\n') });
+    const moved = await commitFiles(repo, 'refactor: reorder the guard', { 'src/svc.js': [...filler.slice(0, 2), guard, filler[2]].join('\n') });
+    await commitFiles(repo, 'refactor: drop the guard', { 'src/svc.js': [...filler, ''].join('\n') });
+
+    const { out } = await capture(['history', '--repo', repo, '--base', moved, '--head', 'HEAD', '--graph']);
+
+    const hangsOffTheMover = edgeTargets(out, 'R').some((target) => target.includes(`C_${moved}`));
+    assert.equal(hangsOffTheMover, true, `the deleted lines must hang off the commit that moved them:\n${out}`);
+    const tracedToFirst = edgeTargets(out, moved).some((target) => target.includes(`C_${first}`));
+    assert.equal(
+      tracedToFirst,
+      true,
+      `the moved line must trace back to the commit that introduced it:\n${out}`
+    );
+  });
+});
+
+describe('--graph scope', () => {
+  test('audit --graph draws only the provenance half of the merged report', async () => {
+    // `audit` merges history + deps facts into one report. Dependency facts carry
+    // no commit, so the first run of this command drew `R --> C_[""]` — an empty
+    // node presented as a commit, twice, once per dependency fact.
+    const repo = await makeRepo();
+    await commitFiles(repo, 'chore: seed', {
+      'package-lock.json': npmLockfile([['left-pad', '1.3.0']]),
+      'src/a.js': 'export const a = 1;\n'
+    });
+    await commitFiles(repo, 'fix: reject expired tokens', {
+      'src/a.js': 'export const a = 1;\n  if (Date.now() > token.expiresAt) throw new Error("expired token here");\n'
+    });
+    const base = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+    await commitFiles(repo, 'chore: drop the check', {
+      'package-lock.json': npmLockfile([['left-pad', '1.3.0'], ['alpha', '2.0.0']]),
+      'src/a.js': 'export const a = 1;\n'
+    });
+
+    const plain = await capture(['audit', '--repo', repo, '--base', base, '--json']);
+    const { code, out } = await capture(['audit', '--repo', repo, '--base', base, '--graph']);
+
+    assert.match(out, /^graph TD$/m, `audit is a supported --graph command:\n${out}`);
+    assert.doesNotMatch(out, /C_\[|C_\s/, 'no node stands in for a missing commit');
+    // The exit code is the published contract; a render mode may not move it.
+    assert.equal(code, plain.code, '--graph draws the same run the JSON channel reports');
   });
 });

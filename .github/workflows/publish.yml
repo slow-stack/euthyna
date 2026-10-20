@@ -252,22 +252,46 @@ jobs:
             fi
           done
 
-          clawhub skill publish \
-            --slug euthyna --name euthyna --version "$PKG" \
-            --categories security,development \
-            --topics "security-audit,code-audit,git-forensics,owasp" \
-            --source-repo "${{ github.repository }}" --source-commit "$SHA" \
-            --source-path .agents/skills/euthyna \
-            --changelog "$CHANGELOG" \
-            --tags latest .agents/skills/euthyna
-          clawhub skill publish \
-            --slug euthyna-en --name "euthyna (English)" --version "$PKG" \
-            --categories security,development \
-            --topics "security-audit,code-audit,git-forensics,owasp" \
-            --source-repo "${{ github.repository }}" --source-commit "$SHA" \
-            --source-path .agents/skills/euthyna-en \
-            --changelog "English edition. Changes in $PKG: $CHANGELOG" \
-            --tags latest .agents/skills/euthyna-en
+          # The registry holds a version row before the `latest` pointer moves, and
+          # it refuses a submission for a version it already carries — measured on
+          # 0.9.0, where the Chinese edition landed and the English edition was
+          # refused `Version 0.9.0 already exists` although `euthyna-en` had no such
+          # version at all. That refusal ended the step under `bash -e`, so the
+          # second slug was never submitted and the verify step — the only place
+          # that could see the missing half — never ran. A duplicate refusal is
+          # therefore recorded and skipped here: whether the listing actually
+          # arrived is the verify step's judgement, not this command's.
+          failed=0
+          for slug in euthyna euthyna-en; do
+            if [ "$slug" = "euthyna" ]; then
+              name="euthyna"
+              changelog="$CHANGELOG"
+            else
+              name="euthyna (English)"
+              changelog="English edition. Changes in $PKG: $CHANGELOG"
+            fi
+            src=".agents/skills/$slug"
+            status=0
+            out="$( { clawhub skill publish \
+              --slug "$slug" --name "$name" --version "$PKG" \
+              --categories security,development \
+              --topics "security-audit,code-audit,git-forensics,owasp" \
+              --source-repo "${{ github.repository }}" --source-commit "$SHA" \
+              --source-path "$src" \
+              --changelog "$changelog" \
+              --tags latest "$src"; } 2>&1 )" || status=$?
+            printf '%s\n' "$out"
+            if [ "$status" -ne 0 ]; then
+              case "$out" in
+                *"already exists"*)
+                  echo "::notice::$slug@$PKG refused as a duplicate — leaving it to the verify step"
+                  continue ;;
+              esac
+              echo "::error::$slug@$PKG publish failed (exit $status)"
+              failed=1
+            fi
+          done
+          [ "$failed" = 0 ] || exit 1
 
       # A push is not a listing. `clawhub skill publish` returns once the
       # submission is queued; the registry then generates a skill card and runs

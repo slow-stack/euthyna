@@ -99,7 +99,7 @@ node <euthyna 仓库>/bin/euthyna.js history --base <改前版本> --no-origins 
 ### 输出长什么样（真实捕获）
 
 ```
-euthyna euthyna-history — 被删除代码的来源归属与安全分类
+euthyna-history — 被删除代码的来源归属与安全分类
 目标: D:/axe-core/axe-core
 范围: 8390a5a9…..397f5fce…
 
@@ -243,7 +243,7 @@ node <euthyna 仓库>/bin/euthyna.js coverage `
 ### 输出长什么样（真实捕获，一次查询命中两种结果）
 
 ```
-euthyna euthyna-coverage — 符号调用计数（只能证伪）
+euthyna-coverage — 符号调用计数（只能证伪）
 
 已确证 (1)
   • 符号 cleanup 在本次测试运行中一次都没有被调用（调用计数为 0）

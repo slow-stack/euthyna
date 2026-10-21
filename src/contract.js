@@ -203,7 +203,10 @@ export function renderReport(report, { write: rawWrite = console.log, lang = DEF
   const unknown = facts.filter(f => f.status === STATUS.UNKNOWN);
 
   write('');
-  write(`euthyna ${producer.name} — ${producer.purpose || ''}`.trim());
+  // The producer name is `euthyna-history`, `euthyna-audit`, …: it already names
+  // the tool, so the header prints it as the contract emits it — the same string
+  // the `--json` `producer` field carries.
+  write(`${producer.name} — ${producer.purpose || ''}`.trim());
   write(`${t('目标: ', 'Target: ')}${subject.repo ?? subject.coverageFile ?? t('(未指定)', '(unspecified)')}`);
   if (subject.base || subject.head) {
     write(

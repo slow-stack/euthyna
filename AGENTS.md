@@ -169,6 +169,29 @@ Not inferred. Do not re-research these.
   `.agents/skills/euthyna` and `.agents/skills/euthyna-en`. Its ClawHub job did not
   publish — see `### ClawHub registry` below, where the listing was later brought to 0.7.0
   from this machine.
+- 🧪 `euthyna@0.8.0` published 2026-10-17 by the same workflow: the tag points at `7f6aaa4`,
+  and run `39069623839` took `preflight`, `publish` **and `clawhub`** green — the first
+  release whose ClawHub listing was moved by CI rather than rescued from this machine. GitHub
+  release `euthyna 0.8.0`, `publishedAt 2026-10-17T21:08:08Z`, author `github-actions[bot]`;
+  the attestations endpoint returns 200 for `euthyna@0.8.0` (15,086 bytes). This bullet was
+  written 2026-10-21: the release itself went four days without a record here, which is the
+  reason the 0.9.0 record is written in the same pass as the tag rather than after it.
+- 🧪 `euthyna@0.9.0` published 2026-10-20 by the same workflow: tag `v0.9.0` → `af4aa79`
+  (the merge of the bump PR #41), run `39477379456` took `preflight` and `publish` green and
+  cut the GitHub release `euthyna 0.9.0` (`publishedAt 2026-10-20T18:44:47Z`, author
+  `github-actions[bot]`). Checked from outside: `npm view euthyna dist-tags` → `latest: 0.9.0`;
+  shasum `3242f13aaead91f480dae7ad0d5adc695444ed61`, 833,248 unpacked bytes; the attestations
+  endpoint returns 200 (15,039 bytes). A temp-prefix install from the registry carries
+  `src/graph.js` and both skill editions, its English help renders `--base` as optional and
+  `--graph`, and `euthyna audit --base v0.8.0 --head v0.9.0 --graph` draws the provenance
+  graph from the published binary — exit 10, which is `FLAGGED` in the published contract, not
+  an error. **Its `clawhub` job failed** — see `### ClawHub registry` below.
+
+One CI-reading fact from the same release: the bump PR's `node 24 on windows-latest` check
+reported `fail` after 15m1s, and `gh run view --json jobs` called the same job `cancelled` with
+an empty log — the job sat queued and was cancelled, it never ran. The same commit's push run on
+`main` (run `39476543157`) is 8 jobs green including that cell. So read a red Windows check as
+suspicious until the job log exists; a cancelled queue slot is not a test failure.
 
 ### ClawHub registry
 
@@ -243,6 +266,39 @@ One thing this did settle: `gh secret list` cannot tell a set secret from an emp
 2026-09-23 entry is the precedent), but the step log masks a received value as
 `CLAWHUB_TOKEN: ***`, and preflight records `present`/`absent`. That is the evidence the
 secret is populated — which the earlier `absent`-in-the-job failure could not show either way.
+
+🧪 **A duplicate refusal on the second slug means the second edition was never submitted. Measured 2026-10-21 on 0.9.0.**
+
+`v0.9.0` took `preflight` and `publish` green — npm `latest: 0.9.0`, provenance 200 — and its
+`clawhub` job exited 1. The step log gives the order: the pre-read passed both slugs
+(`euthyna currently lists 0.8.0; candidate 0.9.0 compares: newer`, same for `euthyna-en`), the
+Chinese `publish` was accepted and landed, and the English `publish` was refused with
+`Version 0.9.0 already exists. Increment the version number and try again. (reset in 22s)` — for
+a slug that held no such version, because reading `euthyna-en --version 0.9.0` immediately
+afterwards answered `Version not found`. **The refusal and the readable state are two different
+claims; do not reconcile them into one.**
+
+What cost the listing was the ordering, not the answer. The step ran the two publishes as flat
+statements under `bash -e`, so the first non-zero exit ended it — the English edition never
+reached the registry, and the verify step, the only thing in the job that could see a missing
+half, never ran. One red job therefore covered two different facts (one listing landed, one did
+not) and reported neither.
+
+Both settled. The Chinese slug, 8 rounds at three-minute spacing after the CI submission:
+rounds 1–4 `pass|clean|0.8.0`, rounds 5–6 `fail|card.missing|clean|0.9.0`, rounds 7–8
+`pass|clean|0.9.0`. The English slug, pushed from this machine with the workflow's own flag set
+(`--source-commit af4aa79`, CLI v0.23.3): rounds 1–2 `0.8.0`, then rounds 3–8
+`fail|card.missing|clean|0.9.0` — `latest` moved at round 3 while the decision was still failing
+23 minutes later. By 2026-10-21T00:56Z both read `pass|clean|0.9.0`; **when between 19:56Z and
+00:56Z it flipped is not on record** — a one-shot re-read ran in that window and its report lives
+in its own conversation, so this is the same attribution limit the 0.7.0 entry records. The
+`card.missing` intermediate state is the `a push is not a listing` fact measured a third time,
+this time on two slugs of one release: the pointer moves before the decision does, so reading
+either alone under- or over-reports.
+
+The workflow now walks the two editions in one loop, treats a duplicate refusal as
+`already registered` and continues to the next slug, and lets a genuine failure redden the step at
+the end — the verify step stays the only thing that decides whether a listing arrived.
 
 npm running ahead of ClawHub is the exact condition PR #23 added this job to detect, so the
 lag is visible as a red job plus these notes rather than silent.
@@ -680,6 +736,8 @@ is faithful — that is a reading job, and a mechanical stand-in would only manu
 | **A workflow that only runs on release day can be broken for days and show nothing but ~0-second red runs** | 🧪 Measured 2026-10-10: `publish.yml` did not parse from `b795569` (PR #23) until the 0.7.0 rehearsal. The cause was `${{ runner.temp }}` in a **job-level `env:`**, where only the `secrets` and `vars` contexts are legal — one illegal reference invalidates the whole file. Every push produced a 0-second failure that no PR check reported, and the reason surfaced only as `HTTP 422 … Unrecognized named-value: 'runner'` from `gh workflow run`. So run the non-publishing rehearsal (`gh workflow run publish.yml --ref <branch> -f publish=false`, or on `main` before the tag) as a standing first step of any release: it costs a minute and is the only exercise that path gets between releases |
 | **Deleting `TEMP` from the env handed to a child does not remove it in the child** | 🧪 Measured while writing the issue #7 regressions: after the parent deleted `TEMP`/`TMP`/`TMPDIR` from the env object passed to `execFileSync`, the child still reported `'TEMP' in process.env === true` and `os.tmpdir()` equal to the real user temp (`TMP`/`TMPDIR` did stay absent). Setting them to `''` **does** propagate, and `os.tmpdir()` skips an empty value and falls back to an absolute default — so a test that needs "no temp variable" must set them empty rather than delete them, or assert the property on a pure helper instead (see `bench/results-dir.js` and its unit test in `test/bench.test.js`) |
 | **A computed README badge can publish a claim with nothing behind it, and no check will notice** | 🧪 Measured 2026-10-11: the `Agent skills installs` badge pointed at `skills.sh/b/slow-stack/euthyna.svg`, which renders `resource not found` in red (`fill="#dd4343"`) while its own link is a `404` and the site's search API answers `{"skills":[],"count":0}` for `euthyna`. The listing never existed, and the badge sat in the README for 19 days from `eafd69d`. When touching the badge block, read each SVG's `aria-label` and each link's status: a badge with a hard-coded `color=` is decoration, not evidence. Full measurement: `### skills.sh` |
+| **The registry refuses a second slug's submission of the version the first slug just took — and names a version the refused slug does not have** | 🧪 Measured 2026-10-21 on 0.9.0: `euthyna` landed, then `euthyna-en` was refused `Version 0.9.0 already exists`, while `verify euthyna-en --version 0.9.0` answered `Version not found` minutes later. Under `bash -e` that refusal ended the publish step, so the second edition was never submitted and the verify step — the only reader of a missing half — never ran. Walk the editions in one loop, treat a duplicate refusal as already-registered and continue, and let the verify step decide whether the listing arrived. Full measurement: `### ClawHub registry` |
+| **A global npm command can be a shim with nothing behind it, and then block its own reinstall** | 🧪 Measured 2026-10-21: `euthyna --version` threw `MODULE_NOT_FOUND` because `%APPDATA%\npm\node_modules\euthyna` had been removed while its three shims (dated 2026-09-27) survived; `npm install -g` then fails `EEXIST` rather than overwrite files it holds no record of. Move the shims aside — do not delete — reinstall, and test the command rather than its presence: `euthyna help` must exit 0, and read the version out of the installed `package.json` |
 
 ---
 

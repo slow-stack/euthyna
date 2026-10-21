@@ -186,6 +186,21 @@ Not inferred. Do not re-research these.
   `--graph`, and `euthyna audit --base v0.8.0 --head v0.9.0 --graph` draws the provenance
   graph from the published binary — exit 10, which is `FLAGGED` in the published contract, not
   an error. **Its `clawhub` job failed** — see `### ClawHub registry` below.
+- 🧪 `euthyna@0.9.1` published 2026-10-21 by the same workflow: tag `v0.9.1` → `d1901e0` (the
+  merge of the bump PR #45), run `39544590434` took `preflight`, `publish` **and `clawhub`** green —
+  the first run of the looped publish step, and its `Verify the ClawHub listing reached
+  decision=pass` step is what says both editions landed rather than the publish command's exit
+  code. Checked from outside: `npm view euthyna dist-tags` → `latest: 0.9.1`; shasum
+  `bdf5069d5317326f24da5c586c456f0eaaf52e2f`, 834,176 unpacked bytes; attestations endpoint 200
+  (14,483 bytes); GitHub release `euthyna 0.9.1` (`publishedAt 2026-10-21T04:32:46Z`, author
+  `github-actions[bot]`); both slugs read `pass|clean|0.9.1`. A fresh temp-prefix install shows
+  the two fixes in the shipped artifact: the header line is `euthyna-audit —` (producer name
+  printed once) and the Hermes `__init__.py` carries `_FORWARDS = ('audit', 'coverage', 'deps',
+  'gate', 'help', 'history')`.
+
+The same release merged differently: `gh pr merge --merge` succeeded on #42/#43/#44/#45 because
+`mergeStateStatus` read `CLEAN`, where earlier releases read `BLOCKED` and needed the web UI or
+`--admin`. Read the field rather than assuming either state.
 
 One CI-reading fact from the same release: the bump PR's `node 24 on windows-latest` check
 reported `fail` after 15m1s, and `gh run view --json jobs` called the same job `cancelled` with

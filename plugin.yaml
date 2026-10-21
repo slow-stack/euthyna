@@ -1,6 +1,6 @@
 name: euthyna
 version: 0.9.0
-description: euthyna audit discipline — slash commands that drive the euthyna fact-producing CLI (history / coverage / deps / gate)
+description: euthyna audit discipline — the /euthyna slash command driving the euthyna CLI, whose single entry point is `euthyna audit`
 license: Apache-2.0
 homepage: https://github.com/slow-stack/euthyna
 tags:

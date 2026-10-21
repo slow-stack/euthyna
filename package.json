@@ -1,6 +1,6 @@
 {
   "name": "euthyna",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Audit framework for AI coding agents: produces the deterministic facts a model cannot compute — deleted-code provenance, symbol invocations, dependency pins — and adjudicates every claim against six gates, downgrading what cannot produce evidence to an observation. Not a scanner.",
   "type": "module",
   "main": "./plugin/index.js",

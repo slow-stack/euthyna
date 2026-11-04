@@ -94,7 +94,6 @@ audit 自己的。
 ```yaml
       - name: 变更面审计
         run: npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD --out audit-report.txt
-        continue-on-error: true
         id: audit
       - uses: actions/upload-artifact@v4
         if: always()

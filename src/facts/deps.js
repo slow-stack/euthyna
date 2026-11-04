@@ -16,8 +16,8 @@
  *   - package-lock.json  (npm v1/v2/v3)
  *   - Cargo.lock         (Rust)
  *   - go.mod             (Go; the DECLARED requirement version, not the resolved one —
- *                         go.sum has no versions, so this producer says "declared",
- *                         never "locked", for Go)
+ *                         go.sum records version-hash pairs but not the selected build
+ *                         list, so this producer says "declared", never "locked", for Go)
  * Anything else found at auto-detect (pnpm/yarn/poetry/...) is reported as
  * notEvaluated with the filenames named, rather than guessed at.
  */
@@ -44,19 +44,38 @@ const UNSUPPORTED = [
   'bun.lock'
 ];
 
-/** 1-indexed line of the first line containing `needle`, or null. */
-function lineOf(text, needle) {
-  return lineOfAt(text, text.indexOf(needle));
+/**
+ * A line-number lookup over a fixed text: newline offsets collected once,
+ * queried by binary search.
+ *
+ * It answers exactly what counting the newlines before an index answers — the
+ * table just does not re-count. That matters on the whole-manifest path: the
+ * prefix walk was O(prefix) per evidence lookup, and with every dependency in
+ * the manifest queried (`euthyna audit`), the whole run compounded
+ * quadratically (bench/perf-deps.js measured the per-dependency cost doubling
+ * with each doubling of the manifest). Build once per file, query per hit.
+ */
+function makeLineTable(text) {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) starts.push(i + 1);
+  }
+  return (index) => {
+    if (index < 0 || index >= text.length) return null;
+    let lo = 0;
+    let hi = starts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= index) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo + 1;
+  };
 }
 
-/** 1-indexed line of the absolute text index, or null when it is not found. */
-function lineOfAt(text, index) {
-  if (index < 0) return null;
-  let line = 1;
-  for (let i = 0; i < index; i++) {
-    if (text[i] === '\n') line++;
-  }
-  return line;
+/** 1-indexed line of the first line containing `needle`, or null when absent. */
+function lineOf(text, needle, lineAt) {
+  return lineAt(text.indexOf(needle));
 }
 
 /**
@@ -65,33 +84,53 @@ function lineOfAt(text, index) {
  * v2/v3: `packages` maps "node_modules/<name>" (possibly nested, and possibly
  * scoped "@scope/name") to metadata; the package name is the path segment after
  * the last "node_modules/". v1: a recursive `dependencies` tree.
+ *
+ * Called once per queried dependency — and `euthyna audit` queries every
+ * dependency — so the name→entries indexes are built once per file and the
+ * per-dep work is a Map lookup, not a rescan of every key.
  */
-function resolveNpm(root, dep, text) {
-  const found = [];
+function makeNpmResolver(root, text, lineAt) {
+  const found = (dep) => {
+    const hits = [];
+    for (const { version, key } of byKey.get(dep) ?? []) {
+      hits.push({ version, location: key, line: lineOf(text, `"${key}":`, lineAt) });
+    }
+    for (const version of byName.get(dep) ?? []) {
+      // Anchor at this dep's own block: a same-version string earlier in the
+      // file (some other package) must not hijack the evidence pointer.
+      const blockAt = text.indexOf(`"${dep}":`);
+      const verAt = blockAt < 0 ? -1 : text.indexOf(`"version": "${version}"`, blockAt);
+      hits.push({
+        version,
+        location: `dependencies.${dep}`,
+        line: lineAt(verAt)
+      });
+    }
+    return hits;
+  };
 
+  const byKey = new Map();
   if (root.packages && typeof root.packages === 'object') {
     for (const [key, meta] of Object.entries(root.packages)) {
       if (!key.includes('node_modules/')) continue;
       if (!meta || typeof meta !== 'object' || !meta.version) continue;
-      if (key.split('node_modules/').pop() !== dep) continue;
-      found.push({ version: meta.version, location: key, line: lineOf(text, `"${key}":`) });
+      const name = key.split('node_modules/').pop();
+      if (!name) continue;
+      const list = byKey.get(name) ?? [];
+      list.push({ version: meta.version, key });
+      byKey.set(name, list);
     }
   }
 
+  const byName = new Map();
   if (root.dependencies && typeof root.dependencies === 'object') {
     const walk = (tree) => {
       for (const [name, meta] of Object.entries(tree)) {
         if (!meta || typeof meta !== 'object') continue;
-        if (name === dep && meta.version) {
-          // Anchor at this dep's own block: a same-version string earlier in the
-          // file (some other package) must not hijack the evidence pointer.
-          const blockAt = text.indexOf(`"${name}":`);
-          const verAt = blockAt < 0 ? -1 : text.indexOf(`"version": "${meta.version}"`, blockAt);
-          found.push({
-            version: meta.version,
-            location: `dependencies.${name}`,
-            line: lineOfAt(text, verAt)
-          });
+        if (meta.version) {
+          const list = byName.get(name) ?? [];
+          list.push(meta.version);
+          byName.set(name, list);
         }
         if (meta.dependencies && typeof meta.dependencies === 'object') walk(meta.dependencies);
       }
@@ -102,25 +141,39 @@ function resolveNpm(root, dep, text) {
   return found;
 }
 
-/** Cargo.lock: [[package]] blocks with `name = "..."` and `version = "..."`. */
-function resolveCargo(text, dep) {
-  const found = [];
+/**
+ * Cargo.lock: [[package]] blocks with `name = "..."` and `version = "..."`.
+ * Blocks are parsed once per file (per-dep splits of the whole text were the
+ * measured quadratic term on this format, bench/perf-deps.js).
+ */
+function makeCargoResolver(text, lineAt) {
+  const byName = new Map();
   for (const block of text.split('[[package]]')) {
     const name = /^\s*name\s*=\s*"([^"]+)"/m.exec(block);
     const version = /^\s*version\s*=\s*"([^"]+)"/m.exec(block);
-    if (!name || !version || name[1] !== dep) continue;
+    if (!name || !version) continue;
+    const list = byName.get(name[1]) ?? [];
+    list.push(version[1]);
+    byName.set(name[1], list);
+  }
+
+  return (dep) => {
+    const versions = byName.get(dep);
+    if (!versions) return [];
     // Package names are unique in a Cargo.lock, so anchoring the version line
     // at this dep's own name block keeps the pointer on this crate even when a
     // different crate earlier in the file pins the same version string.
     const nameAt = text.indexOf(`name = "${dep}"`);
-    const verAt = nameAt < 0 ? -1 : text.indexOf(`version = "${version[1]}"`, nameAt);
-    found.push({
-      version: version[1],
-      location: `[[package]] ${dep}`,
-      line: lineOfAt(text, verAt)
+    if (nameAt < 0) return [];
+    return versions.map((version) => {
+      const verAt = text.indexOf(`version = "${version}"`, nameAt);
+      return {
+        version,
+        location: `[[package]] ${dep}`,
+        line: lineAt(verAt)
+      };
     });
-  }
-  return found;
+  };
 }
 
 /** go.mod require lines, single or inside a require (...) block. */
@@ -152,6 +205,7 @@ function resolveGo(text, dep) {
  */
 function makeResolver(type, text, lang = DEFAULT_LANG) {
   const t = T(lang);
+  const lineAt = makeLineTable(text);
   if (type === 'npm') {
     const root = JSON.parse(text); // throws on malformed JSON
     // A syntactically valid but structurally empty file (e.g. `{}`) is not a
@@ -169,7 +223,7 @@ function makeResolver(type, text, lang = DEFAULT_LANG) {
         )
       );
     }
-    return (dep) => resolveNpm(root, dep, text);
+    return makeNpmResolver(root, text, lineAt);
   }
   if (type === 'cargo') {
     if (!/\[\[package\]\]|^version\s*=/m.test(text)) {
@@ -180,7 +234,7 @@ function makeResolver(type, text, lang = DEFAULT_LANG) {
         )
       );
     }
-    return (dep) => resolveCargo(text, dep);
+    return makeCargoResolver(text, lineAt);
   }
   if (type === 'go') {
     if (!/^module\s+\S+/m.test(text)) {

@@ -7,7 +7,7 @@
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -712,5 +712,103 @@ describe('--graph scope', () => {
     assert.doesNotMatch(out, /C_\[|C_\s/, 'no node stands in for a missing commit');
     // The exit code is the published contract; a render mode may not move it.
     assert.equal(code, plain.code, '--graph draws the same run the JSON channel reports');
+  });
+});
+
+describe('--out', () => {
+  const GATE_REPORT = [
+    'BUG #1 TRUE POSITIVE — 命令注入：数据集名拼进 exec',
+    '  门禁全部通过。证据：src/archive.js:42 (abc1234)',
+    '  复现：node bench/exploits.js p3',
+    '  可利用性：EASY',
+    '  影响：以服务账号执行任意命令',
+    ''
+  ].join('\n');
+
+  async function depsRepo() {
+    const repo = await mkdtemp(path.join(tmpdir(), 'euthyna-out-'));
+    await writeFile(
+      path.join(repo, 'package-lock.json'),
+      npmLockfile([['left-pad', '1.3.0']]),
+      'utf8'
+    );
+    return repo;
+  }
+
+  test('the JSON artifact is byte-identical to what stdout would have printed', async () => {
+    const repo = await depsRepo();
+    const toStdout = await capture(['deps', '--repo', repo, '--dep', 'left-pad', '--json']);
+    const file = path.join(repo, 'report.json');
+    const toFile = await capture(['deps', '--repo', repo, '--dep', 'left-pad', '--json', '--out', file]);
+
+    assert.equal(toFile.code, toStdout.code);
+    assert.equal(toFile.out, '', 'stdout stays silent for the artifact');
+    assert.equal(await readFile(file, 'utf8'), toStdout.out);
+  });
+
+  test('the rendered artifact is byte-identical to what stdout would have printed, without a BOM', async () => {
+    const repo = await depsRepo();
+    const toStdout = await capture(['deps', '--repo', repo, '--dep', 'left-pad']);
+    const file = path.join(repo, 'report.txt');
+    const toFile = await capture(['deps', '--repo', repo, '--dep', 'left-pad', '--out', file]);
+
+    assert.equal(toFile.code, toStdout.code);
+    const raw = await readFile(file); // buffer, to see the actual bytes
+    assert.notEqual(raw[0], 0xef, 'no UTF-8 BOM');
+    assert.notEqual(raw[0], 0xff, 'no UTF-16LE BOM');
+    assert.notEqual(raw[0], 0xfe, 'no UTF-16BE BOM');
+    assert.equal(raw.toString('utf8'), toStdout.out);
+  });
+
+  test('a flagged run keeps its measurement exit code', async () => {
+    const repo = await makeRepo();
+    const base = await commitFiles(repo, 'fix: prevent authentication bypass (CVE-2024-1111)', {
+      'src/a.js': 'if (!ok) throw new Error("denied");\n'
+    });
+    await commitFiles(repo, 'refactor: drop the check', { 'src/a.js': 'doIt();\n' });
+
+    const file = path.join(repo, 'r.txt');
+    const { code } = await capture(['history', '--repo', repo, '--base', base, '--out', file]);
+    assert.equal(code, EXIT.FLAGGED);
+    await readFile(file, 'utf8'); // the artifact exists
+  });
+
+  test('gate --out writes the rendered check, gate --json --out writes the JSON channel', async () => {
+    const repo = await depsRepo();
+    const report = path.join(repo, 'findings.md');
+    await writeFile(report, GATE_REPORT, 'utf8');
+
+    const file = path.join(repo, 'gate.txt');
+    const rendered = await capture(['gate', report, '--out', file]);
+    assert.equal(rendered.code, EXIT.CLEAN);
+    assert.equal(rendered.out, '');
+    assert.match(await readFile(file, 'utf8'), /BUG #1 TRUE POSITIVE/);
+
+    const jsonFile = path.join(repo, 'gate.json');
+    const asJson = await capture(['gate', report, '--json', '--out', jsonFile]);
+    assert.equal(asJson.code, EXIT.CLEAN);
+    assert.equal(asJson.out, '');
+    assert.equal(JSON.parse(await readFile(jsonFile, 'utf8')).downgraded, 0);
+  });
+
+  test('a bare --out, a repeated --out and an empty path are usage errors', async () => {
+    const repo = await depsRepo();
+    for (const argv of [
+      ['deps', '--repo', repo, '--dep', 'left-pad', '--out'],
+      ['deps', '--repo', repo, '--dep', 'left-pad', '--out', 'a.txt', '--out', 'b.txt'],
+      ['deps', '--repo', repo, '--dep', 'left-pad', '--out', '']
+    ]) {
+      const r = await capture(argv);
+      assert.equal(r.code, EXIT.USAGE, `expected usage error for ${argv.join(' ')}`);
+      assert.match(r.err, /--out/);
+    }
+  });
+
+  test('a write failure is a usage error, never a clean run', async () => {
+    const repo = await depsRepo();
+    const missing = path.join(repo, 'no-such-dir', 'r.json');
+    const r = await capture(['deps', '--repo', repo, '--dep', 'left-pad', '--json', '--out', missing]);
+    assert.equal(r.code, EXIT.USAGE);
+    assert.match(r.err, /no-such-dir/);
   });
 });

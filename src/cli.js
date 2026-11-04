@@ -15,7 +15,7 @@
  */
 import process from 'node:process';
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { collectHistoryFacts } from './facts/history.js';
 import { collectCoverageFacts } from './facts/coverage.js';
 import { collectDependencyFacts, listDependencies, detectManifest, manifestTypeForFile } from './facts/deps.js';
@@ -72,13 +72,18 @@ euthyna —— 给 AI 编码 agent 用的确定性事实产出器
 它不是扫描器。它只回答两个模型算不准的问题，并把答案写成带证据的事实。
 
 用法:
-  euthyna audit    [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
-  euthyna history  [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
-  euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--source <dir>] [--json]
-  euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json]
-  euthyna gate     <报告文件> [--verify] [--cwd <dir>] [--json]
+  euthyna audit    [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph] [--out <file>]
+  euthyna history  [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph] [--out <file>]
+  euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--source <dir>] [--json] [--out <file>]
+  euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json] [--out <file>]
+  euthyna gate     <报告文件> [--verify] [--cwd <dir>] [--json] [--out <file>]
 
 语言: 默认中文。加 --lang en 或设环境变量 EUTHYNA_LANG=en 切换英文输出。
+
+全局选项:
+  --out <file>  把本次输出写入文件而非 stdout（内容随 --json / --graph 切换）。
+                恒为 UTF-8 无 BOM；写失败按用法错误退出（1），即使测量本身成功；
+                写入后 stderr 提示一行目标路径
 
 命令:
   audit      一次跑完变更面审计：history + deps（枚举 lockfile 全部依赖），合并报告
@@ -131,14 +136,20 @@ It is not a scanner. It answers only the two questions a model cannot compute
 reliably, and writes the answers as facts with evidence.
 
 Usage:
-  euthyna audit    [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
-  euthyna history  [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph]
-  euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--source <dir>] [--json]
-  euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json]
-  euthyna gate     <report file> [--verify] [--cwd <dir>] [--json]
+  euthyna audit    [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph] [--out <file>]
+  euthyna history  [--base <rev>] [--head <rev>] [--repo <dir>] [--pickaxe] [--no-origins] [--json] [--graph] [--out <file>]
+  euthyna coverage --coverage <file> --symbol <name> [--file <path>] [--source <dir>] [--json] [--out <file>]
+  euthyna deps     [--repo <dir>] [--lockfile <file>] (--dep <name> | --all) [--json] [--out <file>]
+  euthyna gate     <report file> [--verify] [--cwd <dir>] [--json] [--out <file>]
 
 Language: Chinese by default. Pass --lang en or set the environment variable
 EUTHYNA_LANG=en for English output.
+
+Global options:
+  --out <file>  write this run's output to a file instead of stdout (the content
+                follows --json / --graph). Always UTF-8 without a BOM; a write
+                failure exits 1 even when the measurement itself succeeded;
+                stderr carries one line naming the target path
 
 Commands:
   audit      the change-surface audit in one run: history + deps (every lockfile
@@ -243,6 +254,24 @@ export function parseArgs(argv) {
 function asArray(value) {
   if (value === undefined) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+/**
+ * Write the `--out` artifact. Returns null on success, or a short failure
+ * reason the caller wraps in a localized usage error.
+ *
+ * UTF-8 without a BOM, deliberately: a shell redirect is how this used to be
+ * done, and this project's own record has PowerShell `>` writing UTF-16 and
+ * a BOM breaking `gh api --input` JSON — the file written here must be
+ * byte-clean for whatever reads it next.
+ */
+async function writeOutFile(outPath, content) {
+  try {
+    await writeFile(outPath, content, 'utf8');
+    return null;
+  } catch (error) {
+    return `${error.code ?? error.message}: ${outPath}`;
+  }
 }
 
 async function runHistory(flags, lang) {
@@ -761,6 +790,26 @@ async function runGate(flags, positional, lang) {
     };
   }
 
+  // --out for gate's rendered channel: gate renders internally, so the file
+  // decision happens here rather than in main(). The --json channel returns a
+  // result.json and main() writes it out.
+  if (flags.out !== undefined) {
+    const outPath = path.resolve(String(flags.out));
+    const lines = [];
+    renderGateReport(result, { write: (line) => lines.push(line), lang });
+    const failure = await writeOutFile(outPath, `${lines.join('\n')}\n`);
+    if (failure) {
+      return {
+        exit: EXIT.USAGE,
+        error: t(`无法写入 --out 目标 ${failure}`, `cannot write the --out target ${failure}`)
+      };
+    }
+    process.stderr.write(
+      safeTextLines(t(`输出已写入 ${outPath}`, `output written to ${outPath}`) + '\n')
+    );
+    return { exit: downgraded > 0 ? EXIT.FLAGGED : EXIT.CLEAN, report: null };
+  }
+
   renderGateReport(result, { lang });
   return { exit: downgraded > 0 ? EXIT.FLAGGED : EXIT.CLEAN, report: null };
 }
@@ -796,6 +845,18 @@ export async function main(argv = process.argv.slice(2)) {
   if (flags.graph && flags.json) {
     process.stderr.write(
       safeTextLines(t('--graph 与 --json 互斥，一次只选一种输出', '--graph and --json are mutually exclusive; choose one output') + '\n')
+    );
+    return EXIT.USAGE;
+  }
+
+  // A bare `--out` records `true`, a repeated one accumulates into an array,
+  // and an empty string cannot name a file. Writing a file literally named
+  // "true" or "a,b" would be a silent trap, so all three are caller mistakes.
+  if (flags.out === true || flags.out === '' || Array.isArray(flags.out)) {
+    process.stderr.write(
+      safeTextLines(
+        t('--out 需要且只需要一个文件路径', '--out requires exactly one file path') + '\n'
+      )
     );
     return EXIT.USAGE;
   }
@@ -839,6 +900,42 @@ export async function main(argv = process.argv.slice(2)) {
   if (result.error) {
     process.stderr.write(safeTextLines(`${result.error}\n`));
     return result.exit;
+  }
+
+  // --out: the artifact a run would have printed goes to a file instead, and
+  // stdout stays silent for it. The exit code stays the measurement's — a
+  // flagged run that was written out must still exit 10 — except when the file
+  // could not be written: a caller who asked for an artifact and did not get
+  // one must not read the run as complete, so that is a usage error.
+  if (flags.out !== undefined) {
+    const outPath = path.resolve(String(flags.out));
+    let content = null;
+    if (result.json) {
+      content = `${result.json}\n`;
+    } else if (flags.json && result.report) {
+      content = `${JSON.stringify(result.report, null, 2)}\n`;
+    } else if (flags.graph && result.report) {
+      content = `${safeTextLines(provenanceGraph(result.report))}\n`;
+    } else if (result.report) {
+      // renderReport applies the render boundary (safeText) per line before it
+      // calls write, so the collected lines are byte-identical to stdout.
+      const lines = [];
+      renderReport(result.report, { write: (line) => lines.push(line), lang });
+      content = `${lines.join('\n')}\n`;
+    }
+    if (content !== null) {
+      const failure = await writeOutFile(outPath, content);
+      if (failure) {
+        process.stderr.write(
+          safeTextLines(t(`无法写入 --out 目标 ${failure}`, `cannot write the --out target ${failure}`) + '\n')
+        );
+        return EXIT.USAGE;
+      }
+      process.stderr.write(
+        safeTextLines(t(`输出已写入 ${outPath}`, `output written to ${outPath}`) + '\n')
+      );
+      return result.exit;
+    }
   }
 
   if (result.json) {

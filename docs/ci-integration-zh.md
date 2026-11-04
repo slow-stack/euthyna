@@ -87,15 +87,13 @@ GitHub 把任何非零退出当作步骤失败，所以 `0` 显示绿，`10`、`
 
 ## 把报告挂到 PR 上
 
-运行会把人类可读的报告打进步骤日志。要作为附件挂到 PR 上：
+运行会把人类可读的报告打进步骤日志。要作为附件挂到 PR 上，用 `--out` 直接写文件——
+不用重定向、不用 `tee`、也没有 `pipefail` 的坑：artifact 直达文件，步骤状态仍是
+audit 自己的。
 
 ```yaml
       - name: 变更面审计
-        run: |
-          set -o pipefail
-          npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD \
-            | tee audit-report.txt
-        continue-on-error: true
+        run: npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD --out audit-report.txt
         id: audit
       - uses: actions/upload-artifact@v4
         if: always()
@@ -104,12 +102,12 @@ GitHub 把任何非零退出当作步骤失败，所以 `0` 显示绿，`10`、`
           path: audit-report.txt
 ```
 
-没有 `pipefail` 时，步骤的状态是 `tee` 的（永远 0），audit 的 `1`/`2`/`10` 会被吞掉、
-门禁假绿。Actions 的默认 shell 是 `bash -e`，**不**隐含 `pipefail`，所以要显式写
-`set -o pipefail`。
+`--out` 以 UTF-8 无 BOM 写入，退出码契约不变：被标记的运行仍然退出 `10`，文件写不进去
+则退出 `1`，不会被读成一次干净的运行。Linux runner 上 shell 重定向（`> audit-report.txt`）
+也可用，但 Windows PowerShell 的 `>` 写的是 UTF-16——`--out` 把这一类问题整个移掉了。
 
-下游消费方（评论机器人、裁定 agent）要读 fact 而不是散文时，加 `--json` 并把 artifact
-指向 JSON 文件。
+下游消费方（评论机器人、裁定 agent）要读 fact 而不是散文时，加 `--json --out report.json`
+并把 artifact 指向 JSON 文件。
 
 ## 这个门禁回答什么、不回答什么
 

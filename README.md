@@ -213,6 +213,11 @@ removed and are now being added back. Origin tracing is on by default (deleted l
 are attributed to the commit that first introduced their content); `--no-origins`
 falls back to blame's last-modifier attribution, which is faster.
 
+Every command also takes `--out <file>`: the report goes to a UTF-8 (no BOM) file
+instead of stdout — the CI-friendly way to keep the artifact, and the exit code
+contract is unchanged. The PR-gate recipe in [docs/ci-integration.md](docs/ci-integration.md)
+uses it.
+
 `--graph` on `audit` or `history` draws what `history` already computed — the range, the commit
 that last modified each deleted line, and the commit that first introduced its content — as
 Mermaid source, renderable straight into a GitHub comment. It measures nothing new and never

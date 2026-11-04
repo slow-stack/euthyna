@@ -92,15 +92,13 @@ is the honest gate. Use the two-step form only when `10` must not block merges.
 
 ## Reading the report in the PR
 
-The run prints the human-readable report to the step log. To attach it to the PR instead:
+The run prints the human-readable report to the step log. To attach it to the PR instead,
+write it to a file with `--out` — no redirect, no `tee`, and no `pipefail` subtlety: the
+artifact goes straight to the file and the step's status is still the audit's own.
 
 ```yaml
       - name: Change-surface audit
-        run: |
-          set -o pipefail
-          npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD \
-            | tee audit-report.txt
-        continue-on-error: true
+        run: npx --yes euthyna@latest audit --base "origin/${{ github.base_ref }}" --head HEAD --out audit-report.txt
         id: audit
       - uses: actions/upload-artifact@v4
         if: always()
@@ -109,12 +107,13 @@ The run prints the human-readable report to the step log. To attach it to the PR
           path: audit-report.txt
 ```
 
-Without `pipefail`, the step's status is `tee`'s (always 0), so a `1`/`2`/`10` from the
-audit would turn the gate green. Actions' default shell is `bash -e`, which does **not**
-imply `pipefail`, hence the explicit `set -o pipefail` line.
+`--out` writes UTF-8 without a BOM and keeps the exit code contract: a flagged run still
+exits `10`, and a file that could not be written exits `1` rather than reading as a clean
+run. A shell redirect (`> audit-report.txt`) also works on a Linux runner, but `>` writes
+UTF-16 in Windows PowerShell — `--out` removes that class of problem entirely.
 
-Add `--json` and point the artifact at the JSON file when a downstream consumer (a comment bot,
-an adjudicator agent) should read facts rather than prose.
+Add `--json --out report.json` and point the artifact at the JSON file when a downstream
+consumer (a comment bot, an adjudicator agent) should read facts rather than prose.
 
 ## What the gate does and does not answer
 

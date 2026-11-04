@@ -3,24 +3,24 @@
 /**
  * Scaling benchmark for the `history` producer.
  *
- * The producer blames each deleted range sequentially
- * (`src/facts/history.js`: one `git blame` per range), so its cost grows with
- * the number of deleted ranges. This script builds synthetic repositories and
- * measures the producer at increasing deletion sizes, so a change to batching
- * or parallelization has a baseline to be judged against — and a reader can see
- * at a glance whether the current shape is linear.
+ * The producer blames deleted ranges in batches (`src/facts/history.js`: one
+ * `git blame` process per ~400 ranges, one `-L` flag per range). This script
+ * builds synthetic repositories and measures the producer at increasing
+ * deletion sizes, so a change to the batching has a baseline to be judged
+ * against — and a reader can see at a glance how the shape moves.
  *
  * The deleted lines are interleaved (every other line in a region), which
- * produces one single-line range per deletion — the worst case for a sequential
- * blamer. The file size is held fixed while the deletion count grows, so the
- * ms/deleted-line ratio isolates the sequential per-range cost from the
- * (separate) cost of blaming a bigger file. Absolute numbers are
- * machine-dependent; the ratio is the number that matters.
+ * produces one single-line range per deletion — the case that used to cost one
+ * process per range (measured ~48 ms/行 linear on this machine, 2000 ranges
+ * ≈ 97 s) and now costs one process per 400. The file size is held fixed while
+ * the deletion count grows. Absolute numbers are machine-dependent; the ratio
+ * is the number that matters.
  *
  *   node bench/perf.js [--total 12000] [--min 250] [--max 4000] [--steps 5]
  *
- * 默认档实测 4000 个删除区间约 80s（~21ms/区间，线性）；全程 5 档 + 造仓约
- * 2-3 分钟。要快速看曲线就调小 --max/--total。
+ * 分批后实测（--total 8000 --max 2000 --steps 4）：2000 个删除区间约 3.7s
+ * （~1.9ms/行，次线性）。默认全程 5 档 + 造仓约 2-3 分钟（估算，未逐档实测）。
+ * 要快速看曲线就调小 --max/--total。
  */
 
 const fs = require('node:fs');
@@ -134,10 +134,9 @@ async function main() {
   } else if (spread < 1.5) {
     const biggest = rows[rows.length - 1];
     console.log(
-      '  每删除行的耗时基本恒定 —— 确认是顺序 blame 的线性缩放。' +
-        `实测 ${biggest.deletedLines} 个删除区间约 ${(biggest.ms / 1000).toFixed(1)}s，` +
-        '即真实 PR 里删几千个分散行会达到分钟级——这是当前实现的实际天花板。' +
-        '升级路径: 按文件批量 blame、或对单行区间做并发。'
+      '  每删除行的耗时基本恒定 —— 线性缩放。' +
+        `实测 ${biggest.deletedLines} 个删除区间约 ${(biggest.ms / 1000).toFixed(1)}s。` +
+        '若回到分钟级，先查 blame 是否退化成了每区间一个进程。'
     );
   } else if (ratios[ratios.length - 1] > ratios[0]) {
     console.log(

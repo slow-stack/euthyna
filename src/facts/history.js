@@ -81,7 +81,10 @@ export async function blameRanges({ cwd, rev, file, ranges }) {
     // the wrong one produces a command that looks right and blames other lines.
     let lineNumber = null;
     for (const raw of out.split('\n')) {
-      const header = /^([0-9a-f]{40}) (\d+) (\d+)(?: (\d+))?$/.exec(raw);
+      // The object id is 40 hex (sha1) or 64 hex (sha256) — a repository picks
+      // its own format, and the attribution must survive either. Same split as
+      // mergeBase() in git.js.
+      const header = /^([0-9a-f]{40}|[0-9a-f]{64}) (\d+) (\d+)(?: (\d+))?$/.exec(raw);
       if (header) {
         current = header[1];
         lineNumber = Number(header[3]);

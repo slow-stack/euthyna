@@ -7,6 +7,9 @@
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { makeRepo, commitFiles, git } from './helpers.js';
 import {
@@ -547,6 +550,26 @@ describe('collectHistoryFacts against a real repository', () => {
     // truncation (Sourcery finding about the 200-char slice).
     assert.match(refined[0].command, /-S'  if \(!authorized\) return null;'/);
     assert.doesNotMatch(refined[0].command, /return null;' \.slice/);
+  });
+
+  test('a sha256 repository still attributes its deleted lines', async () => {
+    // The porcelain blame parser must accept 64-hex object ids the way
+    // mergeBase() does: a repository picks its own object format, and a
+    // hash-length assumption would silently strip every attribution on it.
+    const dir = await mkdtemp(path.join(tmpdir(), 'euthyna-sha256-'));
+    await git(dir, ['init', '-q', '--object-format=sha256', '-b', 'main']);
+    await git(dir, ['config', 'user.email', 'test@example.com']);
+    await git(dir, ['config', 'user.name', 'Test Author']);
+
+    const base = await commitFiles(dir, 'fix: prevent authentication bypass (CVE-2024-1111)', {
+      'src/a.js': 'if (!ok) throw new Error("denied");\n'
+    });
+    await commitFiles(dir, 'refactor: drop the check', { 'src/a.js': 'doIt();\n' });
+
+    const { facts } = await collectHistoryFacts({ cwd: dir, base, head: 'HEAD', origins: false });
+    const security = facts.filter(f => f.detail?.classification === 'security');
+    assert.equal(security.length, 1, 'the deleted check is attributed on a sha256 repository');
+    assert.equal(security[0].evidence.commit, base);
   });
 });
 

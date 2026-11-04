@@ -16,8 +16,8 @@
  *   - package-lock.json  (npm v1/v2/v3)
  *   - Cargo.lock         (Rust)
  *   - go.mod             (Go; the DECLARED requirement version, not the resolved one —
- *                         go.sum has no versions, so this producer says "declared",
- *                         never "locked", for Go)
+ *                         go.sum records version-hash pairs but not the selected build
+ *                         list, so this producer says "declared", never "locked", for Go)
  * Anything else found at auto-detect (pnpm/yarn/poetry/...) is reported as
  * notEvaluated with the filenames named, rather than guessed at.
  */

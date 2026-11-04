@@ -54,31 +54,61 @@ export function parseDeletedRanges(diffText) {
 }
 
 /**
+ * Sort by start and merge overlapping or adjacent ranges.
+ *
+ * `parseDeletedRanges` already yields disjoint ranges, so well-formed input
+ * comes back unchanged; the merge exists because an overlap would double-count
+ * the shared lines across two `-L` flags, and because merging neighbours keeps
+ * a batch's argv small.
+ */
+export function mergeRanges(ranges) {
+  const sorted = [...ranges].sort((a, b) => a.start - b.start || a.count - b.count);
+  const merged = [];
+  for (const range of sorted) {
+    const end = range.start + range.count - 1;
+    const last = merged[merged.length - 1];
+    const lastEnd = last ? last.start + last.count - 1 : -Infinity;
+    if (last && range.start <= lastEnd + 1) {
+      last.count = Math.max(lastEnd, end) - last.start + 1;
+    } else {
+      merged.push({ start: range.start, count: range.count });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Ranges blamed per `git blame` process. One process carries one `-L` flag per
+ * range, so the batch size is the process-count divider; 400 keeps the argv
+ * (≈14 bytes per flag) far under every platform's command-line limit while
+ * cutting the per-range process cost by that factor (baseline: bench/perf.js,
+ * measured ~48 ms per deleted range when each range was its own process).
+ */
+const BLAME_BATCH = 400;
+
+/**
  * Attribute every line in `ranges` to the commit that last touched it, as of `rev`.
  *
  * Returns a Map of full commit hash -> array of line numbers in `rev`. Line
  * numbers rather than a bare count, because the fact has to carry a command a
  * reader can actually paste: `git blame -L 104,104` reproduces the claim, while
  * `git blame -L <deleted-range>` is a placeholder, not evidence.
+ *
+ * The multi-`-L` invocation is the same form the emitted reproduce commands
+ * already rely on (`git blame --porcelain -L a,b -L c,d <base> -- <file>`), so
+ * batching adds no new assumption about git — it only stops paying process
+ * startup per range. A batch git refuses (a range past EOF, a binary file) is
+ * retried range by range, so one bad range costs itself and not its neighbours.
  */
 export async function blameRanges({ cwd, rev, file, ranges }) {
   const byCommit = new Map();
-  // ponytail: 顺序 blame，每个区间一次 git 进程，耗时与删除区间数线性相关
-  // （基准见 bench/perf.js）。若吞吐不满足要求：改成每文件一次 blame 覆盖
-  // 全部区间，或对单行区间做有界并发。
-  for (const range of ranges) {
-    const end = range.start + range.count - 1;
-    const out = await git(
-      ['blame', '--porcelain', '-L', `${range.start},${end}`, rev, '--', file],
-      { cwd, allowFailure: true }
-    );
-    if (!out) continue;
 
+  // Porcelain emits `<sha> <origLine> <finalLine> [<groupSize>]`. `origLine`
+  // is the line number in the commit that introduced the line, which is NOT
+  // where the line sits in the revision being blamed; `finalLine` is. Using
+  // the wrong one produces a command that looks right and blames other lines.
+  const parse = (out) => {
     let current = null;
-    // Porcelain emits `<sha> <origLine> <finalLine> [<groupSize>]`. `origLine`
-    // is the line number in the commit that introduced the line, which is NOT
-    // where the line sits in the revision being blamed; `finalLine` is. Using
-    // the wrong one produces a command that looks right and blames other lines.
     let lineNumber = null;
     for (const raw of out.split('\n')) {
       // The object id is 40 hex (sha1) or 64 hex (sha256) — a repository picks
@@ -96,6 +126,29 @@ export async function blameRanges({ cwd, rev, file, ranges }) {
         byCommit.set(current, list);
         lineNumber++;
       }
+    }
+  };
+
+  const blame = (batch) =>
+    git(
+      // Ranges are {start, count}: the -L end is start+count-1, computed here.
+      // A `${r.end}` on a count-shaped range would hand git "undefined" and the
+      // swallowed failure would read as "no attribution" downstream.
+      ['blame', '--porcelain', ...batch.flatMap((r) => ['-L', `${r.start},${r.start + r.count - 1}`]), rev, '--', file],
+      { cwd, allowFailure: true }
+    );
+
+  const merged = mergeRanges(ranges);
+  for (let i = 0; i < merged.length; i += BLAME_BATCH) {
+    const batch = merged.slice(i, i + BLAME_BATCH);
+    const out = await blame(batch);
+    if (out) {
+      parse(out);
+      continue;
+    }
+    for (const range of batch) {
+      const single = await blame([range]);
+      if (single) parse(single);
     }
   }
   return byCommit;

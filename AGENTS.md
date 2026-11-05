@@ -197,6 +197,22 @@ Not inferred. Do not re-research these.
   the two fixes in the shipped artifact: the header line is `euthyna-audit —` (producer name
   printed once) and the Hermes `__init__.py` carries `_FORWARDS = ('audit', 'coverage', 'deps',
   'gate', 'help', 'history')`.
+- 🧪 `euthyna@0.10.0` published 2026-11-05 by the same workflow (run `41936853416`, ~14 minutes
+  end to end — the ClawHub settle loop is ~13 of those; 0.6.0's whole run was 18 s, so a slow
+  clawhub job now reads as the loop working, not as a hang). Tag `v0.10.0` → `287c208` (merge of
+  bump PR #48; the perf content came in through PR #47 — blame batching 2000 ranges 96.7 s →
+  3.7 s, deps `--all` indexing 4000 deps 15.0 s → 0.36 s, the `--out` flag, and the sha256
+  porcelain fix; measured baselines in `bench/perf.js` and `bench/perf-deps.js`). Checked from
+  outside: `npm view euthyna dist-tags` → `latest: 0.10.0`; shasum
+  `047c5beb3895c295c2e3cedce5bf65fb4bb74ffd`; attestations endpoint 200; GitHub release
+  `euthyna 0.10.0` (`publishedAt 2026-11-04T23:50:51Z`, author `github-actions[bot]`); a
+  temp-prefix install advertises `--out` in `--lang en help` and, pointed at a directory with
+  no supported manifest, writes its notEvaluated report through `--out` and exits 2 — the
+  contract holds on the shipped artifact. Both ClawHub slugs read `pass|benign|0.10.0`
+  (`reasons: []`, card available) with **no duplicate-refusal failure** — the looped publish
+  step from 0.9.1 took both editions without a rescue. The non-publishing rehearsal ran first
+  (run `41936749751`, green), and PR #47 merged through `--admin` while `mergeStateStatus`
+  read `BLOCKED` with no review approval — the earlier-releases pattern, not the #42–#45 one.
 
 The same release merged differently: `gh pr merge --merge` succeeded on #42/#43/#44/#45 because
 `mergeStateStatus` read `CLEAN`, where earlier releases read `BLOCKED` and needed the web UI or

@@ -87,6 +87,42 @@ export function mergeRanges(ranges) {
 const BLAME_BATCH = 400;
 
 /**
+ * Files processed concurrently while attributing deleted lines. `git blame`
+ * accepts one file per invocation, so a change that touches many files pays
+ * one diff process and at least one blame batch process per file, and on the
+ * many-small-files shape those spawns are the whole cost — the shape a
+ * vendored tree deleted in one change has (bench/perf.js --files measures it).
+ * 8 in flight keeps the win without holding every diff open at once.
+ *
+ * Concurrency changes only scheduling, never results: the aggregation after
+ * the map stays strictly in file order, so reports are byte-identical to the
+ * serial run's.
+ */
+const BLAME_CONCURRENCY = 8;
+
+/**
+ * Map `fn` over `items` with at most `limit` calls in flight, results in input
+ * order. A rejected task rejects the whole map — the first failure stops new
+ * tasks but does not cancel ones already running — which matches what the
+ * sequential await loop it replaced did. Hand-rolled because the project
+ * carries no dependencies. Exported for tests: input-order results and the
+ * cap itself are properties a regression would otherwise hide inside
+ * perfectly-shaped reports.
+ */
+export async function mapWithLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+/**
  * Attribute every line in `ranges` to the commit that last touched it, as of `rev`.
  *
  * Returns a Map of full commit hash -> array of line numbers in `rev`. Line
@@ -306,16 +342,29 @@ export async function collectHistoryFacts({
   const linesByFile = new Map();
   const deletedLinesByFile = new Map();
 
-  for (const file of files) {
+  // Per-file work (one diff, then that file's blame batches) is independent,
+  // so files run with BLAME_CONCURRENCY in flight; results are collected by
+  // position and aggregated strictly in file order below, which keeps the
+  // facts — and the report — byte-identical to the serial run's.
+  const perFile = await mapWithLimit(files, BLAME_CONCURRENCY, async (file) => {
     const diff = await git(['diff', '--unified=0', `${base}..${head}`, '--', file], { cwd });
     const ranges = parseDeletedRanges(diff);
-    if (ranges.length === 0) continue;
+    if (ranges.length === 0) return null;
 
-    const deletedLines = ranges.reduce((sum, r) => sum + r.count, 0);
+    return {
+      file,
+      ranges,
+      deletedLines: ranges.reduce((sum, r) => sum + r.count, 0),
+      deletedLinesList: parseDeletedLines(diff),
+      byCommit: await blameRanges({ cwd, rev: base, file, ranges })
+    };
+  });
+
+  for (const result of perFile) {
+    if (!result) continue;
+    const { file, ranges, deletedLines, deletedLinesList, byCommit } = result;
     linesByFile.set(file, { ranges, deletedLines });
-    deletedLinesByFile.set(file, parseDeletedLines(diff));
-
-    const byCommit = await blameRanges({ cwd, rev: base, file, ranges });
+    deletedLinesByFile.set(file, deletedLinesList);
     for (const [hash, lineNumbers] of byCommit) {
       const entry = blameByCommit.get(hash) ?? { lines: 0, byFile: new Map() };
       const existing = entry.byFile.get(file) ?? [];

@@ -17,6 +17,19 @@
  * is the number that matters.
  *
  *   node bench/perf.js [--total 12000] [--min 250] [--max 4000] [--steps 5]
+ *   node bench/perf.js --files 200 [--lines 100]
+ *
+ * --files 测另一条成本轴：`git blame` 一次只收一个文件，所以每 (文件, 提交)
+ * 对至少一个进程，`-L` 批处理只在文件内合并——进程数的下限是文件数，不是
+ * 行数。上面的单文件扫档看不到这条轴。真实世界里的对应形状是「一次依赖
+ * 升级把打进仓库的 vendored 树整片删掉」（数百个文件、每文件几十行）。
+ * 要横向比较的量是 ms/文件。
+ *
+ * 实测（--files 200 --lines 100）：串行 65.2s（326 ms/文件）→ 8 路并发
+ * 54.9s（275 ms/文件）；并发在热对象上拿到 ~20×（同一仓库 32 个 blame
+ * 8.77s → 431ms），但首次冷遍历 ~250 ms/文件是并发救不了的下限——对比
+ * blame 相关改动时必须钉住缓存状态，否则测的是缓存不是改动。完整记录见
+ * AGENTS.md 的 pitfalls 表。
  *
  * 分批后实测（--total 8000 --max 2000 --steps 4）：2000 个删除区间约 3.7s
  * （~1.9ms/行，次线性）。默认全程 5 档 + 造仓约 2-3 分钟（估算，未逐档实测）。
@@ -37,6 +50,8 @@ const TOTAL = opt('--total', 12000);
 const MIN = opt('--min', 250);
 const MAX = opt('--max', 4000);
 const STEPS = opt('--steps', 5);
+const FILES = opt('--files', 0);
+const LINES_PER_FILE = opt('--lines', 100);
 
 function git(cwd, argv) {
   return execFileSync('git', argv, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -80,7 +95,93 @@ async function buildRepo({ totalLines, deletedLines }) {
   return { dir, base, head, deletedLines };
 }
 
+/**
+ * The file path for a generated module name, bounded to the repo directory.
+ * The names are build-generated (`modNNNN.js`), but the bound is asserted
+ * rather than assumed — same fail-loudly principle as the option validation.
+ */
+function boundedFile(dir, name) {
+  const target = path.join(dir, name);
+  if (path.dirname(target) !== dir) {
+    throw new Error(`bench/perf.js: generated name escapes the repo dir: ${name}`);
+  }
+  return target;
+}
+
+/**
+ * Build a repo with `fileCount` files whose last commit deletes `linesPerFile`
+ * interleaved lines from every file — the vendored-tree shape. Files are
+ * written across COMMIT_CHUNKS commits so blame has more than one candidate
+ * owner; each file's lines all come from one commit, which is realistic for
+ * vendored content and keeps the repo build cheap.
+ */
+async function buildMultiFileRepo({ fileCount, linesPerFile }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'euthyna-perf-files-'));
+  git(dir, ['init', '-q', '-b', 'main']);
+  git(dir, ['config', 'user.email', 'bench@example.com']);
+  git(dir, ['config', 'user.name', 'Perf Bench']);
+
+  const COMMIT_CHUNKS = 3;
+  const names = [];
+  for (let f = 0; f < fileCount; f++) names.push(`mod${String(f).padStart(4, '0')}.js`);
+  const perChunk = Math.ceil(fileCount / COMMIT_CHUNKS);
+
+  let written = 0;
+  for (let c = 0; c < COMMIT_CHUNKS; c++) {
+    for (let i = 0; i < perChunk && written < fileCount; i++, written++) {
+      const lines = [];
+      for (let l = 0; l < linesPerFile * 2; l++) {
+        lines.push(`export const f${written}v${l} = ${l}; // chunk ${c}`);
+      }
+      fs.writeFileSync(boundedFile(dir, names[written]), lines.join('\n') + '\n');
+    }
+    git(dir, ['add', '-A']);
+    git(dir, ['commit', '-q', '-m', `feat: chunk ${c}`]);
+  }
+  const base = git(dir, ['rev-parse', 'HEAD']);
+
+  for (const name of names) {
+    const file = boundedFile(dir, name);
+    const lines = fs.readFileSync(file, 'utf8').split('\n').filter((l) => l !== '');
+    fs.writeFileSync(file, lines.filter((_, i) => i % 2 === 0).join('\n') + '\n');
+  }
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-q', '-m', 'refactor: drop interleaved lines in every file']);
+  const head = git(dir, ['rev-parse', 'HEAD']);
+
+  return { dir, base, head, deletedLines: fileCount * linesPerFile };
+}
+
+/** The multi-file scenario: one measurement, ms/file is the number to compare. */
+async function filesMode() {
+  const { collectHistoryFacts } = await import('../src/facts/history.js');
+  if (
+    !Number.isInteger(FILES) ||
+    FILES < 1 ||
+    !Number.isInteger(LINES_PER_FILE) ||
+    LINES_PER_FILE < 1
+  ) {
+    throw new Error('--files/--lines 必须是正整数');
+  }
+
+  const repo = await buildMultiFileRepo({ fileCount: FILES, linesPerFile: LINES_PER_FILE });
+  try {
+    const start = process.hrtime.bigint();
+    await collectHistoryFacts({ cwd: repo.dir, base: repo.base, head: repo.head });
+    const ms = Number(process.hrtime.bigint() - start) / 1e6;
+    process.stdout.write(
+      `  ${FILES} 文件 × ${LINES_PER_FILE} 删除行/文件  ${ms.toFixed(0).padStart(6)} ms  ` +
+        `(${(ms / FILES).toFixed(1)} ms/文件)\n`
+    );
+    console.log('  绝对数值依赖机器；这一场景横向比较 ms/文件，进程下限是文件数。');
+  } finally {
+    fs.rmSync(repo.dir, { recursive: true, force: true });
+  }
+}
+
 async function main() {
+  if (FILES > 0) return filesMode();
+
   const { collectHistoryFacts } = await import('../src/facts/history.js');
 
   // A misconfigured run must fail loudly, not generate a NaN-size benchmark that

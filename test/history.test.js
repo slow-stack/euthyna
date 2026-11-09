@@ -20,7 +20,8 @@ import {
   classifyCommit,
   collectHistoryFacts,
   blameRanges,
-  mergeRanges
+  mergeRanges,
+  mapWithLimit
 } from '../src/facts/history.js';
 import { STATUS, KIND } from '../src/contract.js';
 
@@ -895,5 +896,46 @@ describe('reintroduction detection', () => {
       notEvaluated.some(n => /pickaxe 探针上限 5 已用尽/.test(n.reason)),
       'a cap that changed the answer must appear in the coverage report'
     );
+  });
+});
+
+describe('mapWithLimit — the concurrency pool behind the per-file loop', () => {
+  test('results land in input order regardless of completion order', async () => {
+    // Completion order is the reverse of input order; the aggregation after
+    // the map is only correct if the map itself never reorders.
+    const out = await mapWithLimit([40, 30, 20, 10, 0], 2, async (delay) => {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return delay;
+    });
+    assert.deepEqual(out, [40, 30, 20, 10, 0]);
+  });
+
+  test('no more than `limit` tasks are in flight at once', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    await mapWithLimit(Array.from({ length: 24 }, (_, i) => i), 4, async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+    });
+    assert.equal(peak, 4, 'the cap is the peak, not a suggestion');
+  });
+
+  test('a rejected task rejects the map and stops new tasks', async () => {
+    let started = 0;
+    await assert.rejects(
+      mapWithLimit(
+        Array.from({ length: 8 }, (_, i) => i),
+        1,
+        async (i) => {
+          started++;
+          if (i === 2) throw new Error('task 2 failed');
+          return i;
+        }
+      ),
+      /task 2 failed/
+    );
+    assert.equal(started, 3, 'the failure stops new tasks instead of running all 8');
   });
 });

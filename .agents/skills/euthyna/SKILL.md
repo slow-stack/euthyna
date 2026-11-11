@@ -160,7 +160,7 @@ node <euthyna 仓库>/bin/euthyna.js coverage --coverage <覆盖率文件绝对�
 
 ## 事实契约（测量与判定之间的接口）
 
-本技能定义的是**测量层与判定层之间的接口**：`docs/fact-contract-zh.md`。
+本技能定义的是**测量层与判定层之间的接口**：`references/fact-contract.md`。
 
 要点：
 
@@ -196,7 +196,7 @@ BUG #N INCONCLUSIVE — [无法判定的原因]
 
 **第三态 `inconclusive` 必须存在。**
 Trail of Bits 的原始 fp-check 只有两态，因为它靠 Stop hook 无限强制继续直到补完；
-**DSH 上做不到**（Stop hook 必须自带限流，见 `docs/dsh-stop-gate-zh.md`）。
+**DSH 上做不到**（Stop hook 必须自带限流；实测记录在项目仓库的 DSH stop-gate 文档）。
 所以必须有这个诚实出口——不许把「没查完」写成 `FALSE POSITIVE`。
 
 ---
@@ -284,5 +284,5 @@ node <euthyna 仓库>/bin/euthyna.js gate <报告文件> --verify --cwd <被审�
 | 交付门禁机制（`dsh-doublecheck`、`formalswarm`） | 机制可借鉴；euthyna 的门禁内容是**安全专属**的 6 门禁 |
 | 证据生命周期与 PoC 实验室（`dsh-omv`） | 可并存：`dsh-omv` 可作为事实契约的**消费方** |
 
-**euthyna 只补两件没人做的确定性测量**（见 `docs/positioning-zh.md` §7.2）：
+**euthyna 只补两件没人做的确定性测量**（论证见项目仓库定位文档的第 7.2 节）：
 git 安全回归的机械判定，以及「符号 × 真实执行覆盖」的 join。

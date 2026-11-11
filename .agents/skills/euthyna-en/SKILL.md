@@ -182,7 +182,7 @@ reproduce/verification command:
 ## The fact contract (the interface between measurement and adjudication)
 
 This skill defines the interface between the measurement layer and the adjudication layer:
-`docs/fact-contract.md`.
+`references/fact-contract.md`.
 
 Key points:
 
@@ -218,8 +218,8 @@ BUG #N INCONCLUSIVE — [reason it cannot be decided]
 
 **The third state `INCONCLUSIVE` must exist.** Trail of Bits' original fp-check has only two
 states because it uses a Stop hook to force infinite continuation until completion;
-**DSH cannot do that** (the Stop hook must rate-limit itself or it loops forever, see
-`docs/dsh-stop-gate.md`). So this honest exit must exist — "not finished" must never be
+**DSH cannot do that** (the Stop hook must rate-limit itself or it loops forever; the measured
+record lives in the project repository's DSH stop-gate document). So this honest exit must exist — "not finished" must never be
 written as `FALSE POSITIVE`.
 
 ---
@@ -319,6 +319,6 @@ effective in long sessions.
 | Delivery gate mechanisms (`dsh-doublecheck`, `formalswarm`) | mechanisms worth borrowing; euthyna's gate content is the **security-specific** six gates |
 | Evidence lifecycle and PoC lab (`dsh-omv`) | can coexist: `dsh-omv` can be a **consumer** of the fact contract |
 
-**euthyna only supplies the two deterministic measurements nobody else does** (see
-`docs/positioning.md` §7.2): the mechanical adjudication of git security regressions, and
+**euthyna only supplies the two deterministic measurements nobody else does** (the argument
+lives in section 7.2 of the project repository's positioning document): the mechanical adjudication of git security regressions, and
 the "symbol × real execution coverage" join.

@@ -387,7 +387,46 @@ Two facts worth keeping:
   of an assertion nobody has checked from outside this machine.
 
 The badge was removed rather than repaired. Seeking a skills.sh listing is an open question,
-not a decision this file makes.
+not a decision this file makes. (Amended 2026-11-12: the mechanism is now established — see
+the block below. The listing itself arrived the same day.)
+
+🧪 **The indexing mechanism, measured end to end 2026-11-12.** The open question above — how a
+repository enters the site's index — now has both a paper trail and a code trail:
+
+- vercel-labs/skills#2284 (opened 2026-09-23 by this project, closed COMPLETED 2026-10-02)
+  records the maintainer's answer: indexing happens automatically when someone installs the
+  skills with `npx skills add <owner>/<repo>`. Read against the CLI source (`@ e781cb4`), that
+  mechanism is: one fire-and-forget telemetry GET (`tele/t?event=install&source=…`,
+  `src/telemetry.ts`), silent on failure (`.catch(() => {})`), exit code unaffected — and the
+  only skills.sh-visible fetch path, the blob download, is restricted to four owners
+  (`BLOB_ALLOWED_OWNERS` in `src/add.ts`: `vercel`, `vercel-labs`, `heygen-com`,
+  `remotion-dev`). Every other repository is served by a plain `git clone` the server cannot
+  see, so the telemetry GET is the whole mechanism.
+- **Two local walls mean an install from this machine can never register.** The sandbox shell
+  sets `DISABLE_TELEMETRY=1` (measured), and the telemetry GET goes through Node's global
+  `fetch`, which does not honour `HTTPS_PROXY`, while this machine's DNS blackholes direct
+  connections. Two installs on 2026-11-12 (the second with `NODE_USE_ENV_PROXY=1`, voided by
+  the first wall, which was measured only afterwards) left the index unchanged over 30 minutes
+  of re-reads — installs succeed, exit 0, nothing registers. The failure is invisible by
+  construction.
+- **Control group, same day:** of four other "request indexing" issues checked, the two whose
+  telemetry plausibly landed are indexed (`socialbu/socialbu-agent` #2577,
+  `chenqing/know-me` #2452 — installs counted), while the telemetry-403 one
+  (`mkayander/resale-ops`, #2525 open) and one closed request (`diegoteuta/hv-scraper` #2619)
+  are not.
+- **The probe that worked:** `.github/workflows/skills-sh-install.yml` (dispatch-only, no
+  secrets, no token) performs one real install from a runner whose network reaches skills.sh
+  directly. Run `43075909336` installed both editions, and **the repo page went 404 → 200
+  within minutes**, both per-skill pages (`/slow-stack/euthyna/euthyna`,
+  `/slow-stack/euthyna/euthyna-en`) rendering with content. The measurement trace went back to
+  vercel-labs/skills as [issuecomment-6804458990](https://github.com/vercel-labs/skills/issues/2284#issuecomment-6804458990).
+- **Pages precede the index.** ~35 minutes after the run, `/api/search` still returned no
+  `slow-stack/euthyna` rows and the badge still rendered `resource not found` — the same
+  pointer-before-data shape ClawHub measured three times. The measurement scripts live in
+  `.scratch/` (`check-skills-sh.mjs`, `check-indexed.mjs`, `check-pages.mjs`); the search-index
+  and badge settle was still being read when this block was written. Once both settle, the
+  badge the README once carried would render a real install count — re-adding it is a separate
+  decision, not made here.
 
 ### Skill contract
 

@@ -1,0 +1,45 @@
+# A workflow_dispatch-only probe. It performs one real install of both euthyna
+# skill editions through the official skills CLI from a runner whose network
+# reaches www.skills.sh directly — the condition this machine cannot satisfy
+# (its DNS resolves direct connections to a fake-IP range, and the CLI's
+# telemetry fetch does not honour HTTPS_PROXY).
+#
+# Why this exists: vercel-labs/skills#2284 records the maintainer's answer that
+# skills.sh indexes a repository automatically when someone installs its skills
+# with `skills add`. For repositories outside the CLI's blob-download
+# allow-list (BLOB_ALLOWED_OWNERS in src/add.ts), the install event is a
+# fire-and-forget telemetry GET that fails silently — see src/telemetry.ts in
+# vercel-labs/skills. This workflow makes one such install from a network where
+# that GET can actually land. The index is then re-read out of band; a single
+# read right after the run is not evidence either way.
+#
+# Nothing here runs on push or pull_request, so it costs nothing unless
+# dispatched, and it needs no secrets and no GITHUB_TOKEN.
+name: skills.sh install probe
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install both editions through the official CLI
+        run: npx --yes skills add slow-stack/euthyna -s euthyna -s euthyna-en -g -a claude-code -y --copy
+
+      - name: Verify the files landed
+        run: |
+          test -f "$HOME/.claude/skills/euthyna/SKILL.md"
+          test -f "$HOME/.claude/skills/euthyna-en/SKILL.md"
+          ls "$HOME/.claude/skills/euthyna" "$HOME/.claude/skills/euthyna-en"
+
+      - name: Read the index from the same network (informational, indexing lags)
+        run: |
+          curl -fsS "https://www.skills.sh/api/search?q=euthyna" | grep -o 'slow-stack/euthyna' | sort -u
+          true
